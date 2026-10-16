@@ -1272,11 +1272,14 @@ function chatPageMode() {
 function syncChatPage() {
   const f = $('chatPage');
   const want = chatPageMode() && chatTab === 'mirror' && shown($('chatPanel')) && !document.hidden;
-  const url = want ? S.chatSource.pageUrl : '';
-  if (want) {
+  // Load it the first time it's shown, then keep it loaded while hidden:
+  // the 위플챗 page only shows chat that arrives while it's open, so
+  // reloading it on every tab switch would wipe the chat.
+  const url = chatPageMode() ? S.chatSource.pageUrl : '';
+  if (url && (want || f.dataset.url)) {
     if (f.dataset.url !== url) { f.dataset.url = url; f.src = url; }
-  } else if (f.dataset.url) {
-    f.dataset.url = ''; f.removeAttribute('src'); // unload it: nothing runs while hidden
+  } else if (!url && f.dataset.url) {
+    f.dataset.url = ''; f.removeAttribute('src'); // switched to the OBS picture: unload
   }
   f.hidden = !want;
   $('chatFrame').hidden = want;

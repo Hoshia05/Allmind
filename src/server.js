@@ -17,7 +17,7 @@ import { Studio } from './studio.js';
 import { Markers } from './markers.js';
 import * as win from './win.js';
 
-const VERSION = '0.14.0';
+const VERSION = '0.14.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -276,27 +276,39 @@ async function main() {
   program.onQuality = (p) => { feeds.program.setTarget(p.fps, p.parallel); stateChanged(); };
 
   // OBS-load guard: every mirror frame is rendered by OBS on the same GPU that
-  // makes the stream. If OBS starts skipping frames while mirrors are running,
-  // lower their frame rate; raise it again slowly once OBS has been steady.
+  // makes the stream. If OBS keeps skipping frames while mirrors run, lower
+  // their frame rate; raise it again quickly once OBS is steady.
   // (uses the same 2-second OBS stats poll as the stream-health line)
-  let lastSkipped = null;
+  // Not every skip is ours: a heavy stinger makes OBS skip a few frames on
+  // each transition, and an occasional single skip is noise. Reacting to those
+  // used to ratchet the previews down to ~15 fps over a stream, so skips
+  // during a scene transition are ignored, and a short dip needs to be real
+  // (more than 2 frames and over 0.5% of the frames in that window).
+  let prevStats = null;
   let steadySince = Date.now();
+  let lastTransition = 0;
+  for (const ev of ['SceneTransitionStarted', 'SceneTransitionEnded', 'SceneTransitionVideoEnded']) obs.on(ev, () => { lastTransition = Date.now(); });
   studio.on('stats', (st) => {
     const running = Object.values(feeds).some((f) => f.running);
-    if (!running) { lastSkipped = null; return; }
-    const skipped = (st.renderSkippedFrames ?? 0) + (st.outputSkippedFrames ?? 0);
-    if (lastSkipped !== null && skipped > lastSkipped) {
-      for (const f of Object.values(feeds)) {
-        const was = Math.min(f.fps, f.fpsCap);
-        f.fpsCap = Math.max(10, Math.round(was * 0.7));
-      }
-      steadySince = Date.now();
-      console.log(`[guard] OBS skipped ${skipped - lastSkipped} frames → mirror fps capped at ${feeds.donation.fpsCap}`);
-    } else if (Date.now() - steadySince > 15000) {
-      for (const f of Object.values(feeds)) if (f.fpsCap < f.fps) f.fpsCap = Math.min(f.fps, f.fpsCap + 5);
-      steadySince = Date.now();
+    const now = Date.now();
+    const cur = {
+      skip: (st.renderSkippedFrames ?? 0) + (st.outputSkippedFrames ?? 0),
+      total: (st.renderTotalFrames ?? 0) + (st.outputTotalFrames ?? 0),
+    };
+    const prev = prevStats;
+    prevStats = running ? cur : null;
+    if (!running || !prev) return;
+    const dSkip = cur.skip - prev.skip;
+    const dTotal = Math.max(1, cur.total - prev.total);
+    const inTransition = now - lastTransition < 4000; // the 2 s window overlapped a transition
+    if (dSkip > 2 && dSkip / dTotal > 0.005 && !inTransition) {
+      for (const f of Object.values(feeds)) f.fpsCap = Math.max(15, Math.round(Math.min(f.fps, f.fpsCap) * 0.75));
+      steadySince = now;
+      console.log(`[guard] OBS skipped ${dSkip} of ${dTotal} frames → mirror fps capped at ${feeds.program.fpsCap}`);
+    } else if (now - steadySince >= 4000) {
+      for (const f of Object.values(feeds)) if (f.fpsCap < f.fps) f.fpsCap = Math.min(f.fps, f.fpsCap + Math.max(5, Math.round(f.fpsCap * 0.25)));
+      steadySince = now;
     }
-    lastSkipped = skipped;
   });
   setInterval(() => clients.size && sendAll('fps', { donation: feeds.donation.stats(), chat: feeds.chat.stats(), alert: feeds.alert.stats(), program: feeds.program.stats() }), 1000);
 

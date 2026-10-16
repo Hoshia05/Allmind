@@ -146,13 +146,22 @@ function recHandle(type, d) {
   return undefined;
 }
 
+// MOCK_SKIP_EVERY_MS: OBS skips a few frames every N ms (like a heavy stinger);
+// MOCK_SKIP_TRANSITION=1: those bursts happen during a scene transition.
+let burstSkips = 0;
+if (process.env.MOCK_SKIP_EVERY_MS) setInterval(() => {
+  if (process.env.MOCK_SKIP_TRANSITION) broadcast('SceneTransitionStarted', { transitionName: 'Stinger' }, 1 << 4);
+  setTimeout(() => { burstSkips += 8; }, 300);
+  if (process.env.MOCK_SKIP_TRANSITION) setTimeout(() => broadcast('SceneTransitionEnded', { transitionName: 'Stinger' }, 1 << 4), 1500);
+}, Number(process.env.MOCK_SKIP_EVERY_MS));
+
 function handle(type, d) {
   switch (type) {
     case 'GetRecordStatus': case 'GetRecordDirectory': case 'StartRecord': case 'StopRecord': case 'PauseRecord': case 'ResumeRecord': case 'CreateRecordChapter':
       return recHandle(type, d);
     case 'GetVersion': return { obsVersion: '31.0.0-mock' };
     // MOCK_OBS_STRUGGLES=1: OBS skips frames while it's busy making screenshots
-    case 'GetStats': { const sec = (Date.now() - t0) / 1000; return { renderSkippedFrames: process.env.MOCK_OBS_STRUGGLES ? (statSkips += 3) : 0, renderTotalFrames: Math.round(sec * 60), outputSkippedFrames: 0, outputTotalFrames: Math.round(sec * 60), activeFps: 60, cpuUsage: 7.5 }; }
+    case 'GetStats': { const sec = (Date.now() - t0) / 1000; return { renderSkippedFrames: process.env.MOCK_OBS_STRUGGLES ? (statSkips += 3) : burstSkips, renderTotalFrames: Math.round(sec * 60), outputSkippedFrames: 0, outputTotalFrames: Math.round(sec * 60), activeFps: 60, cpuUsage: 7.5 }; }
     case 'GetInputList': return { inputs: [...inputs].map(([n, i]) => ({ inputName: n, inputKind: i.kind })) };
     case 'GetCurrentProgramScene': return { currentProgramSceneName: scene.current };
     case 'SetCurrentProgramScene':
