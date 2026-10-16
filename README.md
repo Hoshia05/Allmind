@@ -116,4 +116,6 @@ build/     아이콘
 
 ## 라이선스
 
-아직 정하지 않았습니다. 공개 전에 추가할 예정입니다.
+[MIT](LICENSE) © 2026 호시아 (Hoshia). 자유롭게 쓰고, 고치고, 다시 배포해도 됩니다. 다만 저작권 표시와 라이선스 문구는 남겨 주세요.
+
+exe에 포함된 Node.js 등 제3자 소프트웨어의 라이선스는 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)에 있습니다.
