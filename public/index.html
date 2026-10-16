@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17171f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Stream Desk">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Stream Desk</title>
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Stream Desk</div>
+    <div class="chips" id="chips"></div>
+    <nav class="links" id="links"></nav>
+  </header>
+
+  <div class="livebar" id="livebar">
+    <span class="live-pill" id="livePill">OFFLINE</span>
+    <button class="mic-btn" id="micBtn" title="OBS 마이크 켜기/끄기"><span class="mic-ico" aria-hidden="true"></span><span class="mic-label" id="micLabel">마이크</span><span class="mic-meter"><i id="micFill"></i></span></button>
+    <div class="stat"><span class="stat-label">시청자</span><span class="stat-num" id="viewers">–</span><svg class="spark" id="spark" viewBox="0 0 120 28" preserveAspectRatio="none"><polyline id="sparkLine" fill="none" stroke-width="2"/></svg></div>
+    <div class="stat"><span class="stat-label">최고</span><span class="stat-val" id="peak">–</span></div>
+    <div class="stat"><span class="stat-label">방송 시간</span><span class="stat-val mono" id="uptime">–</span></div>
+    <div class="health" id="health" hidden title=""><span class="health-dot"></span><span id="healthText"></span></div>
+    <div class="stat title"><span class="stat-label" id="category"></span><span class="stat-val" id="liveTitle"></span></div>
+    <button class="btn ghost small-btn" id="remoteBtn" title="치지직 리모콘을 옆 창으로 열기">리모콘</button>
+    <button class="btn ghost small-btn" id="chatToggle" title="Show / hide the chat column">채팅 숨기기</button>
+    <button class="btn ghost icon small-btn" id="devBtn" title="이 기기 설정">⚙</button>
+  </div>
+
+  <div id="banners" class="banners"></div>
+
+  <main class="layout" id="layout">
+    <!-- 영도 viewer -->
+    <section class="panel viewer-panel">
+      <div class="panel-head">
+        <div class="seg small" id="mainTabs">
+          <button data-mt="program" class="on" title="지금 방송에 나가는 화면 (OBS 출력)">방송 화면</button>
+          <button data-mt="donation" title="영도 브라우저 소스">영도<span class="live-dot" id="donLiveDot" hidden></span></button>
+        </div>
+        <label class="switch" id="autoTabWrap" title="영도가 재생되면 영도 탭으로, 끝나면 방송 화면으로 자동 전환">
+          <input type="checkbox" id="autoTab"><span></span>자동 전환
+        </label>
+        <div class="tools">
+          <label class="switch don-only" title="Clicks on the picture are sent to OBS's copy of the page">
+            <input type="checkbox" id="clickThrough"><span></span>클릭 전달
+          </label>
+          <label class="switch don-only" title="Press 'skip ad' automatically whenever it appears">
+            <input type="checkbox" id="autoSkip"><span></span>자동 스킵
+          </label>
+          <select id="qualitySel" class="sel" title="화질 — 높을수록 선명하지만 fps가 낮아질 수 있어요">
+            <option value="smooth">부드럽게</option>
+            <option value="balanced">균형</option>
+            <option value="high">고화질</option>
+            <option value="lossless">무손실 (PNG)</option>
+          </select>
+          <button class="btn accent don-only" id="skipBtn">광고 스킵</button>
+          <span class="tool-sep"></span>
+          <button class="btn rc" id="rcStop" title="지금 재생 중인 영도 정지">■ 정지</button>
+          <button class="btn rc" id="rcSkip" title="치지직 리모컨의 넘기기 버튼">넘기기</button>
+          <button class="btn rc" id="rcPause" title="치지직 리모컨의 알림 정지 버튼">알림 정지</button>
+          <button class="btn ghost icon don-only" id="refreshBtn" title="영도 브라우저 소스 새로고침">↻</button>
+          <button class="btn ghost icon" id="fullBtn" title="Fullscreen">⤢</button>
+        </div>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="frame"></canvas>
+        <canvas id="programFrame"></canvas>
+        <div class="stage-empty" id="stageEmpty">Waiting for OBS…</div>
+        <div class="stage-empty" id="programEmpty">Waiting for OBS…</div>
+        <div class="stage-badge" id="stageBadge"></div>
+        <button class="btn fs-exit" id="fsExit" hidden>✕ 닫기</button>
+      </div>
+      <div class="scenes prog-only" id="scenes" hidden></div>
+    </section>
+
+    <!-- Chat -->
+    <section class="panel chat-panel" id="chatPanel">
+      <div class="resizer v" data-r="chat-w" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
+      <div class="resizer h" data-r="viewer-chat" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
+      <div class="panel-head">
+        <h2>채팅</h2>
+        <span class="state-dot" id="chatDot" title=""></span>
+        <div class="tools">
+          <div class="seg small" id="chatTabs">
+            <button data-tab="text" class="on" title="Chat from Chzzk, as text">채팅</button>
+            <button data-tab="donations" title="이번 방송의 후원·구독만">후원<span class="tab-count" id="donUnread"></span></button>
+            <button data-tab="mirror" title="Your 위플챗 OBS source, as on stream">위플챗</button>
+          </div>
+          <button class="btn ghost icon mirror-only" id="chatModeBtn" title="위플챗 보기 방식 바꾸기">⇄</button>
+        </div>
+      </div>
+      <form class="channel-form" id="channelForm" hidden>
+        <p class="small muted">채팅과 시청자 수를 보려면 치지직 채널 주소를 붙여 넣어 주세요.<br>(예: https://chzzk.naver.com/<b>abcd…1234</b>)</p>
+        <input type="text" id="channelInput" placeholder="채널 주소 또는 채널 ID" autocomplete="off">
+        <button class="btn accent" type="submit">저장</button>
+      </form>
+      <div class="chat-body" id="chatText">
+        <ol class="chat-list" id="chatList"></ol>
+        <button class="btn accent new-msgs" id="newMsgs" hidden>새 메시지 ↓</button>
+      </div>
+      <div class="chat-body donations" id="chatDonations" hidden>
+        <div class="don-summary">
+          <span><b id="donCount">0</b>건</span>
+          <span><b id="donTotal">0</b> 치즈</span>
+          <span>구독 <b id="subCount">0</b></span>
+          <button class="btn ghost" type="button" id="donReadAll" title="모두 읽음으로 표시">모두 읽음</button>
+        </div>
+        <ol class="don-list" id="donList"></ol>
+      </div>
+      <div class="chat-body mirror" id="chatMirror" hidden>
+        <canvas id="chatFrame"></canvas>
+        <iframe id="chatPage" title="위플챗" hidden referrerpolicy="no-referrer"></iframe>
+        <div class="stage-empty" id="chatMirrorEmpty">Waiting for OBS…</div>
+      </div>
+    </section>
+
+    <!-- right column: music (BGM / 셋리스트 tabs) + 알림 화면 -->
+    <aside class="side">
+      <div class="resizer v" data-r="side-w" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
+      <section class="panel music">
+        <div class="panel-head">
+          <div class="seg small" id="musicTabs">
+            <button data-mt="bgm" class="on">BGM</button>
+            <button data-mt="list">셋리스트 <span class="muted" id="count"></span></button>
+          </div>
+          <div class="tools">
+            <span class="muted small" id="bgmSource"></span>
+            <div class="seg small list-only" id="playMode">
+              <button data-mode="loop-list" title="Play the list in order, loop">순서</button>
+              <button data-mode="shuffle" title="Shuffle">셔플</button>
+              <button data-mode="repeat-one" title="Repeat this song">한곡</button>
+            </div>
+            <button class="btn ghost icon list-only" id="rescanBtn" title="Rescan music folder">↻</button>
+          </div>
+        </div>
+
+        <div id="musicBgm">
+          <div class="now-title" id="nowTitle">—</div>
+          <div class="now-sub muted small" id="nowSub"></div>
+          <div class="bgm-warn small" id="bgmWarn"></div>
+          <div class="progress" id="progress"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="times muted small"><span id="tCur">0:00</span><span id="tDur">0:00</span></div>
+          <div class="transport">
+            <button class="btn round" id="prevBtn" title="Previous">⏮</button>
+            <button class="btn round big accent" id="playBtn" title="Play / pause">▶</button>
+            <button class="btn round" id="nextBtn" title="Next">⏭</button>
+          </div>
+          <div class="row">
+            <span class="muted small">볼륨</span>
+            <input type="range" id="vol" min="-60" max="0" step="0.5">
+            <span class="small mono" id="volVal"></span>
+          </div>
+
+          <div class="auto">
+            <div class="auto-head">
+              <span>영도 자동 일시정지</span>
+              <label class="switch"><input type="checkbox" id="apEnabled"><span></span></label>
+            </div>
+            <div class="seg" id="apMode">
+              <button data-mode="pause">일시정지</button>
+              <button data-mode="duck">볼륨 낮추기</button>
+            </div>
+            <div class="meter" id="meter" title="영도 audio level. Drag the line to set the trigger level.">
+              <div class="meter-fill" id="meterFill"></div>
+              <div class="meter-thresh" id="meterThresh"></div>
+            </div>
+            <div class="row small muted">
+              <span>감지 기준 <span class="mono" id="thrVal"></span></span>
+              <span id="apState"></span>
+            </div>
+            <div class="row small muted" title="영도 알림 소리 뒤 영상이 나오기까지 조용한 몇 초 동안에도 BGM을 멈춰 둬요">
+              <span>첫 알림 후 유지</span>
+              <input type="range" id="introHold" min="0" max="20000" step="1000">
+              <span class="mono" id="introVal"></span>
+            </div>
+            <div class="row small muted">
+              <span>재개 대기</span>
+              <input type="range" id="resumeAfter" min="500" max="10000" step="500">
+              <span class="mono" id="resumeVal"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="musicList" class="list" hidden>
+          <input type="search" id="search" placeholder="검색…">
+          <ol class="tracks" id="tracks"></ol>
+        </div>
+      </section>
+
+      <section class="panel alert-panel">
+        <div class="resizer h" data-r="alert-h" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
+        <div class="panel-head">
+          <h2>알림 화면</h2>
+          <span class="state-dot" id="alertDot"></span>
+        </div>
+        <div class="chat-body mirror alert-mirror" id="alertMirror">
+          <canvas id="alertFrame"></canvas>
+          <div class="stage-empty" id="alertMirrorEmpty">Waiting for OBS…</div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <!-- phones: pick which panel fills the space under the picture -->
+  <nav class="mnav" id="mnav">
+    <button data-mp="chat" class="on">채팅<span class="tab-count" id="mnavUnread"></span></button>
+    <button data-mp="music">음악</button>
+    <button data-mp="alert">알림 화면</button>
+  </nav>
+
+  <!-- per-device settings (saved in this browser only) -->
+  <div class="devmenu" id="devMenu" hidden>
+    <div class="devmenu-head">이 기기 설정 <span class="muted small">· 이 브라우저에만 저장돼요</span></div>
+    <label class="switch"><input type="checkbox" id="optSaver"><span></span>데이터 절약 <em class="hint">화면을 최대 15fps로</em></label>
+    <label class="switch"><input type="checkbox" id="optAwake"><span></span>화면 꺼짐 방지</label>
+    <label class="switch" id="optVibrateWrap"><input type="checkbox" id="optVibrate"><span></span>버튼 진동</label>
+    <button class="btn" id="devRemote">치지직 리모콘 열기</button>
+    <div class="devmenu-row"><span>채팅 글자 크기</span>
+      <div class="seg small"><button id="fontDown">가−</button><button id="fontReset" class="mono">100%</button><button id="fontUp">가+</button></div>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+</html>

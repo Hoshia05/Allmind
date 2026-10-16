@@ -1,0 +1,20 @@
+{
+  "name": "stream-desk",
+  "version": "0.13.0",
+  "description": "One control page for a two-PC streaming setup: 영도 viewer with click-through, BGM setlist with auto-pause, driven by OBS on the stream PC.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.4"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "mock": "node tools/mock-obs.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
+    "resedit": "^3.1.0",
+    "ws": "^8.22.0"
+  }
+}

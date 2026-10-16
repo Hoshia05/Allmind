@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stream Desk</title>
+  <link rel="icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="launcher.css">
+</head>
+<body class="launcher">
+  <header class="l-head">
+    <div class="brand"><span class="dot"></span>Stream Desk <span class="muted small" id="ver"></span></div>
+    <button class="btn ghost small-btn" id="quitBtn" title="Stream Desk 종료">종료</button>
+  </header>
+
+  <main class="l-main">
+    <!-- status -->
+    <section class="card">
+      <h2>상태</h2>
+      <ul class="status">
+        <li><span class="sdot" id="dObs"></span><span class="lbl">OBS</span><span class="val" id="vObs">확인 중…</span></li>
+        <li><span class="sdot" id="dConn"></span><span class="lbl">OBS 연결</span><span class="val" id="vConn"></span></li>
+        <li><span class="sdot" id="dClick"></span><span class="lbl">클릭 전달</span><span class="val" id="vClick"></span></li>
+        <li><span class="sdot" id="dChzzk"></span><span class="lbl">치지직</span><span class="val" id="vChzzk"></span></li>
+      </ul>
+      <div class="note" id="obsNote" hidden></div>
+      <div class="row-btns">
+        <button class="btn accent" id="startObs">OBS 시작</button>
+        <button class="btn" id="openDash">이 PC에서 대시보드 열기</button>
+      </div>
+    </section>
+
+    <!-- main PC -->
+    <section class="card">
+      <h2>메인 PC에서 열기</h2>
+      <div class="addr-row">
+        <code class="addr" id="addr">…</code>
+        <button class="btn" id="copyAddr">복사</button>
+      </div>
+      <div class="muted small" id="otherAddrs"></div>
+      <div class="fw-row" id="fwRow" hidden>
+        <span class="sdot" id="dFw"></span>
+        <span id="vFw"></span>
+        <button class="btn accent" id="fwBtn" hidden>방화벽 허용</button>
+      </div>
+      <details class="tip">
+        <summary>메인 PC에 바로가기 만들기 (한 번만)</summary>
+        <ol>
+          <li>메인 PC 크롬에서 위 주소를 엽니다.</li>
+          <li>오른쪽 위 <b>⋮</b> 메뉴 → 저장/공유 메뉴 안의 <b>바로가기 만들기…</b></li>
+          <li><b>창으로 열기</b>를 체크하고 만들기.</li>
+        </ol>
+        <p>이제 바탕화면 아이콘으로 탭 없는 창이 바로 열려요.</p>
+      </details>
+    </section>
+
+    <!-- 치지직 리모컨 -->
+    <section class="card">
+      <h2>치지직 리모컨 (넘기기 · 알림 정지)</h2>
+      <ul class="status"><li><span class="sdot" id="dRc"></span><span class="lbl">리모컨 독</span><span class="val" id="vRc">확인 중…</span></li></ul>
+      <details class="tip" id="rcTip">
+        <summary>설정 방법 (한 번만)</summary>
+        <ol>
+          <li>OBS 메뉴 → <b>독</b> → <b>사용자 지정 브라우저 독…</b></li>
+          <li>이름: <b>치지직 리모컨</b>, URL: 아래 주소를 붙여 넣고 <b>적용</b></li>
+        </ol>
+        <div class="addr-row"><code class="addr small-addr" id="rcUrl">치지직 채널을 먼저 설정해 주세요</code><button class="btn" id="copyRc">복사</button></div>
+        <ol start="3">
+          <li>새로 생긴 독에서 <b>네이버 로그인</b> (OBS가 기억해요)</li>
+          <li>독은 OBS 안 아무 곳에 두면 돼요. 닫지만 마세요.</li>
+        </ol>
+        <p>그러면 대시보드의 <b>넘기기</b>·<b>알림 정지</b> 버튼이 리모컨 버튼을 대신 눌러 줘요.</p>
+      </details>
+    </section>
+
+    <!-- settings -->
+    <section class="card">
+      <details id="settingsBox">
+        <summary><h2>설정</h2><span class="muted small" id="firstRunHint"></span></summary>
+        <form id="settings" autocomplete="off">
+          <fieldset>
+            <legend>OBS</legend>
+            <label>WebSocket 비밀번호
+              <span class="hint">OBS → 도구 → WebSocket 서버 설정 → 연결 정보 표시</span>
+              <span class="pw"><input type="password" name="obsPassword"><button type="button" class="btn ghost icon" id="pwToggle" title="보기">👁</button></span>
+            </label>
+            <label>OBS 위치
+              <input type="text" name="obsPath" placeholder="자동으로 찾아요">
+            </label>
+            <label class="check"><input type="checkbox" name="startObs"> Stream Desk를 켤 때 OBS도 같이 켜기</label>
+          </fieldset>
+
+          <fieldset>
+            <legend>OBS 소스 이름</legend>
+            <label>영도 브라우저 소스<input type="text" name="donation" list="inputList"></label>
+            <label>위플챗 브라우저 소스<input type="text" name="chat" list="inputList"></label>
+            <label>도네 알림 브라우저 소스 <span class="hint">대시보드 후원 탭의 "알림 화면"에 보여요 (선택)</span><input type="text" name="alert" list="inputList"></label>
+            <label>마이크 소스 <span class="hint">비워 두면 OBS 설정 → 오디오의 마이크를 써요</span><input type="text" name="mic" list="inputList"></label>
+            <label>BGM 미디어 소스 <span class="hint">없으면 대시보드에서 만들 수 있어요</span><input type="text" name="bgmSource" list="inputList"></label>
+            <datalist id="inputList"></datalist>
+            <p class="hint" id="inputsHint"></p>
+          </fieldset>
+
+          <fieldset>
+            <legend>BGM</legend>
+            <label>음악 폴더
+              <span class="folder-row"><input type="text" name="folder"><button type="button" class="btn" id="pickFolder">찾아보기</button></span>
+              <span class="hint" id="folderCount"></span>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>치지직</legend>
+            <label>채널 주소 <span class="hint">채널 페이지 주소를 그대로 붙여 넣으세요</span><input type="text" name="channel" placeholder="https://chzzk.naver.com/…"></label>
+          </fieldset>
+
+          <fieldset>
+            <legend>기타</legend>
+            <label class="check"><input type="checkbox" name="runAtLogin"> Windows 시작 시 자동 실행 (트레이에서 조용히)</label>
+            <label>포트 <span class="hint">보통 그대로 두세요</span><input type="number" name="port" min="1024" max="65535"></label>
+          </fieldset>
+
+          <div class="row-btns">
+            <button class="btn accent" type="submit">저장하고 다시 시작</button>
+            <button class="btn ghost" type="button" id="openData">설정 폴더 열기</button>
+          </div>
+        </form>
+      </details>
+    </section>
+  </main>
+
+  <div class="overlay" id="overlay" hidden><div class="spinner"></div><span id="overlayText">다시 시작 중…</span></div>
+  <div class="toasts" id="toasts"></div>
+  <script src="launcher.js"></script>
+</body>
+</html>

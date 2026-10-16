@@ -1,0 +1,74 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+
+  "app": {
+    "startObs": true,
+    "openWindowOnStart": true
+  },
+
+  "obs": {
+    "url": "ws://127.0.0.1:4455",
+    "password": "",
+    "path": ""
+  },
+
+  "sources": {
+    "donation": "영도",
+    "bgm": "BGM Player",
+    "chat": "위플챗",
+    "alert": "",
+    "mic": ""
+  },
+
+  "chzzk": {
+    "channelId": "",
+    "pollSeconds": 15,
+    "chatHistory": 300,
+    "apiBase": "https://api.chzzk.naver.com",
+    "gameApiBase": "https://comm-api.game.naver.com",
+    "chatServer": ""
+  },
+
+  "bgm": {
+    "folder": "D:\\Music\\BGM",
+    "extensions": [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".opus", ".aac"],
+    "defaultVolumeDb": -20
+  },
+
+  "autoPause": {
+    "enabled": true,
+    "mode": "pause",
+    "thresholdDb": -45,
+    "triggerMs": 300,
+    "resumeAfterMs": 3000,
+    "introHoldMs": 10000,
+    "duckDb": -20
+  },
+
+  "viewer": {
+    "fps": 30,
+    "parallel": 2,
+    "screencast": false,
+    "chatFps": 6,
+    "width": 1280,
+    "quality": 70
+  },
+
+  "interact": {
+    "enabled": true,
+    "debugPort": 9222,
+    "targetUrlMatch": "",
+    "autoSkipAds": false,
+    "skipSelectors": [
+      ".ytp-skip-ad-button",
+      ".ytp-ad-skip-button-modern",
+      ".ytp-ad-skip-button",
+      "button[class*='skip-ad']"
+    ]
+  },
+
+  "links": []
+}
