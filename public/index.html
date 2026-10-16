@@ -24,6 +24,10 @@
   <div class="livebar" id="livebar">
     <span class="live-pill" id="livePill">OFFLINE</span>
     <button class="mic-btn" id="micBtn" title="OBS 마이크 켜기/끄기"><span class="mic-ico" aria-hidden="true"></span><span class="mic-label" id="micLabel">마이크</span><span class="mic-meter"><i id="micFill"></i></span></button>
+    <div class="markgrp" id="markGrp" hidden>
+      <button class="mark-btn" id="markBtn" title="지금 순간을 녹화에 마크 (M) · 유튜브 편집용"><span class="rec-dot"></span><span>★ 마크</span><b id="markCount"></b><span class="mark-time mono" id="markTime"></span></button>
+      <button class="mark-more" id="markMore" title="이번 녹화의 마크 목록">▾</button>
+    </div>
     <div class="stat"><span class="stat-label">시청자</span><span class="stat-num" id="viewers">–</span><svg class="spark" id="spark" viewBox="0 0 120 28" preserveAspectRatio="none"><polyline id="sparkLine" fill="none" stroke-width="2"/></svg></div>
     <div class="stat"><span class="stat-label">최고</span><span class="stat-val" id="peak">–</span></div>
     <div class="stat"><span class="stat-label">방송 시간</span><span class="stat-val mono" id="uptime">–</span></div>
@@ -225,6 +229,13 @@
     <div class="devmenu-row"><span>채팅 글자 크기</span>
       <div class="seg small"><button id="fontDown">가−</button><button id="fontReset" class="mono">100%</button><button id="fontUp">가+</button></div>
     </div>
+  </div>
+
+  <!-- ⭐ marks of this recording -->
+  <div class="devmenu markmenu" id="markMenu" hidden>
+    <div class="devmenu-head">⭐ 이번 녹화의 마크 <span class="muted small" id="markMenuSub"></span></div>
+    <ol class="marklist" id="markList"></ol>
+    <div class="muted small">메모는 나중에 적어도 돼요. 폰·아이패드에서 누르려면 <a id="markPageLink" href="/mark" target="_blank">마크 전용 페이지</a>를 여세요.</div>
   </div>
 
   <div class="toasts" id="toasts"></div>

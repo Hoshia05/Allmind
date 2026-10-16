@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0f0f14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="⭐ 마크">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-192.png">
+<title>⭐ 마크 · Stream Desk</title>
+<style>
+  :root { --bg:#0f0f14; --panel:#17171f; --line:#2a2a37; --text:#ececf3; --muted:#8b8b9c; --accent:#ff5c8a; --star:#ffc93c; --ok:#3ddc97; --bad:#ff5f5f; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  body { display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); gap: 14px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .state { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .rec .dot { background: var(--bad); animation: blink 1.6s infinite; }
+  .paused .dot { background: var(--star); animation: none; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .time { font-variant-numeric: tabular-nums; color: var(--muted); }
+  a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+  #mark { flex: 1 1 auto; min-height: 220px; border: 0; border-radius: 28px; background: linear-gradient(160deg, #ff7aa2, var(--accent)); color: #fff;
+    font-family: inherit; font-weight: 800; font-size: clamp(34px, 10vw, 72px); line-height: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    box-shadow: 0 10px 40px #ff5c8a40; touch-action: manipulation; user-select: none; -webkit-user-select: none; transition: transform .08s, filter .2s; }
+  #mark .sub { font-size: clamp(15px, 3.6vw, 20px); font-weight: 600; opacity: .9; }
+  #mark:active { transform: scale(.97); }
+  #mark:disabled { background: var(--panel); color: var(--muted); box-shadow: none; border: 1px solid var(--line); }
+  #mark.flash { animation: flash .5s; }
+  @keyframes flash { 0% { filter: brightness(1.8); transform: scale(.96); } 100% { filter: none; transform: none; } }
+  h2 { margin: 4px 0 0; font-size: 13px; color: var(--muted); font-weight: 600; }
+  ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 38vh; overflow: auto; }
+  li { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+  li .t { font-variant-numeric: tabular-nums; color: var(--star); font-weight: 700; min-width: 64px; }
+  li input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); font: inherit; padding: 6px 0; outline: none; }
+  li input::placeholder { color: #5d5d6e; }
+  .empty { color: var(--muted); font-size: 13px; }
+  .msg { min-height: 1.4em; text-align: center; color: var(--muted); font-size: 13px; }
+  @media (orientation: landscape) and (max-height: 560px) {
+    body { flex-direction: row; flex-wrap: wrap; }
+    .top { flex-basis: 100%; }
+    #mark { flex: 1 1 55%; min-height: 0; height: calc(100vh - 80px); }
+    .side { flex: 1 1 35%; display: flex; flex-direction: column; gap: 8px; }
+    ol { max-height: calc(100vh - 130px); }
+  }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="state" id="state"><span class="dot"></span><span id="stateText">연결 중…</span> <span class="time" id="time"></span></div>
+    <a class="back" href="/">대시보드 →</a>
+  </div>
+  <button id="mark" disabled><span>⭐ 마크</span><span class="sub" id="count"></span></button>
+  <div class="side">
+    <div class="msg" id="msg"></div>
+    <h2>이번 녹화의 마크 · 메모는 나중에 적어도 돼요</h2>
+    <ol id="list"></ol>
+  </div>
+<script>
+const $ = (id) => document.getElementById(id);
+let S = null, gotAt = 0, editing = false;
+const fmt = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(x).padStart(2, '0'); };
+
+function render() {
+  if (!S) return;
+  const rec = S.recording, st = $('state');
+  st.className = 'state' + (rec ? (S.paused ? ' paused' : ' rec') : '');
+  $('stateText').textContent = !S.obs ? 'OBS 연결 안 됨' : rec ? (S.paused ? '녹화 일시정지' : '녹화 중') : '녹화 안 함';
+  $('mark').disabled = !rec;
+  $('count').textContent = rec ? (S.count ? `${S.count}개` : '눌러서 지금 순간 표시') : '녹화가 시작되면 켜져요';
+  tick();
+  if (editing) return; // don't redraw under the keyboard
+  const list = $('list');
+  list.textContent = '';
+  if (!S.marks.length) { list.innerHTML = '<div class="empty">아직 마크가 없어요</div>'; return; }
+  S.marks.map((m, i) => [m, i]).reverse().forEach(([m, i]) => {
+    const li = document.createElement('li');
+    const t = document.createElement('span'); t.className = 't'; t.textContent = '⭐ ' + fmt(m.t);
+    const inp = document.createElement('input'); inp.value = m.label || ''; inp.placeholder = '메모 (선택)'; inp.maxLength = 200;
+    inp.onfocus = () => (editing = true);
+    inp.onblur = () => { editing = false; if (inp.value !== (m.label || '')) save(i, inp.value); };
+    inp.onkeydown = (e) => { if (e.key === 'Enter') inp.blur(); };
+    li.append(t, inp); list.append(li);
+  });
+  if (S.file) $('msg').textContent = `저장됨: ${S.file}`;
+}
+function tick() {
+  if (!S) return;
+  $('time').textContent = S.recording ? fmt((S.elapsedMs + (S.paused ? 0 : Date.now() - gotAt)) / 1000) : '';
+}
+async function load() {
+  try {
+    const r = await fetch('/api/marks', { cache: 'no-store' });
+    S = await r.json(); gotAt = Date.now(); render();
+  } catch { $('stateText').textContent = 'Stream Desk 연결 끊김'; }
+}
+async function save(i, label) {
+  try { await fetch('/api/mark/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i, label }) }); } catch {}
+  load();
+}
+let busy = false;
+$('mark').onclick = async () => {
+  if (busy) return; busy = true;
+  const b = $('mark'); b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
+  try { navigator.vibrate?.(40); } catch {}
+  try {
+    const r = await fetch('/api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const j = await r.json();
+    $('msg').textContent = j.ok ? `⭐ ${fmt(j.t)} 에 마크했어요` : j.reason === 'not recording' ? '녹화 중이 아니에요' : `마크 실패: ${j.reason}`;
+  } catch { $('msg').textContent = 'Stream Desk에 연결할 수 없어요'; }
+  busy = false; load();
+};
+// light: one small request every 2 s, only while the page is visible
+load();
+setInterval(() => { if (!document.hidden) load(); }, 2000);
+setInterval(tick, 1000);
+document.addEventListener('visibilitychange', () => !document.hidden && load());
+</script>
+</body>
+</html>

@@ -14,9 +14,10 @@ import { Chzzk, parseChannelId } from './chzzk.js';
 import { FrameFeed } from './feed.js';
 import { ChzzkRemote } from './remote.js';
 import { Studio } from './studio.js';
+import { Markers } from './markers.js';
 import * as win from './win.js';
 
-const VERSION = '0.13.0';
+const VERSION = '0.14.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -142,6 +143,7 @@ async function main() {
   // footage), so it gets its own light, fixed settings instead of the 영도 quality.
   const program = new ProgramViewer(obs);
   const studio = new Studio(obs, { mic: config.sources.mic });
+  const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers') });
   const chzzk = new Chzzk(config);
   viewer.onUrl = (url) => interact.setSourceUrl(url);
   // "a 영도 is playing": its audio was loud in the last 20 s, or the 리모컨 says so
@@ -210,6 +212,7 @@ async function main() {
     obs: obs.status(),
     bgm: bgmState(),
     studio: studio.status(),
+    marks: markers.status(),
     donation: viewer.status(),
     interact: interact.status(),
     chatSource: { ...chatViewer.status(), pageUrl: chatPage.url, frameable: chatPage.frameable },
@@ -248,6 +251,8 @@ async function main() {
   chzzk.on('change', stateChanged);
   remote.on('change', stateChanged);
   studio.on('change', stateChanged);
+  markers.on('change', stateChanged);
+  markers.on('saved', ({ count, file }) => sendAll('toast', { text: `⭐ 마크 ${count}개 저장됨${file ? ` — 영상과 함께 ${file} 도 올려 주세요` : ''}`, long: true }));
   studio.on('health', (h) => clients.size && sendAll('health', h));
   studio.wanted = () => clients.size > 0 || Object.values(feeds).some((f) => f.running);
   chzzk.on('chat', (list) => sendAll('chat', list));
@@ -407,6 +412,7 @@ async function main() {
     'POST /api/remote/pause': () => remote.togglePause(),
     'POST /api/remote/stop': () => remote.stopVideo(),
     'POST /api/scene': (b) => studio.setScene(String(b.name || '')),
+    'POST /api/mark/label': (b) => markers.setLabel(Number(b.index), b.label),
     'POST /api/mic/toggle': async () => ({ muted: await studio.toggleMic() }),
     'POST /api/chzzk/donation-read': (b) => chzzk.markRead(b.key, b.read !== false),
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
@@ -491,6 +497,19 @@ async function main() {
   server.on('request', async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const key = `${req.method} ${url.pathname}`;
+
+    // ⭐ Mark moment: one request from anywhere on the LAN (a hotkey, a Stream
+    // Deck key, the /mark page). 200 {ok,t,count} or 409 {ok:false,reason}.
+    if (key === 'POST /api/mark') {
+      const b = await readBody(req);
+      const r = await markers.mark(b.label ?? url.searchParams.get('label'));
+      return json(res, r.ok ? 200 : 409, r);
+    }
+    if (key === 'GET /api/marks') return json(res, 200, markers.status());
+    if (key === 'GET /mark') {
+      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+      return res.end(readAsset('public/mark.html'));
+    }
 
     if (key === 'GET /api/ping') return json(res, 200, { app: 'stream-desk', version: VERSION });
 

@@ -103,8 +103,53 @@ function need(name) {
   return i;
 }
 
+// recording (for the ⭐ marker feature). MOCK_REC_DIR = where "videos" go;
+// MOCK_NO_CHAPTERS = behave like an OBS without Hybrid MP4 chapter support.
+const REC_DIR = process.env.MOCK_REC_DIR || '/tmp/mock-rec';
+const rec = { active: false, paused: false, acc: 0, since: 0, path: '', chapters: [] };
+const recMs = () => rec.acc + (rec.active && !rec.paused ? Date.now() - rec.since : 0);
+const recState = (s, extra = {}) => broadcast('RecordStateChanged', { outputActive: rec.active, outputState: 'OBS_WEBSOCKET_OUTPUT_' + s, outputPath: null, ...extra }, 1 << 6);
+function recHandle(type, d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  switch (type) {
+    case 'GetRecordStatus': return { outputActive: rec.active, outputPaused: rec.paused, outputTimecode: '', outputDuration: Math.round(recMs()), outputBytes: 0 };
+    case 'GetRecordDirectory': return { recordDirectory: REC_DIR };
+    case 'StartRecord': {
+      if (rec.active) throw new Error('Record is already active.');
+      const n = new Date();
+      Object.assign(rec, { active: true, paused: false, acc: 0, since: Date.now(), chapters: [],
+        path: `${REC_DIR}/${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())} ${pad(n.getHours())}-${pad(n.getMinutes())}-${pad(n.getSeconds())}.mp4` });
+      fs.mkdirSync(REC_DIR, { recursive: true });
+      log('record start', rec.path);
+      setTimeout(() => recState('STARTING'), 10);
+      setTimeout(() => recState('STARTED', { outputPath: rec.path }), 60);
+      return;
+    }
+    case 'StopRecord': {
+      if (!rec.active) throw new Error('Record is not active.');
+      rec.acc = recMs(); rec.active = false; rec.paused = false;
+      fs.writeFileSync(rec.path, JSON.stringify({ mock: true, durationMs: rec.acc, chapters: rec.chapters }));
+      log('record stop', rec.path, (rec.acc / 1000).toFixed(1) + 's', rec.chapters.length, 'chapters');
+      setTimeout(() => recState('STOPPING'), 10);
+      setTimeout(() => recState('STOPPED', { outputPath: rec.path }), Number(process.env.MOCK_STOP_MS || 2500)); // OBS finishes the file first
+      return { outputPath: rec.path };
+    }
+    case 'PauseRecord': rec.acc = recMs(); rec.paused = true; setTimeout(() => recState('PAUSED'), 10); return;
+    case 'ResumeRecord': rec.since = Date.now(); rec.paused = false; setTimeout(() => recState('RESUMED'), 10); return;
+    case 'CreateRecordChapter':
+      if (process.env.MOCK_NO_CHAPTERS) throw new Error('Current recording format does not support chapters.');
+      if (!rec.active) throw new Error('Record is not active.');
+      rec.chapters.push({ t: recMs() / 1000, name: d.chapterName ?? `Unnamed ${rec.chapters.length + 1}` });
+      log('chapter', rec.chapters.at(-1));
+      return;
+  }
+  return undefined;
+}
+
 function handle(type, d) {
   switch (type) {
+    case 'GetRecordStatus': case 'GetRecordDirectory': case 'StartRecord': case 'StopRecord': case 'PauseRecord': case 'ResumeRecord': case 'CreateRecordChapter':
+      return recHandle(type, d);
     case 'GetVersion': return { obsVersion: '31.0.0-mock' };
     // MOCK_OBS_STRUGGLES=1: OBS skips frames while it's busy making screenshots
     case 'GetStats': { const sec = (Date.now() - t0) / 1000; return { renderSkippedFrames: process.env.MOCK_OBS_STRUGGLES ? (statSkips += 3) : 0, renderTotalFrames: Math.round(sec * 60), outputSkippedFrames: 0, outputTotalFrames: Math.round(sec * 60), activeFps: 60, cpuUsage: 7.5 }; }

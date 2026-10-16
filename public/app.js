@@ -20,12 +20,12 @@ async function api(path, body = {}) {
   }
 }
 
-function toast(text, bad = false) {
+function toast(text, bad = false, long = false) {
   const el = document.createElement('div');
   el.className = 'toast' + (bad ? ' bad' : '');
   el.textContent = text;
   $('toasts').append(el);
-  setTimeout(() => el.remove(), bad ? 6000 : 2500);
+  setTimeout(() => el.remove(), bad || long ? 8000 : 2500);
 }
 
 function fmt(ms) {
@@ -56,7 +56,7 @@ function connectEvents() {
   es.addEventListener('tracks', (e) => { TRACKS = JSON.parse(e.data); if (S) { S.bgm.tracks = TRACKS; lastTracksKey = ''; renderBgm(); } });
   es.addEventListener('health', (e) => renderHealth(JSON.parse(e.data)));
   es.addEventListener('level', (e) => renderLevel(JSON.parse(e.data)));
-  es.addEventListener('toast', (e) => toast(JSON.parse(e.data).text));
+  es.addEventListener('toast', (e) => { const d = JSON.parse(e.data); toast(d.text, false, d.long); });
   es.addEventListener('chat-history', (e) => chatReset(JSON.parse(e.data)));
   es.addEventListener('fps', (e) => renderFps(JSON.parse(e.data)));
   es.addEventListener('chat', (e) => chatAdd(JSON.parse(e.data)));
@@ -98,6 +98,7 @@ function render() {
   renderLive();
   renderChatState();
   renderStudio();
+  renderMarks();
   window.syncChatPage?.();
   if (typeof followDonation === 'function') followDonation();
   window.syncAlertMirror?.();
@@ -708,6 +709,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'n' || ev.key === 'N') api('bgm/next');
   if (ev.key === 's' || ev.key === 'S') $('skipBtn').click();
   if (ev.key === 'f' || ev.key === 'F') $('fullBtn').click();
+  if ((ev.key === 'm' || ev.key === 'M') && !ev.repeat && !ev.ctrlKey && !ev.metaKey && !ev.altKey) markNow();
 });
 
 connectEvents();
@@ -1292,3 +1294,65 @@ $('chatModeBtn').addEventListener('click', () => {
   toast(chatPageMode() ? '위플챗 페이지를 패널 크기로 보여줘요' : 'OBS의 위플챗 화면을 그대로 보여줘요');
 });
 document.addEventListener('visibilitychange', syncChatPage);
+
+
+// ---------------- ⭐ marks (moments for YouTube edits, read by VOD Scout) ----------------
+let marksGotAt = 0;
+let marksCount = -1;
+let markEditing = false;
+const fmtT = (s) => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+function renderMarks() {
+  const mk = S.marks;
+  if (!mk) return;
+  marksGotAt = Date.now();
+  const grp = $('markGrp');
+  grp.hidden = !mk.recording && !mk.count;
+  grp.classList.toggle('rec', !!mk.recording && !mk.paused);
+  grp.classList.toggle('paused', !!mk.paused);
+  $('markBtn').disabled = !mk.recording;
+  $('markBtn').title = mk.recording ? '지금 순간을 녹화에 마크 (M) · 유튜브 편집용' : '녹화 중이 아니에요';
+  $('markCount').textContent = mk.count ? mk.count : '';
+  if (marksCount >= 0 && mk.count > marksCount && mk.recording) flashMark(); // also for hotkey / phone presses
+  marksCount = mk.count;
+  tickMarks();
+  $('markMenuSub').textContent = mk.recording ? (mk.paused ? '· 녹화 일시정지' : '· 녹화 중') : mk.file ? `· 저장됨: ${mk.file}` : '· 지난 녹화';
+  if (markEditing) return; // don't redraw while a note is being typed
+  const list = $('markList');
+  list.textContent = '';
+  if (!mk.marks.length) { list.innerHTML = '<li class="muted small">아직 마크가 없어요</li>'; return; }
+  mk.marks.map((m, i) => [m, i]).reverse().forEach(([m, i]) => {
+    const li = document.createElement('li');
+    const t = document.createElement('span'); t.className = 'mono'; t.textContent = fmtT(m.t);
+    const inp = document.createElement('input'); inp.type = 'text'; inp.value = m.label || ''; inp.placeholder = '메모 (선택)'; inp.maxLength = 200;
+    inp.addEventListener('focus', () => (markEditing = true));
+    inp.addEventListener('blur', () => { markEditing = false; if (inp.value !== (m.label || '')) api('mark/label', { index: i, label: inp.value }); });
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') inp.blur(); });
+    li.append(t, inp);
+    list.append(li);
+  });
+}
+function tickMarks() {
+  const mk = S?.marks;
+  $('markTime').textContent = mk?.recording ? fmtT((mk.elapsedMs + (mk.paused ? 0 : Date.now() - marksGotAt)) / 1000) : '';
+}
+setInterval(tickMarks, 1000);
+function flashMark() {
+  const b = $('markBtn');
+  b.classList.remove('flash'); void b.offsetWidth; b.classList.add('flash');
+}
+async function markNow() {
+  if (!S?.marks?.recording) return toast('녹화 중이 아니에요', true);
+  buzz();
+  flashMark();
+  try {
+    const r = await fetch('api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const j = await r.json();
+    if (j.ok) toast(`⭐ ${fmtT(j.t)} 마크 (${j.count})`);
+    else toast(j.reason === 'not recording' ? '녹화 중이 아니에요' : `마크 실패: ${j.reason}`, true);
+  } catch { toast('Stream Desk에 연결할 수 없어요', true); }
+}
+$('markBtn').addEventListener('click', markNow);
+$('markMore').addEventListener('click', (ev) => { ev.stopPropagation(); $('markMenu').hidden = !$('markMenu').hidden; });
+document.addEventListener('click', (ev) => {
+  if (!$('markMenu').hidden && !ev.target.closest('#markMenu, #markMore')) $('markMenu').hidden = true;
+});

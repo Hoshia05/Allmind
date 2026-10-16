@@ -633,3 +633,26 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
 #chatPage { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; } /* matching scheme keeps a see-through page see-through */
 .chat-body.mirror.page { background: #101016; }
 .chat-panel:not(.show-mirror) .mirror-only { display: none; }
+
+/* ---------- ⭐ mark button (live bar) ---------- */
+.markgrp { display: inline-flex; align-items: stretch; flex: none; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); }
+.mark-btn { display: inline-flex; align-items: center; gap: 7px; padding: 4px 11px; border: 0; cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 700;
+  white-space: nowrap; color: #2a1d00; background: linear-gradient(160deg, #ffd66b, #ffb800); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.mark-btn b { background: #0003; border-radius: 6px; padding: 0 6px; font-variant-numeric: tabular-nums; }
+.mark-btn b:empty { display: none; }
+.mark-time { font-weight: 500; font-size: 11.5px; opacity: .75; }
+.mark-btn .rec-dot { width: 8px; height: 8px; border-radius: 50%; background: #0004; }
+.markgrp.rec .rec-dot { background: #e5263f; animation: pulse 1.4s ease-in-out infinite; }
+.markgrp.paused .rec-dot { background: #7a5a00; }
+.mark-btn:disabled { background: var(--panel-2); color: var(--muted); cursor: default; }
+.mark-btn.flash { animation: markflash .5s; }
+@keyframes markflash { 0% { filter: brightness(1.6); transform: scale(.94); } 100% { filter: none; transform: none; } }
+.mark-more { border: 0; border-left: 1px solid #0002; background: var(--panel-2); color: var(--muted); padding: 0 8px; cursor: pointer; font: inherit; }
+.markgrp.rec .mark-more, .markgrp.paused .mark-more { background: #ffcf4a; color: #2a1d00; }
+.markmenu { right: auto; left: calc(12px + env(safe-area-inset-left)); }
+.marklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; }
+.marklist li { display: flex; align-items: center; gap: 10px; }
+.marklist li .mono { color: #ffc93c; min-width: 58px; font-weight: 700; }
+.marklist input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font: inherit; font-size: 13px; padding: 6px 8px; }
+.markmenu a { color: var(--accent); }
+@media (pointer: coarse) { .mark-btn { padding: 8px 14px; font-size: 14px; } .mark-more { padding: 0 12px; } }
