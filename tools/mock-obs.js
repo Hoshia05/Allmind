@@ -27,7 +27,10 @@ if (process.env.MOCK_COUNT) setInterval(() => { console.log('SHOTS/s', shotCount
 const scene = { list: ['Main', 'Just Chatting', 'BRB', 'Ending'], current: 'Main' };
 const media = { state: 'OBS_MEDIA_STATE_NONE', cursor: 0, duration: TRACK_MS, file: null };
 const t0 = Date.now();
-const donationLoud = () => (Date.now() - t0) % 25000 > 5000 && (Date.now() - t0) % 25000 < 13000;
+// MOCK_YD_INTRO=1: a real 영도's shape — 1 s alert, 5 s silence, then the video
+const donationLoud = process.env.MOCK_YD_INTRO
+  ? () => { const t = (Date.now() - t0) % 40000; return (t > 5000 && t < 6000) || (t > 11000 && t < 25000); }
+  : () => (Date.now() - t0) % 25000 > 5000 && (Date.now() - t0) % 25000 < 13000;
 const adShowing = () => donationLoud() && !adSkipped;
 let adSkipped = false;
 setInterval(() => { if (!donationLoud()) adSkipped = false; }, 500);

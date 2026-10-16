@@ -12,6 +12,7 @@ import { loadState, saveState } from './config.js';
 // Picture quality for the 영도 mirror, switchable from the dashboard.
 // JPEG quality is 0–100; PNG is lossless but much bigger and slower for OBS.
 export const QUALITY = {
+  light: { label: '가볍게 (30fps)', format: 'jpg', q: 70, maxWidth: 960, fps: 30, parallel: 2 },
   smooth: { label: '부드럽게', format: 'jpg', q: 65, maxWidth: 960, fps: 60, parallel: 3 },
   balanced: { label: '균형', format: 'jpg', q: 85, maxWidth: 1280, fps: 60, parallel: 3 },
   high: { label: '고화질', format: 'jpg', q: 95, maxWidth: 4096, fps: 60, parallel: 3 },

@@ -401,7 +401,7 @@ function renderFps({ donation, chat, program }) {
     const b = $('stageBadge');
     if (programLoop.error) { b.textContent = '⚠ ' + programLoop.error; return; }
     const scene = S?.program?.scene ? ` · ${S.program.scene}` : '';
-    b.textContent = program && programLoop.on ? `방송 화면${scene} · ${program.fps} fps${program.limited ? ' · OBS 부하 보호 중' : ''}` : '';
+    b.textContent = program && programLoop.on ? `방송 화면${scene} · ${program.fps} fps${program.limited ? guardText(program) : ''}` : '';
     return;
   }
   // Frames are arriving: drop the "waiting" overlay even if the browser
@@ -412,7 +412,7 @@ function renderFps({ donation, chat, program }) {
   if (!donationLoop.on || donation.mode === 'idle') { b.textContent = ''; return; }
   if (donationLoop.error) { b.textContent = '⚠ ' + donationLoop.error; return; }
   const how = donation.mode === 'screencast' ? '실시간' : donation.mode === 'obs-idle' ? '정지 화면' : 'OBS';
-  b.textContent = (donation.fps ? `${how} · ${donation.fps} fps` : how) + (donation.limited ? ' · OBS 부하 보호 중' : '');
+  b.textContent = (donation.fps ? `${how} · ${donation.fps} fps` : how) + (donation.limited ? guardText(donation) : '');
 }
 
 
@@ -1359,3 +1359,8 @@ $('markMore').addEventListener('click', (ev) => { ev.stopPropagation(); $('markM
 document.addEventListener('click', (ev) => {
   if (!$('markMenu').hidden && !ev.target.closest('#markMenu, #markMore')) $('markMenu').hidden = true;
 });
+
+// why the OBS-load guard is holding the previews back
+function guardText(f) {
+  return f.why === 'encode' ? ' · OBS 부하 보호 중 (인코딩 지연)' : f.why === 'render' ? ' · OBS 부하 보호 중 (렌더링 지연)' : ' · OBS 부하 보호 중';
+}

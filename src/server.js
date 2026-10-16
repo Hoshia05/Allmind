@@ -17,7 +17,7 @@ import { Studio } from './studio.js';
 import { Markers } from './markers.js';
 import * as win from './win.js';
 
-const VERSION = '0.14.1';
+const VERSION = '0.14.2';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -154,6 +154,7 @@ async function main() {
   // (the 리모컨's ■ button is the clearest signal; sound covers the rest,
   //  with a few seconds of grace so a quiet moment doesn't flip it back)
   let donationActive = false;
+  let donationActiveSince = 0;
   bgm.holdWhile = () => !!remote.status().videoPlaying; // keep BGM paused while the 리모컨 shows a 영도
   const isDonationActive = () => !!remote.status().videoPlaying || Date.now() - lastDonationSound < 4000;
   const feeds = {
@@ -265,9 +266,14 @@ async function main() {
   setInterval(() => clients.size && sendAll('level', { db: bgm.levelDb(), active: bgm.autoActive, mic: studio.micDb() }), 100);
   setInterval(() => clients.size && sendAll('ping', Date.now()), 15000);
   setInterval(() => {
-    const now = isDonationActive();
+    let now = isDonationActive();
+    // Same rule as the BGM auto-pause: a 영도 starts with a short alert, then a
+    // few silent seconds before the video. Stay on the 영도 tab through that
+    // gap (첫 알림 후 유지), instead of flicking back to 방송 화면 and again.
+    if (!now && donationActive && Date.now() - donationActiveSince < (bgm.autoPause?.introHoldMs ?? 10000)) now = true;
     if (now !== donationActive) {
       donationActive = now;
+      if (now) donationActiveSince = Date.now();
       console.log(`[app] 영도 ${now ? 'started' : 'ended'}`);
       stateChanged();
     }
@@ -293,6 +299,7 @@ async function main() {
     const now = Date.now();
     const cur = {
       skip: (st.renderSkippedFrames ?? 0) + (st.outputSkippedFrames ?? 0),
+      ren: st.renderSkippedFrames ?? 0,
       total: (st.renderTotalFrames ?? 0) + (st.outputTotalFrames ?? 0),
     };
     const prev = prevStats;
@@ -302,9 +309,12 @@ async function main() {
     const dTotal = Math.max(1, cur.total - prev.total);
     const inTransition = now - lastTransition < 4000; // the 2 s window overlapped a transition
     if (dSkip > 2 && dSkip / dTotal > 0.005 && !inTransition) {
-      for (const f of Object.values(feeds)) f.fpsCap = Math.max(15, Math.round(Math.min(f.fps, f.fpsCap) * 0.75));
+      const ren = (st.renderSkippedFrames ?? 0) - (prev.ren ?? 0);
+      const why = ren >= dSkip - ren ? 'render' : 'encode';
+      const fpsNow = Object.fromEntries(Object.entries(feeds).filter(([, f]) => f.running).map(([k, f]) => [k, f.stats().fps]));
+      for (const f of Object.values(feeds)) { f.fpsCap = Math.max(15, Math.round(Math.min(f.fps, f.fpsCap) * 0.75)); f.guardWhy = why; }
       steadySince = now;
-      console.log(`[guard] OBS skipped ${dSkip} of ${dTotal} frames → mirror fps capped at ${feeds.program.fpsCap}`);
+      console.log(`[guard] OBS skipped ${dSkip} of ${dTotal} frames (render ${ren}, encode ${dSkip - ren}) while mirrors ran at ${JSON.stringify(fpsNow)}, OBS cpu ${Math.round(st.cpuUsage ?? 0)}% → capped at ${feeds.program.fpsCap}`);
     } else if (now - steadySince >= 4000) {
       for (const f of Object.values(feeds)) if (f.fpsCap < f.fps) f.fpsCap = Math.min(f.fps, f.fpsCap + Math.max(5, Math.round(f.fpsCap * 0.25)));
       steadySince = now;

@@ -198,6 +198,7 @@ export class FrameFeed extends EventEmitter {
       viewers: this.subs.size,
       target: Math.min(this.fps, this.fpsCap, this.adaptive || this.fps),
       limited: this.fpsCap < this.fps,
+      why: this.fpsCap < this.fps ? this.guardWhy || '' : '',
       grabMs: Math.round(this.grabMs),
     };
   }
