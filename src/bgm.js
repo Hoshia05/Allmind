@@ -4,7 +4,8 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadState, saveState } from './config.js';
+import { loadState, saveState, DATA_DIR } from './config.js';
+import { Coverless } from './coverless.js';
 
 const ACTION = (a) => `OBS_WEBSOCKET_MEDIA_INPUT_ACTION_${a}`;
 const PLAY_MODES = ['loop-list', 'shuffle', 'repeat-one'];
@@ -35,6 +36,9 @@ export class BGM extends EventEmitter {
     this.cfg = config.bgm;
     this.sourceName = config.sources.bgm;
     this.donationName = config.sources.donation;
+    this.coverless = new Coverless(path.join(DATA_DIR, 'bgm-cache'));
+    this.fileOf = new Map(); // song id → file OBS actually loads
+    this.idOfFile = new Map(); // and back (normalised path → id)
 
     const saved = loadState('bgm', {});
     this.order = saved.order || [];
@@ -160,11 +164,13 @@ export class BGM extends EventEmitter {
     this.autoPausedBgm = false;
     this.selectedAt = Date.now();
     this.playedSinceSelect = false;
+    // OBS gets an audio-only copy when the file has cover art (see coverless.js)
+    const file = await this._fileFor(id);
     await this.obs.call('SetInputSettings', {
       inputName: this.sourceName,
       inputSettings: {
         is_local_file: true,
-        local_file: path.join(this.cfg.folder, id),
+        local_file: file,
         looping: false,
         restart_on_activate: false,
         close_when_inactive: false,
@@ -184,6 +190,21 @@ export class BGM extends EventEmitter {
     }
     await this._resetMonitoring();
     console.log(`[bgm] now playing: ${id} (${this.media.state})`);
+    this._prepareNext(id);
+  }
+
+  async _fileFor(id) {
+    const file = await this.coverless.fileFor(path.join(this.cfg.folder, id));
+    this.fileOf.set(id, file);
+    this.idOfFile.set(normPath(file), id);
+    return file;
+  }
+
+  // Make the next song's art-free copy in the background, so it starts at once.
+  _prepareNext(id) {
+    if (this.playMode !== 'loop-list') return;
+    const next = this.order[(this.order.indexOf(id) + 1) % this.order.length];
+    if (next && next !== id) setTimeout(() => this._fileFor(next).catch(() => {}), 3000);
   }
 
   // OBS quirk: after a Media Source switches files (especially to a song with a
@@ -233,7 +254,8 @@ export class BGM extends EventEmitter {
   }
 
   _fileMatches() {
-    return !this.loadedFile || !this.currentId || this.loadedFile === normPath(path.join(this.cfg.folder, this.currentId));
+    if (!this.loadedFile || !this.currentId) return true;
+    return this.idOfFile.get(this.loadedFile) === this.currentId || this.loadedFile === normPath(path.join(this.cfg.folder, this.currentId));
   }
 
   async setVolume(db) {
@@ -372,7 +394,10 @@ export class BGM extends EventEmitter {
         if (file) {
           const base = normPath(this.cfg.folder).replace(/\/$/, '') + '/';
           const rel = file.startsWith(base) ? file.slice(base.length) : null;
-          const id = rel && this.order.find((t) => normPath(t) === rel);
+          // an art-free copy from before a Stream Desk restart: it's the saved current song
+          const cached = file.startsWith(normPath(this.coverless.dir) + '/') && this.currentId;
+          if (cached && !this.idOfFile.has(file)) this.idOfFile.set(file, this.currentId);
+          const id = this.idOfFile.get(file) || (rel && this.order.find((t) => normPath(t) === rel));
           this.loadedOutside = !id; // a file that isn't in the setlist folder
           if (id && id !== this.currentId) {
             // OBS has a different song than we think (changed in OBS itself).

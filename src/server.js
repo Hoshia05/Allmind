@@ -17,7 +17,7 @@ import { Studio } from './studio.js';
 import { Markers } from './markers.js';
 import * as win from './win.js';
 
-const VERSION = '0.14.2';
+const VERSION = '0.14.3';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
