@@ -89,6 +89,7 @@ wss.on('connection', (ws) => {
       let ok = true;
       let comment = '';
       try {
+        if (process.env.MOCK_REQS) reqCounts[d.requestType] = (reqCounts[d.requestType] || 0) + 1;
         responseData = handle(d.requestType, d.requestData || {}) || {};
       } catch (e) {
         ok = false;
@@ -110,6 +111,8 @@ function need(name) {
 // MOCK_NO_CHAPTERS = behave like an OBS without Hybrid MP4 chapter support.
 const REC_DIR = process.env.MOCK_REC_DIR || '/tmp/mock-rec';
 const sceneAdds = {};
+const reqCounts = {};
+if (process.env.MOCK_REQS) setInterval(() => { console.log('REQS/20s', JSON.stringify(reqCounts)); for (const k in reqCounts) delete reqCounts[k]; }, 20000);
 const rec = { active: false, paused: false, acc: 0, since: 0, path: '', chapters: [] };
 const recMs = () => rec.acc + (rec.active && !rec.paused ? Date.now() - rec.since : 0);
 const recState = (s, extra = {}) => broadcast('RecordStateChanged', { outputActive: rec.active, outputState: 'OBS_WEBSOCKET_OUTPUT_' + s, outputPath: null, ...extra }, 1 << 6);

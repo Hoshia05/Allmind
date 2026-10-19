@@ -18,7 +18,7 @@ import { Markers } from './markers.js';
 import { Soundboard } from './soundboard.js';
 import * as win from './win.js';
 
-const VERSION = '0.16.1';
+const VERSION = '0.16.2';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -163,12 +163,9 @@ async function main() {
     donation: new FrameFeed({
       name: 'donation',
       grab: () => viewer.grab(),
-      // Screencast can't see video (it comes out black), so it's off unless asked for.
-      screencast: config.viewer.screencast ? interact : null,
       fps: (QUALITY[viewer.quality] || {}).fps || config.viewer.fps,
       idleFps: 1,
       parallel: (QUALITY[viewer.quality] || {}).parallel || config.viewer.parallel,
-      castOptions: () => ({ quality: config.viewer.quality, maxWidth: Math.min(config.viewer.width, viewer.size.width), maxHeight: viewer.size.height }),
     }),
     chat: new FrameFeed({ name: 'chat', grab: () => chatViewer.grab(), fps: config.viewer.chatFps, idleFps: 1, parallel: 1 }),
     // 도네 alerts animate, so give them a smoother rate than the chat overlay.
@@ -251,6 +248,8 @@ async function main() {
   obs.on('status', stateChanged);
   obs.on('connected', () => setTimeout(stateChanged, 300));
   bgm.on('change', stateChanged);
+  bgm.on('pos', (p) => clients.size && sendAll('bgmpos', p));
+  bgm.watching = () => clients.size > 0;
   interact.on('change', stateChanged);
   chzzk.on('change', stateChanged);
   remote.on('change', stateChanged);

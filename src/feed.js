@@ -1,47 +1,30 @@
 // A live picture of one OBS source, pushed to every open dashboard.
 //
-// Frames come from OBS screenshots, which show exactly what OBS renders
-// (including video, which the browser-engine screencast can't capture: it
-// comes out black). To get a higher frame rate than one-request-at-a-time
+// Frames come from OBS screenshots, which show exactly what OBS renders,
+// video included. To get a higher frame rate than one-request-at-a-time
 // allows, several screenshot requests are kept in flight, staggered, and
 // any frame that arrives out of order is dropped.
 // While the picture isn't changing, it slows to a couple of checks a second.
 // Nothing runs unless someone is watching.
-//
-// The screencast path is kept as an option (viewer.screencast in the config)
-// for pages without video, where it's smoother and lighter.
 import { EventEmitter } from 'node:events';
 
 export class FrameFeed extends EventEmitter {
-  constructor({ name, grab, screencast = null, fps = 20, idleFps = 2, parallel = 2, castOptions = () => ({}) }) {
+  constructor({ name, grab, fps = 20, idleFps = 2, parallel = 2 }) {
     super();
     this.name = name;
     this.grab = grab;
-    this.cast = screencast;
     this.fps = fps;       // target from the quality preset
     this.fpsCap = fps;    // lowered automatically if OBS starts skipping frames
     this.idleFps = idleFps;
     this.parallel = Math.max(1, Math.min(4, parallel));
-    this.castOptions = castOptions;
     this.subs = new Set();
     this.latest = null; // { buf, type, at, via }
-    this.lastCastAt = 0;
-    this.casting = false;
     this.running = false;
     this.gen = 0; // bumps on each start so old workers exit
     this.sentTimes = [];
     this.mode = 'idle';
     this.grabMs = 0; // rolling average screenshot time, for the log/badge
     this.errorUntil = 0;
-
-    if (this.cast) {
-      this.cast.on('frame', (f) => {
-        if (!this.subs.size) return;
-        this.lastCastAt = Date.now();
-        this._emit({ ...f, via: 'screencast' });
-      });
-      this.cast.on('change', () => this._syncCast());
-    }
   }
 
   subscribe(fn) {
@@ -77,7 +60,6 @@ export class FrameFeed extends EventEmitter {
     if (this.running) return;
     this.running = true;
     const gen = ++this.gen;
-    this._syncCast();
     this._schedule(gen);
   }
 
@@ -85,26 +67,6 @@ export class FrameFeed extends EventEmitter {
     this.running = false;
     this.loggedFirst = false;
     this.mode = 'idle';
-    if (this.casting) {
-      this.casting = false;
-      this.cast.stopScreencast().catch(() => {});
-    }
-  }
-
-  async _syncCast() {
-    if (!this.cast) return;
-    const want = this.running && this.cast.connected;
-    if (want && !this.cast.screencasting) {
-      try {
-        await this.cast.startScreencast(this.castOptions());
-        this.casting = true;
-      } catch (e) {
-        this.casting = false;
-        console.log(`[feed:${this.name}] screencast unavailable: ${e.message}`);
-      }
-    } else if (!this.cast.connected) {
-      this.casting = false;
-    }
   }
 
   // One request every 1/fps seconds, with up to `parallel` waiting on OBS at
@@ -124,13 +86,6 @@ export class FrameFeed extends EventEmitter {
     this.adaptive = this.fps;
     let next = Date.now();
     while (this.running && this.gen === gen) {
-      const castFresh = this.casting && Date.now() - this.lastCastAt < 1500;
-      if (castFresh) {
-        this.mode = 'screencast';
-        await sleep(250);
-        next = Date.now();
-        continue;
-      }
       const idle = unchanged > 3;
       const limit = idle ? 1 : this.parallel;
       if (inflight >= limit) {

@@ -90,7 +90,11 @@ export class BGM extends EventEmitter {
       if (inputName === this.sourceName) { this.sourceOk = false; this.sourceError = 'BGM source was removed in OBS'; this._changed(); }
     });
 
-    setInterval(() => this._refresh(), 1000);
+    // Song changes and endings arrive as OBS events; the poll only moves the
+    // progress bar. So: every second while a dashboard is open, every 5 s otherwise.
+    this.watching = () => true; // set by the server
+    let idle = 0;
+    setInterval(() => { if (this.watching() || ++idle % 5 === 0) this._refresh(); }, 1000);
     setInterval(() => this._autoTick(Date.now()), 200);
   }
 
@@ -370,7 +374,7 @@ export class BGM extends EventEmitter {
       try {
         // Play state every time; which file / on-air-ness change rarely, so
         // read those on commands, on OBS events, and every 3rd poll.
-        const full = fresh || !this.lastFullRead || Date.now() - this.lastFullRead > 2900;
+        const full = fresh || !this.lastFullRead || Date.now() - this.lastFullRead > 15000; // events cover the rest
         const [s, settings, active] = await Promise.all([
           this.obs.call('GetMediaInputStatus', { inputName: this.sourceName }),
           full ? this.obs.call('GetInputSettings', { inputName: this.sourceName }) : null,
@@ -408,7 +412,11 @@ export class BGM extends EventEmitter {
           }
         }
         this._maybeAdvance();
-        this._changed();
+        // Only the position moved → a tiny progress update instead of the whole state
+        const { cursor, ...rest } = this.media;
+        const key = JSON.stringify([rest, this.currentId, this.sourceActive, this.loadedOutside]);
+        if (key === this.lastKey && !fresh) this.emit('pos', { cursor, duration: this.media.duration, state: this.media.state });
+        else { this.lastKey = key; this._changed(); }
       } catch {
         /* transient */
       }

@@ -296,7 +296,6 @@ input[type=search]:focus { border-color: var(--accent); }
 .don-msg .emo { height: 22px; vertical-align: -6px; }
 .don-empty { color: var(--muted); text-align: center; padding: 30px 10px; font-size: 13px; cursor: default; }
 
-.don-view { align-self: flex-start; }
 .alert-mirror { flex: 1; min-height: 0; }
 .alert-mirror .stage-empty { text-align: center; padding: 0 16px; line-height: 1.6; }
 
@@ -327,9 +326,6 @@ input[type=search]:focus { border-color: var(--accent); }
 /* ---------- 치지직 리모콘 ---------- */
 .chat-body.remote { display: flex; flex-direction: column; gap: 8px; }
 .chat-body.remote[hidden] { display: none; }
-.remote-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.remote-bar .btn { padding: 3px 10px; font-size: 12px; }
-#remoteFrame { flex: 1; min-height: 0; width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
 .livebar #remoteBtn { margin-left: auto; }
 .livebar #remoteBtn + #chatToggle { margin-left: 0; }
 

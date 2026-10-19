@@ -53,6 +53,7 @@ function connectEvents() {
   const es = new EventSource('/api/events');
   es.addEventListener('state', (e) => { S = JSON.parse(e.data); S.bgm.tracks = TRACKS; render(); });
   // the setlist comes separately, only when it changes
+  es.addEventListener('bgmpos', (e) => { if (!S) return; Object.assign(S.bgm.media, JSON.parse(e.data)); renderProgress(); });
   es.addEventListener('tracks', (e) => { TRACKS = JSON.parse(e.data); if (S) { S.bgm.tracks = TRACKS; lastTracksKey = ''; renderBgm(); } });
   es.addEventListener('health', (e) => renderHealth(JSON.parse(e.data)));
   es.addEventListener('level', (e) => renderLevel(JSON.parse(e.data)));
@@ -147,6 +148,13 @@ function renderViewerState() {
 }
 
 let lastTracksKey = '';
+function renderProgress() {
+  const m = S.bgm.media;
+  $('progressFill').style.width = m.duration ? `${(100 * m.cursor) / m.duration}%` : '0';
+  $('tCur').textContent = fmt(m.cursor);
+  $('tDur').textContent = fmt(m.duration);
+}
+
 function renderBgm() {
   const b = S.bgm;
   const cur = b.tracks.find((t) => t.id === b.currentId);
@@ -163,9 +171,7 @@ function renderBgm() {
   else if (b.autoPause.active && b.autoPause.heldPaused) warn = '영도 재생 중이라 잠시 멈춤';
   $('bgmWarn').textContent = warn;
   $('bgmWarn').className = 'bgm-warn small' + (warn.startsWith('⚠') ? ' bad' : '');
-  $('progressFill').style.width = b.media.duration ? `${(100 * b.media.cursor) / b.media.duration}%` : '0';
-  $('tCur').textContent = fmt(b.media.cursor);
-  $('tDur').textContent = fmt(b.media.duration);
+  renderProgress();
   if (document.activeElement !== $('vol')) $('vol').value = b.volumeDb;
   $('volVal').textContent = `${b.volumeDb} dB`;
 
@@ -414,7 +420,7 @@ function renderFps({ donation, chat, program }) {
   const b = $('stageBadge');
   if (!donationLoop.on || donation.mode === 'idle') { b.textContent = ''; return; }
   if (donationLoop.error) { b.textContent = '⚠ ' + donationLoop.error; return; }
-  const how = donation.mode === 'screencast' ? '실시간' : donation.mode === 'obs-idle' ? '정지 화면' : 'OBS';
+  const how = donation.mode === 'obs-idle' ? '정지 화면' : 'OBS';
   b.textContent = (donation.fps ? `${how} · ${donation.fps} fps` : how) + (donation.limited ? guardText(donation) : '');
 }
 

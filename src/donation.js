@@ -96,8 +96,10 @@ export class ProgramViewer {
   // Its own 화질 setting (same presets as the 영도), remembered across restarts.
   constructor(obs) {
     this.obs = obs;
-    this.quality = loadState('program', {}).quality || 'balanced';
-    if (!QUALITY[this.quality]) this.quality = 'balanced';
+    // 30 fps by default: it's for checking what's on stream, and every
+    // preview frame is an extra render for OBS (60 fps measurably costs frames)
+    this.quality = loadState('program', {}).quality || 'light';
+    if (!QUALITY[this.quality]) this.quality = 'light';
     this.scene = null;
     this.baseWidth = 1920;
     obs.on('connected', () => this.refreshInfo());
@@ -161,7 +163,6 @@ export class Interact extends EventEmitter {
     this.pending = new Map();
     this.sessions = new Map(); // sessionId -> frame/target id of out-of-process iframes (e.g. the YouTube player)
     this.lastSkipAt = 0;
-    this.screencasting = false;
     if (this.cfg.enabled) {
       this._loop();
       setInterval(() => this._autoSkipTick(), 1000);
@@ -240,7 +241,6 @@ export class Interact extends EventEmitter {
         ended = true;
         reject(new Error("Couldn't open the DevTools connection (is --remote-allow-origins=* set?)"));
         if (this.ws !== ws) return; // an older connection we already replaced
-        this.screencasting = false;
         const was = this.connected;
         this.connected = false;
         this.ws = null;
@@ -262,12 +262,6 @@ export class Interact extends EventEmitter {
       const p = this.pending.get(msg.id);
       this.pending.delete(msg.id);
       msg.error ? p.reject(new Error(msg.error.message)) : p.resolve(msg.result);
-      return;
-    }
-    if (msg.method === 'Page.screencastFrame') {
-      // Ack right away or Chrome stops sending.
-      this.send('Page.screencastFrameAck', { sessionId: msg.params.sessionId }).catch(() => {});
-      this.emit('frame', { buf: Buffer.from(msg.params.data, 'base64'), type: 'image/jpeg', at: Date.now() });
       return;
     }
     if (msg.method === 'Target.attachedToTarget') this.sessions.set(msg.params.sessionId, msg.params.targetInfo?.targetId);
@@ -299,18 +293,6 @@ export class Interact extends EventEmitter {
     this.worlds.set(frameId, executionContextId);
     if (this.worlds.size > 50) this.worlds.delete(this.worlds.keys().next().value);
     return executionContextId;
-  }
-
-  // Ask OBS's browser to push a JPEG every time the page repaints.
-  async startScreencast({ quality = 70, maxWidth = 1280, maxHeight = 720 } = {}) {
-    await this.send('Page.enable').catch(() => {});
-    await this.send('Page.startScreencast', { format: 'jpeg', quality, maxWidth, maxHeight, everyNthFrame: 1 });
-    this.screencasting = true;
-  }
-
-  async stopScreencast() {
-    this.screencasting = false;
-    await this.send('Page.stopScreencast');
   }
 
   // nx, ny are 0..1 positions on the viewer; size is the browser source's page size.
@@ -446,7 +428,6 @@ export class Interact extends EventEmitter {
     if (!this.match && this.cfg.enabled) {
       const old = this.ws;
       this.ws = null;
-      this.screencasting = false;
       this.connected = false;
       old?.close();
       this._connect().catch((e) => this._setError(e.message)).finally(() => this.emit('change'));
@@ -458,7 +439,6 @@ export class Interact extends EventEmitter {
     this._persist();
     const old = this.ws;
     this.ws = null;
-    this.screencasting = false;
     this.connected = false;
     old?.close();
     this._connect().catch((e) => this._setError(e.message)).finally(() => this.emit('change'));
