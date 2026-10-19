@@ -52,6 +52,8 @@ node tools/dev/sse-stats.mjs 10    # what the dashboard receives per second
 ```
 Logs: `.dev/server.log`, `.dev/mock.log`. Playwright + Chromium are available for UI
 checks and screenshots (no WebKit, so Safari/iPad behaviour can't be tested here).
+Use **Python** Playwright (`python3 -I script.py`, `from playwright.sync_api import sync_playwright`);
+there is no Node Playwright package. Put test scripts in the scratchpad, not the repo.
 
 Useful mock switches (`tools/mock-obs.js`): `MOCK_CHAT_PAGE=1` (fake 위플챗 page,
 `=deny` to refuse framing), `MOCK_YD_INTRO=1` (영도 = alert, silence, video),
@@ -96,9 +98,23 @@ frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording sto
   were mostly an OBS left open ~25 h. Ask for the OBS log (`%APPDATA%\obs-studio\logs`,
   end-of-session lagged/skipped-frame lines) and `data\stream-desk.log` (`[guard]` lines)
   when diagnosing performance.
+- `dock.js` slot heights are *shares* of a column (flex-grow). Shares below 1 in total
+  leave a panel only part-filling its column, so `normalize()` keeps each column's shares
+  summing to its slot count and `render()` rescales over the visible slots (채팅 숨기기).
+- 클릭 전달 (`Interact`) finds the 영도 page in OBS by the source's URL, which only comes from
+  `DonationViewer.refreshInfo()`. It re-asks while the URL is missing and `urlHint` explains
+  why (no source / not a Browser source / empty URL). Local-file Browser sources use `file:///`.
 - iPad Safari can't read the MJPEG stream reliably; the client falls back to long-poll
   `/api/frame` automatically.
 - Never ask for or keep `service.json` / Multi-RTMP config — they contain stream keys.
+
+## The owner's machine
+
+When the session is linked to the owner's computer (`mcp__remote-devices__*`), it is the
+**stream PC**. Folder access must be requested per folder (`device_request_folder_access`);
+`%APPDATA%\StreamDesk` can't be granted, so ask the owner for logs. To install a build:
+`SendUserFile` the exe, then `device_commit_files` it into `~/Downloads` (the owner keeps
+`StreamDesk-<ver>.exe` there). There's no device shell, and files can't be deleted.
 
 ## Model split (to save tokens)
 
