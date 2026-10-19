@@ -19,7 +19,7 @@ import { Soundboard } from './soundboard.js';
 import { Updater } from './update.js';
 import * as win from './win.js';
 
-const VERSION = '0.18.2';
+const VERSION = '0.18.3';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();

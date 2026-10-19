@@ -11,8 +11,11 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 ## Working rules (the owner's standing preferences)
 
 - **Talk to the owner in English unless they write Korean.** All UI text and the README are **Korean**.
-- **Commit locally; don't push to GitHub until asked.** When asked, push `main`
-  (see "GitHub" below). Never push tags or try to create releases — they're blocked.
+- **Commit locally; push `main` once a change is finished and tested.** The owner said on 2026-10-19
+  that pushing anytime is fine (they work remotely and update through the in-app updater). A push that
+  bumps the version publishes a release automatically — so only bump when the owner wants a release.
+  Don't push half-done work. (See "GitHub" below.) Never push tags or create releases yourself — blocked;
+  the Actions workflow does it.
 - **Deliverable = one exe.** After a change: bump the version, build, send
   `dist/Arkbird-<ver>.exe` to the owner as a file, and delete the previous exe from `dist/`.
   No README/zip alongside unless asked.

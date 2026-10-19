@@ -38,7 +38,7 @@ button, input { font: inherit; color: inherit; }
   background: var(--panel);
 }
 .brand { white-space: nowrap; font-weight: 700; letter-spacing: .02em; display: flex; align-items: center; gap: 8px; }
-.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.brand-icon { width: 24px; height: 24px; border-radius: 7px; display: block; flex-shrink: 0; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
