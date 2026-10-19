@@ -665,10 +665,9 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
 
 /* ---------- 사운드보드 (under the player, BGM tab) ---------- */
 #musicBgm:not([hidden]) { display: flex; flex-direction: column; }
-.sb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-.sb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
-.sb-tools { display: flex; align-items: center; gap: 6px; font-weight: 400; }
-.sb-tools input[type=range] { width: 90px; }
+.sb-panel { flex: none; display: flex; flex-direction: column; min-height: 0; }
+.sb-panel .panel-head .tools { gap: 6px; flex-wrap: nowrap; }
+.sb-panel .panel-head input[type=range] { width: 90px; }
 .sb-msg { line-height: 1.6; margin-bottom: 6px; }
 .sb-msg .btn { margin-left: 6px; }
 .sb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; max-height: 260px; overflow-y: auto; align-content: start; }
@@ -686,11 +685,42 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
 .sb-btn.hit { animation: sbhit .35s; }
 @keyframes sbhit { 0% { transform: scale(.94); filter: brightness(1.5); } 100% { transform: none; filter: none; } }
 /* when the side column has a set split, the soundboard fills what's left */
-.side.alert-sized #musicBgm { overflow: hidden; }
-.side.alert-sized .sb { flex: 1 1 auto; }
-.side.alert-sized .sb-grid { max-height: none; flex: 1 1 auto; min-height: 50px; }
+.sb-grid { max-height: 220px; }
 @media (pointer: coarse) { .sb-btn { min-height: 52px; font-size: 13.5px; } }
 @media (max-width: 640px), (max-height: 500px) and (orientation: landscape) {
   #musicBgm:not([hidden]) { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .sb-grid { max-height: none; overflow: visible; }
 }
+body.mp-alert .sb-panel { display: none !important; }
+
+/* ---------- free layout (OBS-style docks) ----------
+   Wide landscape screens: panels live in columns. Drag a panel by its
+   header grip to another spot; drag the gaps to resize. Saved per device. */
+.dock-grip { display: none; cursor: grab; color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 2px 2px 0; margin-right: -4px; user-select: none; touch-action: none; }
+.layout.docked .dock-grip { display: inline-block; }
+.layout.docked .dock-grip:hover { color: var(--text); }
+.layout.docked { display: flex !important; flex-direction: row; gap: 0; grid-template-columns: none; grid-template-rows: none; }
+.layout.docked > .side { display: none !important; }
+.layout.docked .resizer { display: none !important; }
+.dock-col { display: flex; flex-direction: column; min-width: 220px; min-height: 0; }
+.dock-col.fill { flex: 1 1 0; }
+.dock-col > .panel { flex: var(--dh, 1) 1 0; min-height: 90px; overflow: hidden; margin: 0; grid-column: auto; grid-row: auto; }
+.dock-split { flex: none; position: relative; z-index: 4; touch-action: none; }
+.dock-split.v { width: 12px; cursor: col-resize; }
+.dock-split.h { height: 12px; cursor: row-resize; }
+.dock-split::after { content: ''; position: absolute; border-radius: 2px; transition: background .15s; }
+.dock-split.v::after { top: 30%; bottom: 30%; left: 5px; width: 2px; }
+.dock-split.h::after { left: 30%; right: 30%; top: 5px; height: 2px; }
+.dock-split:hover::after, .dock-split.dragging::after { background: var(--accent); }
+/* panels that normally size to their content fill their slot instead */
+.layout.docked .music { display: flex; flex-direction: column; }
+.layout.docked #musicBgm:not([hidden]), .layout.docked #musicAuto:not([hidden]) { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.layout.docked #musicList:not([hidden]) { flex: 1; min-height: 0; }
+.layout.docked #musicList .tracks { height: auto; flex: 1; min-height: 60px; }
+.layout.docked .sb-grid { max-height: none; flex: 1 1 auto; min-height: 0; }
+.layout.docked .alert-panel { padding-bottom: 12px; }
+/* dragging */
+body.docking, body.docking * { cursor: grabbing !important; user-select: none; }
+body.docking canvas, body.docking iframe { pointer-events: none; }
+.dock-ghost { position: fixed; z-index: 60; pointer-events: none; padding: 6px 12px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--accent); font-size: 13px; font-weight: 700; box-shadow: 0 8px 30px #0008; }
+.dock-drop { position: fixed; z-index: 55; pointer-events: none; border-radius: 12px; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid var(--accent); transition: all .08s; }
+.dock-col > .panel.dock-dragging { opacity: .4; }

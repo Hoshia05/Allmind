@@ -44,6 +44,7 @@
     <!-- 영도 viewer -->
     <section class="panel viewer-panel">
       <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
         <div class="seg small" id="mainTabs">
           <button data-mt="program" class="on" title="지금 방송에 나가는 화면 (OBS 출력)">방송 화면</button>
           <button data-mt="donation" title="영도 브라우저 소스">영도<span class="live-dot" id="donLiveDot" hidden></span></button>
@@ -90,6 +91,7 @@
       <div class="resizer v" data-r="chat-w" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
       <div class="resizer h" data-r="viewer-chat" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
       <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
         <h2>채팅</h2>
         <span class="state-dot" id="chatDot" title=""></span>
         <div class="tools">
@@ -131,6 +133,7 @@
       <div class="resizer v" data-r="side-w" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
       <section class="panel music">
         <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
           <div class="seg small" id="musicTabs">
             <button data-mt="bgm" class="on">BGM</button>
             <button data-mt="list">셋리스트 <span class="muted" id="count"></span></button>
@@ -164,19 +167,6 @@
             <input type="range" id="vol" min="-60" max="0" step="0.5">
             <span class="small mono" id="volVal"></span>
           </div>
-          </div>
-
-          <div class="sb" id="sb">
-            <div class="sb-head">
-              <span>사운드보드</span>
-              <div class="sb-tools">
-                <input type="range" id="sbVol" min="-60" max="0" step="0.5" title="사운드보드 볼륨">
-                <span class="small mono" id="sbVolVal"></span>
-                <button class="btn ghost icon small-btn" id="sbStop" title="재생 중인 사운드 정지">■</button>
-              </div>
-            </div>
-            <div class="sb-msg small muted" id="sbMsg"></div>
-            <div class="sb-grid" id="sbGrid"></div>
           </div>
         </div>
 
@@ -217,9 +207,24 @@
         </div>
       </section>
 
+      <section class="panel sb-panel" id="sbPanel">
+        <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
+          <h2>사운드보드</h2>
+          <div class="tools">
+            <input type="range" id="sbVol" min="-60" max="0" step="0.5" title="사운드보드 볼륨">
+            <span class="small mono" id="sbVolVal"></span>
+            <button class="btn ghost icon small-btn" id="sbStop" title="재생 중인 사운드 정지">■</button>
+          </div>
+        </div>
+        <div class="sb-msg small muted" id="sbMsg"></div>
+        <div class="sb-grid" id="sbGrid"></div>
+      </section>
+
       <section class="panel alert-panel">
         <div class="resizer h" data-r="alert-h" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
         <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
           <h2>알림 화면</h2>
           <span class="state-dot" id="alertDot"></span>
         </div>
@@ -245,6 +250,7 @@
     <label class="switch"><input type="checkbox" id="optAwake"><span></span>화면 꺼짐 방지</label>
     <label class="switch" id="optVibrateWrap"><input type="checkbox" id="optVibrate"><span></span>버튼 진동</label>
     <button class="btn" id="devRemote">치지직 리모콘 열기</button>
+    <button class="btn" id="dockReset" title="패널 위치와 크기를 처음 상태로">레이아웃 초기화</button>
     <div class="devmenu-row"><span>채팅 글자 크기</span>
       <div class="seg small"><button id="fontDown">가−</button><button id="fontReset" class="mono">100%</button><button id="fontUp">가+</button></div>
     </div>
@@ -259,5 +265,6 @@
 
   <div class="toasts" id="toasts"></div>
   <script src="app.js"></script>
+  <script src="dock.js"></script>
 </body>
 </html>

@@ -851,6 +851,7 @@ $('channelForm').addEventListener('submit', async (ev) => {
 function applyChatVisible(show) {
   $('layout').classList.toggle('no-chat', !show);
   $('chatToggle').textContent = show ? '채팅 숨기기' : '채팅 보이기';
+  window.dockRefresh?.();
   pref.set('chatVisible', show);
   chatMirrorLoop.kick();
 }
