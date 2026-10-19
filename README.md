@@ -118,16 +118,17 @@ Node.js 22 이상이 필요합니다.
 
 ```bash
 npm install
-npm run mock   # 가짜 OBS + 가짜 치지직 (방송 PC 없이 테스트)
-npm start      # 소스로 실행. 설정 화면: http://127.0.0.1:8080/launcher
+sh tools/dev/up.sh     # 가짜 OBS + 가짜 치지직으로 실행 → http://127.0.0.1:8080
+sh tools/dev/down.sh   # 끄기
+sh tools/build-all.sh  # exe 빌드 (처음엔 빌드 도구를 자동으로 받아요)
 ```
 
-exe 빌드와 릴리스 방법은 [docs/BUILDING.md](docs/BUILDING.md)를 보세요.
+자세한 빌드·릴리스 방법은 [docs/BUILDING.md](docs/BUILDING.md), 코드 구조와 작업 규칙은 [CLAUDE.md](CLAUDE.md)에 있어요.
 
 ```
-src/       서버 (OBS·치지직 연결, BGM, 영도/방송 화면 미러링)
-public/    대시보드 웹 화면 (index.html, app.js, style.css)
-tools/     mock OBS, exe/런처 빌드 스크립트
+src/       서버 (OBS·치지직 연결, BGM, 사운드보드, 영도/방송 화면 미러링, 마크)
+public/    대시보드 웹 화면 (index.html, app.js, style.css, dock.js)
+tools/     mock OBS, exe/런처 빌드, 개발용 스크립트(tools/dev)
 build/     아이콘
 ```
 
