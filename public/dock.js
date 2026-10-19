@@ -66,6 +66,14 @@
     const fill = model.cols.find((c) => c.w == null) || model.cols.find((c) => c.slots.some((s) => s.ids.includes('viewer'))) || model.cols[0];
     for (const c of model.cols) if (c !== fill && c.w == null) c.w = 340;
     fill.w = null;
+    // heights are shares of the column: keep them adding up to one per slot, so
+    // a panel left alone in a column (flex-grow < 1 would only fill part of it)
+    // always gets the full height
+    for (const c of model.cols) {
+      let sum = 0;
+      for (const s of c.slots) { if (!(s.h > 0)) s.h = 1; sum += s.h; }
+      for (const s of c.slots) s.h = +(s.h * c.slots.length / sum).toFixed(4);
+    }
   }
 
   // hidden by the app itself (채팅 숨기기), not by the layout
@@ -113,6 +121,9 @@
         last = s;
       }
       if (!vis.length) return;
+      // shares among the slots actually showing (채팅 숨기기 hides one)
+      const k = vis.length / vis.reduce((a, s) => a + s.h, 0);
+      for (const s of vis) { const el = slotEls.get(s); el._k = k; el.style.setProperty('--dh', s.h * k); }
       if (lastCol != null) layoutEl.insertBefore(splitter('v', lastCol, ci), col);
       lastCol = ci;
     });
@@ -232,8 +243,8 @@
       const ah = a0 + dy, bh = b0 - dy;
       A.h = +(sum * ah / (ah + bh)).toFixed(4);
       B.h = +(sum - A.h).toFixed(4);
-      aEl.style.setProperty('--dh', A.h);
-      bEl.style.setProperty('--dh', B.h);
+      aEl.style.setProperty('--dh', A.h * (aEl._k || 1));
+      bEl.style.setProperty('--dh', B.h * (bEl._k || 1));
     });
   }
 
