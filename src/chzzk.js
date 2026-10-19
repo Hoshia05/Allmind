@@ -36,7 +36,7 @@ export class Chzzk extends EventEmitter {
 
     this.chat = []; // ring buffer of normalized messages
     // 후원/구독 for the current broadcast, kept separately (chat scrolls away)
-    // and saved, so a Stream Desk restart mid-stream doesn't lose them.
+    // and saved, so a Arkbird restart mid-stream doesn't lose them.
     const savedDon = loadState('donations', {});
     this.donations = savedDon.list || [];
     this.donationSession = savedDon.session || null;

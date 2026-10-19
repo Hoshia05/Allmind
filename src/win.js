@@ -137,7 +137,7 @@ export function openFolder(dir) {
 }
 
 // A plain Windows message box (used when there's no window to show errors in).
-export async function alertBox(text, title = 'Stream Desk') {
+export async function alertBox(text, title = 'Arkbird') {
   if (!isWin) return console.error(`[alert] ${text}`);
   await powershell(
     `Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show($env:SD_TEXT, $env:SD_TITLE)`,
@@ -167,11 +167,12 @@ if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Consol
 // ---------------- firewall ----------------
 // Without an inbound rule the main PC's connection just times out.
 // Reading rules needs no admin; adding one shows the Windows admin prompt.
-const FW_NAME = 'Stream Desk';
+const FW_NAME = 'Arkbird';
+const FW_NAME_OLD = 'Stream Desk'; // rule name before the rename; still honoured, replaced on next "방화벽 허용"
 export async function firewallStatus(port) {
   if (!isWin) return { ok: true, checked: false };
   const r = await powershell(`
-$r = Get-NetFirewallRule -DisplayName '${FW_NAME}' -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' }
+$r = Get-NetFirewallRule -DisplayName '${FW_NAME}','${FW_NAME_OLD}' -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' }
 $ports = @($r | Get-NetFirewallPortFilter | ForEach-Object { $_.LocalPort })
 [Console]::Out.Write(($ports -join ','))`);
   const ports = r.stdout.trim().split(',').filter(Boolean);
@@ -179,7 +180,7 @@ $ports = @($r | Get-NetFirewallPortFilter | ForEach-Object { $_.LocalPort })
 }
 export async function allowFirewall(port) {
   if (!isWin) return;
-  const inner = `Remove-NetFirewallRule -DisplayName '${FW_NAME}' -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName '${FW_NAME}' -Direction Inbound -Protocol TCP -LocalPort ${Number(port)} -Action Allow -Profile Any | Out-Null`;
+  const inner = `Remove-NetFirewallRule -DisplayName '${FW_NAME}','${FW_NAME_OLD}' -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName '${FW_NAME}' -Direction Inbound -Protocol TCP -LocalPort ${Number(port)} -Action Allow -Profile Any | Out-Null`;
   const enc = Buffer.from(inner, 'utf16le').toString('base64');
   const r = await powershell(
     `$ErrorActionPreference = 'Stop'
@@ -198,15 +199,20 @@ try {
 }
 
 // ---------------- start with Windows ----------------
-function startupShortcut() {
-  return path.join(process.env.APPDATA || os.homedir(), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'Stream Desk.lnk');
+function startupDir() {
+  return path.join(process.env.APPDATA || os.homedir(), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
 }
+function startupShortcut() {
+  return path.join(startupDir(), 'Arkbird.lnk');
+}
+const startupShortcutOld = () => path.join(startupDir(), 'Stream Desk.lnk'); // before the rename
 export function runAtLoginEnabled() {
-  return isWin && fs.existsSync(startupShortcut());
+  return isWin && (fs.existsSync(startupShortcut()) || fs.existsSync(startupShortcutOld()));
 }
 export async function setRunAtLogin(on, exe) {
   if (!isWin) return;
   const lnk = startupShortcut();
+  try { fs.unlinkSync(startupShortcutOld()); } catch {}
   if (!on) {
     try { fs.unlinkSync(lnk); } catch {}
     return;
@@ -222,14 +228,14 @@ $s.Save()
 
 // ---------------- tray icon ----------------
 // A tiny PowerShell process owns the tray icon and prints the menu choice
-// on stdout. It exits on its own if Stream Desk goes away.
+// on stdout. It exits on its own if Arkbird goes away.
 export function startTray({ exe, onOpen, onDashboard, onQuit, labels }) {
   if (!isWin) return null;
   const script = `
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $ni = New-Object System.Windows.Forms.NotifyIcon
 try { $ni.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($env:SD_EXE) } catch { $ni.Icon = [System.Drawing.SystemIcons]::Application }
-$ni.Text = 'Stream Desk'
+$ni.Text = 'Arkbird'
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 function Say($w) { [Console]::Out.WriteLine($w); [Console]::Out.Flush() }
 $a = $menu.Items.Add($env:SD_L_OPEN); $a.add_Click({ Say 'open' })

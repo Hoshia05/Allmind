@@ -1,4 +1,4 @@
-// Builds dist/StreamDesk.exe: one file, no Node.js install needed.
+// Builds dist/Arkbird.exe: one file, no Node.js install needed.
 //  1. bundle src/ into one CommonJS file (esbuild)
 //  2. pack it + the web page into a Node "single executable application" blob
 //  3. copy a Windows node.exe, give it our icon/name, inject the blob
@@ -32,7 +32,7 @@ await esbuild.build({
   platform: 'node',
   format: 'cjs',
   target: 'node22',
-  outfile: path.join(DIST, 'stream-desk.cjs'),
+  outfile: path.join(DIST, 'arkbird.cjs'),
   logLevel: 'warning',
 });
 
@@ -40,7 +40,7 @@ await esbuild.build({
 const assets = { 'config.example.json': path.join(ROOT, 'config.example.json') };
 for (const f of fs.readdirSync(path.join(ROOT, 'public'))) assets[`public/${f}`] = path.join(ROOT, 'public', f);
 const seaConfig = {
-  main: path.join(DIST, 'stream-desk.cjs'),
+  main: path.join(DIST, 'arkbird.cjs'),
   output: path.join(DIST, 'sea-prep.blob'),
   disableExperimentalSEAWarning: true,
   useCodeCache: false, // code cache is platform-specific; we build Windows from elsewhere
@@ -50,7 +50,7 @@ const seaConfig = {
 fs.writeFileSync(path.join(DIST, 'sea-config.json'), JSON.stringify(seaConfig, null, 2));
 execFileSync(process.execPath, ['--experimental-sea-config', path.join(DIST, 'sea-config.json')], { stdio: 'inherit' });
 
-const outExe = path.join(DIST, linux ? 'stream-desk-linux' : 'StreamDesk.exe');
+const outExe = path.join(DIST, linux ? 'arkbird-linux' : 'Arkbird.exe');
 
 // 3a. inject the app into a copy of node
 fs.copyFileSync(nodeBin, outExe);
@@ -78,10 +78,10 @@ if (linux) {
   vi.setProductVersion(a, b, c, 0, 1033);
   for (const lang of vi.getAllLanguagesForStringValues()) {
     vi.setStringValues(lang, {
-      FileDescription: 'Stream Desk',
-      ProductName: 'Stream Desk',
-      InternalName: 'StreamDesk',
-      OriginalFilename: 'StreamDesk.exe',
+      FileDescription: 'Arkbird',
+      ProductName: 'Arkbird',
+      InternalName: 'Arkbird',
+      OriginalFilename: 'Arkbird.exe',
       CompanyName: 'Hoshia',
       LegalCopyright: '',
       FileVersion: pkg.version,
@@ -99,6 +99,6 @@ if (linux) {
   fs.writeFileSync(outExe, buf);
 }
 
-for (const f of ['stream-desk.cjs', 'sea-prep.blob', 'sea-config.json']) fs.rmSync(path.join(DIST, f));
+for (const f of ['arkbird.cjs', 'sea-prep.blob', 'sea-config.json']) fs.rmSync(path.join(DIST, f));
 const mb = (fs.statSync(outExe).size / 1048576).toFixed(1);
 console.log(`built ${path.relative(ROOT, outExe)} (${mb} MB)`);

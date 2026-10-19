@@ -1,6 +1,6 @@
 # exe 빌드와 릴리스
 
-`StreamDesk.exe`는 Node 22 단일 실행 파일(SEA)이고, 배포용 `StreamDesk-x.y.z.exe`는 그것을 xz로 압축해 푸는 작은 런처로 감싼 것입니다(약 20 MB). 빌드는 Linux/macOS/WSL에서 합니다.
+`Arkbird.exe`는 Node 22 단일 실행 파일(SEA)이고, 배포용 `Arkbird-x.y.z.exe`는 그것을 xz로 압축해 푸는 작은 런처로 감싼 것입니다(약 20 MB). 빌드는 Linux/macOS/WSL에서 합니다.
 
 ## 준비 (처음 한 번)
 
@@ -21,12 +21,12 @@ sh tools/setup-build.sh
 sh tools/build-all.sh
 ```
 
-결과는 `dist/StreamDesk-<버전>.exe`이고, 안에 든 앱이 원본과 같은지도 확인합니다. 버전은 `package.json`의 `version`과 `src/server.js`의 `VERSION` 두 곳에 있어요.
+결과는 `dist/Arkbird-<버전>.exe`이고, 안에 든 앱이 원본과 같은지도 확인합니다. 버전은 `package.json`의 `version`과 `src/server.js`의 `VERSION` 두 곳에 있어요.
 
 ## 테스트 (방송 PC 없이)
 
 ```bash
-sh tools/dev/up.sh     # 가짜 OBS + 가짜 치지직 + Stream Desk 실행 → http://127.0.0.1:8080
+sh tools/dev/up.sh     # 가짜 OBS + 가짜 치지직 + Arkbird 실행 → http://127.0.0.1:8080
 sh tools/dev/down.sh   # 끄기
 ```
 
@@ -36,6 +36,6 @@ sh tools/dev/down.sh   # 끄기
 
 1. 버전을 올리고 커밋 → `main` 푸시.
 2. GitHub에서 **Releases → Draft a new release** → 태그 `vX.Y.Z` 입력 → **Create new tag**.
-3. `dist/StreamDesk-X.Y.Z.exe`와 `THIRD_PARTY_NOTICES.txt`를 첨부하고 **Publish release**.
+3. `dist/Arkbird-X.Y.Z.exe`와 `THIRD_PARTY_NOTICES.txt`를 첨부하고 **Publish release**.
 
 exe는 저장소에 커밋하지 않습니다(`dist/`는 `.gitignore`). README의 다운로드 링크는 항상 최신 Release로 연결됩니다.

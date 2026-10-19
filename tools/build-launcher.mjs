@@ -1,4 +1,4 @@
-// Wraps dist/StreamDesk.exe into a small self-unpacking dist/StreamDesk-<ver>.exe
+// Wraps dist/Arkbird.exe into a small self-unpacking dist/Arkbird-<ver>.exe
 // (about a quarter of the size). Needs: zig (pip install ziglang), xz, and a
 // checkout of xz-embedded (public domain) at $XZ_EMBEDDED.
 //   node tools/build-launcher.mjs
@@ -16,7 +16,7 @@ if (!XZE || !fs.existsSync(path.join(XZE, 'linux/lib/xz/xz_dec_lzma2.c'))) {
   console.error('Set XZ_EMBEDDED to a checkout of https://github.com/tukaani-project/xz-embedded');
   process.exit(1);
 }
-const app = path.join(DIST, 'StreamDesk.exe');
+const app = path.join(DIST, 'Arkbird.exe');
 const work = path.join(DIST, 'launcher-build');
 fs.rmSync(work, { recursive: true, force: true });
 fs.mkdirSync(work, { recursive: true });
@@ -51,8 +51,8 @@ const [a, b, c] = pkg.version.split('.').map(Number);
 vi.setFileVersion(a, b, c, 0, 1033);
 vi.setProductVersion(a, b, c, 0, 1033);
 vi.setStringValues({ lang: 1033, codepage: 1200 }, {
-  FileDescription: 'Stream Desk', ProductName: 'Stream Desk', InternalName: 'StreamDesk',
-  OriginalFilename: `StreamDesk-${pkg.version}.exe`, CompanyName: 'Hoshia', FileVersion: pkg.version, ProductVersion: pkg.version,
+  FileDescription: 'Arkbird', ProductName: 'Arkbird', InternalName: 'Arkbird',
+  OriginalFilename: `Arkbird-${pkg.version}.exe`, CompanyName: 'Hoshia', FileVersion: pkg.version, ProductVersion: pkg.version,
 });
 vi.outputToResourceEntries(res.entries);
 res.outputResource(pe);
@@ -63,7 +63,7 @@ const payload = fs.readFileSync(xz);
 const trailer = Buffer.alloc(16);
 trailer.writeBigUInt64LE(BigInt(payload.length), 0);
 trailer.write('SDPAYLD1', 8, 'latin1');
-const out = path.join(DIST, `StreamDesk-${pkg.version}.exe`);
+const out = path.join(DIST, `Arkbird-${pkg.version}.exe`);
 fs.writeFileSync(out, Buffer.concat([head, payload, trailer]));
 fs.rmSync(work, { recursive: true, force: true });
 console.log(`built ${path.relative(ROOT, out)} (${(fs.statSync(out).size / 1048576).toFixed(1)} MB; launcher ${(head.length / 1024).toFixed(0)} KB)`);

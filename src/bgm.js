@@ -398,7 +398,7 @@ export class BGM extends EventEmitter {
         if (file) {
           const base = normPath(this.cfg.folder).replace(/\/$/, '') + '/';
           const rel = file.startsWith(base) ? file.slice(base.length) : null;
-          // an art-free copy from before a Stream Desk restart: it's the saved current song
+          // an art-free copy from before a Arkbird restart: it's the saved current song
           const cached = file.startsWith(normPath(this.coverless.dir) + '/') && this.currentId;
           if (cached && !this.idOfFile.has(file)) this.idOfFile.set(file, this.currentId);
           const id = this.idOfFile.get(file) || (rel && this.order.find((t) => normPath(t) === rel));

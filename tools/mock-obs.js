@@ -1,4 +1,4 @@
-// Fake OBS for testing Stream Desk without the stream PC.
+// Fake OBS for testing Arkbird without the stream PC.
 //  - obs-websocket v5 on ws://127.0.0.1:4455 (password via MOCK_OBS_PASSWORD)
 //  - Chrome DevTools endpoint on http://127.0.0.1:9222 pretending to be the 영도 browser source
 // Simulates: a BGM media source that "plays" (20s per track), a 영도 that

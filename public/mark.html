@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="⭐ 마크">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="icon" href="/icon-192.png">
-<title>⭐ 마크 · Stream Desk</title>
+<title>⭐ 마크 · Arkbird</title>
 <style>
   :root { --bg:#0f0f14; --panel:#17171f; --line:#2a2a37; --text:#ececf3; --muted:#8b8b9c; --accent:#ff5c8a; --star:#ffc93c; --ok:#3ddc97; --bad:#ff5f5f; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -95,7 +95,7 @@ async function load() {
   try {
     const r = await fetch('/api/marks', { cache: 'no-store' });
     S = await r.json(); gotAt = Date.now(); render();
-  } catch { $('stateText').textContent = 'Stream Desk 연결 끊김'; }
+  } catch { $('stateText').textContent = 'Arkbird 연결 끊김'; }
 }
 async function save(i, label) {
   try { await fetch('/api/mark/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i, label }) }); } catch {}
@@ -110,7 +110,7 @@ $('mark').onclick = async () => {
     const r = await fetch('/api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const j = await r.json();
     $('msg').textContent = j.ok ? `⭐ ${fmt(j.t)} 에 마크했어요` : j.reason === 'not recording' ? '녹화 중이 아니에요' : `마크 실패: ${j.reason}`;
-  } catch { $('msg').textContent = 'Stream Desk에 연결할 수 없어요'; }
+  } catch { $('msg').textContent = 'Arkbird에 연결할 수 없어요'; }
   busy = false; load();
 };
 // light: one small request every 2 s, only while the page is visible

@@ -103,7 +103,7 @@ export class Markers extends EventEmitter {
     if (!r.dir) {
       try { r.dir = (await this.obs.call('GetRecordDirectory')).recordDirectory || null; } catch {}
     }
-    if (recover) this._recover(r); // Stream Desk restarted mid-recording: pick up its file
+    if (recover) this._recover(r); // Arkbird restarted mid-recording: pick up its file
     if (!r.tmpFile) r.tmpFile = `vodscout-markers-${stamp(r.startedAt)}.json`;
     this.emit('change');
   }
@@ -233,7 +233,7 @@ export class Markers extends EventEmitter {
     if (!r.marks.length) return;
     const target = r.done ? r.file : r.savedAt || (r.dir ? path.join(r.dir, r.tmpFile) : null);
     if (target && this._write(r, target)) { r.savedAt = target; return; }
-    // recording folder unknown or not writable: keep a copy in Stream Desk's data folder
+    // recording folder unknown or not writable: keep a copy in Arkbird's data folder
     if (this.fallbackDir) {
       const fb = path.join(this.fallbackDir, r.tmpFile || `vodscout-markers-${stamp(r.startedAt)}.json`);
       if (this._write(r, fb)) { r.savedAt = fb; if (r.done) r.file = fb; }

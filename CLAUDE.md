@@ -1,8 +1,10 @@
-# Stream Desk — notes for Claude
+# Arkbird — notes for Claude
 
-Stream Desk is a one-exe dashboard for a two-PC Chzzk (치지직) VTuber stream (호시아).
+(Renamed from "Stream Desk" in 0.17.0. The code still reads the old `%APPDATA%\StreamDesk` settings, the old "Stream Desk" firewall rule and startup shortcut. The GitHub repo is still named CentralStreamingHQ.)
+
+Arkbird is a one-exe dashboard for a two-PC Chzzk (치지직) VTuber stream (호시아).
 It runs on the **stream PC** next to OBS (Ryzen 3600X + RTX 2070, meant to run only
-OBS + Stream Desk) and is used from browsers on the main PC, an iPad and a phone.
+OBS + Arkbird) and is used from browsers on the main PC, an iPad and a phone.
 It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevTools
 (OBS is started with `--remote-debugging-port=9222`), and to Chzzk's web endpoints.
 
@@ -12,7 +14,7 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 - **Commit locally; don't push to GitHub until asked.** When asked, push `main`
   (see "GitHub" below). Never push tags or try to create releases — they're blocked.
 - **Deliverable = one exe.** After a change: bump the version, build, send
-  `dist/StreamDesk-<ver>.exe` to the owner as a file, and delete the previous exe from `dist/`.
+  `dist/Arkbird-<ver>.exe` to the owner as a file, and delete the previous exe from `dist/`.
   No README/zip alongside unless asked.
 - **Lean matters.** Every OBS request and every preview frame costs the stream PC.
   Prefer OBS events over polling; poll only while a dashboard is open (`clients.size`).
@@ -25,8 +27,8 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 - Version lives in **two places**: `package.json` `"version"` and `VERSION` in `src/server.js`.
 - First time in a session: `sh tools/setup-build.sh` (fetches Windows node.exe of the same
   version via npm, xz-embedded via git, zig via pip → `.build-tools/`, git-ignored).
-- Build + verify: `sh tools/build-all.sh` → `dist/StreamDesk-<ver>.exe` (~20 MB;
-  `dist/StreamDesk.exe` is the 82 MB unpacked app, don't send that).
+- Build + verify: `sh tools/build-all.sh` → `dist/Arkbird-<ver>.exe` (~20 MB;
+  `dist/Arkbird.exe` is the 82 MB unpacked app, don't send that).
 - How it's built: `tools/build-exe.mjs` bundles `src/` with esbuild into a Node SEA with
   every file in `public/` as an asset; `tools/build-launcher.mjs` wraps it in a tiny C
   launcher (`tools/launcher/launcher.c`) that unpacks an xz payload. New files in
@@ -77,7 +79,7 @@ frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording sto
 - `src/markers.js` — ⭐ marks for VOD Scout (record chapters + `<video>.markers.json`).
 - `src/remote.js` — 치지직 리모컨 dock in OBS via DevTools (■ 정지 / 넘기기 / 알림 정지).
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
-- `src/config.js` — config/state paths (`%APPDATA%\StreamDesk` in the exe), defaults from
+- `src/config.js` — config/state paths (`%APPDATA%\Arkbird` in the exe), defaults from
   `config.example.json`, import from older versions. `src/win.js` — Windows bits (tray, firewall, pickers).
 - `public/index.html`, `app.js`, `style.css` — dashboard. `dock.js` — free panel layout
   (columns, slots, tabs; saved per browser in `localStorage['sd.dock']`; only on wide
@@ -96,7 +98,7 @@ frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording sto
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.
 - OBS's own state isn't reset between streams unless it restarts; the owner's frame drops
   were mostly an OBS left open ~25 h. Ask for the OBS log (`%APPDATA%\obs-studio\logs`,
-  end-of-session lagged/skipped-frame lines) and `data\stream-desk.log` (`[guard]` lines)
+  end-of-session lagged/skipped-frame lines) and `data\arkbird.log` (`[guard]` lines)
   when diagnosing performance.
 - `dock.js` slot heights are *shares* of a column (flex-grow). Shares below 1 in total
   leave a panel only part-filling its column, so `normalize()` keeps each column's shares
@@ -112,9 +114,9 @@ frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording sto
 
 When the session is linked to the owner's computer (`mcp__remote-devices__*`), it is the
 **stream PC**. Folder access must be requested per folder (`device_request_folder_access`);
-`%APPDATA%\StreamDesk` can't be granted, so ask the owner for logs. To install a build:
+`%APPDATA%\Arkbird` can't be granted, so ask the owner for logs. To install a build:
 `SendUserFile` the exe, then `device_commit_files` it into `~/Downloads` (the owner keeps
-`StreamDesk-<ver>.exe` there). There's no device shell, and files can't be deleted.
+`Arkbird-<ver>.exe` there). There's no device shell, and files can't be deleted.
 
 ## Model split (to save tokens)
 
