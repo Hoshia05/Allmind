@@ -1,6 +1,6 @@
 # Arkbird — notes for Claude
 
-(Renamed from "Stream Desk" in 0.17.0. The code still reads the old `%APPDATA%\StreamDesk` settings, the old "Stream Desk" firewall rule and startup shortcut. The GitHub repo is still named CentralStreamingHQ.)
+(Renamed from "Stream Desk" in 0.17.0. The code still reads the old `%APPDATA%\StreamDesk` settings, the old "Stream Desk" firewall rule and startup shortcut. The GitHub repo was renamed from CentralStreamingHQ to ArkBird (the old URL redirects).)
 
 Arkbird is a one-exe dashboard for a two-PC Chzzk (치지직) VTuber stream (호시아).
 It runs on the **stream PC** next to OBS (Ryzen 3600X + RTX 2070, meant to run only
@@ -38,7 +38,7 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 
 ## GitHub
 
-Repo: `Hoshia05/CentralStreamingHQ` (private, MIT). The session can push `main` but
+Repo: `Hoshia05/ArkBird` (private, MIT). The session can push `main` but
 **cannot** create repos, push tags, or touch releases (403). If the repo isn't attached,
 attach it with the add_repo tool (access: push), clone it, then push **from that clone**:
 `git -C <clone> pull --ff-only <this checkout> main && git -C <clone> push origin main`.
