@@ -20,7 +20,8 @@
     "bgm": "BGM Player",
     "chat": "위플챗",
     "alert": "",
-    "mic": ""
+    "mic": "",
+    "soundboard": "Soundboard"
   },
 
   "chzzk": {
@@ -36,6 +37,11 @@
     "folder": "D:\\Music\\BGM",
     "extensions": [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".opus", ".aac"],
     "defaultVolumeDb": -20
+  },
+
+  "soundboard": {
+    "folder": "",
+    "volumeDb": -10
   },
 
   "autoPause": {

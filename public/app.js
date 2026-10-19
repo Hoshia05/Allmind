@@ -99,6 +99,7 @@ function render() {
   renderChatState();
   renderStudio();
   renderMarks();
+  renderSoundboard();
   window.syncChatPage?.();
   if (typeof followDonation === 'function') followDonation();
   window.syncAlertMirror?.();
@@ -181,6 +182,8 @@ function renderBgm() {
   if (document.activeElement !== $('introHold')) $('introHold').value = intro;
   $('introVal').textContent = `${(intro / 1000).toFixed(0)}s`;
   document.querySelector('.auto').classList.toggle('active', ap.active);
+  $('apDot').className = 'tab-dot' + (ap.enabled ? (ap.active ? ' active' : ' on') : '');
+  $('apDot').title = !ap.enabled ? '꺼짐' : ap.active ? '영도 재생 중' : '켜짐';
   $('apState').textContent = !ap.enabled ? '' : ap.active ? (ap.mode === 'duck' ? '영도 재생 중 · 볼륨 낮춤' : '영도 재생 중 · 일시정지') : '대기 중';
 
   $('count').textContent = `(${b.tracks.length})`;
@@ -709,6 +712,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'n' || ev.key === 'N') api('bgm/next');
   if (ev.key === 's' || ev.key === 'S') $('skipBtn').click();
   if (ev.key === 'f' || ev.key === 'F') $('fullBtn').click();
+  if (/^[0-9]$/.test(ev.key) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat) { const s = S?.soundboard?.sounds?.[ev.key === '0' ? 9 : Number(ev.key) - 1]; if (s) playSound(s.id); }
   if ((ev.key === 'm' || ev.key === 'M') && !ev.repeat && !ev.ctrlKey && !ev.metaKey && !ev.altKey) markNow();
 });
 
@@ -968,6 +972,7 @@ function setMusicTab(t) {
   for (const b of $('musicTabs').children) b.classList.toggle('on', b.dataset.mt === t);
   $('musicBgm').hidden = t !== 'bgm';
   $('musicList').hidden = t !== 'list';
+  $('musicAuto').hidden = t !== 'auto';
   document.querySelector('.music').classList.toggle('show-list', t === 'list');
 }
 $('musicTabs').addEventListener('click', (ev) => {
@@ -1020,7 +1025,7 @@ setMusicTab(pref.get('musicTab', 'bgm'));
     } else if (kind === 'alert-h') {
       const side = document.querySelector('.side').getBoundingClientRect();
       // the music panel needs at least its controls (BGM tab) or a few songs (셋리스트)
-      const musicMin = document.querySelector('#musicBgm').hidden ? 200 : document.querySelector('#musicBgm').scrollHeight + 60;
+      const musicMin = document.querySelector('#musicBgm').hidden ? 200 : $('bgmPlayer').scrollHeight + 150;
       sizes['alert-h'] = Math.round(clamp(side.bottom - ev.clientY, 120, side.height - Math.min(musicMin, side.height - 132) - 12));
     }
     apply();
@@ -1364,3 +1369,63 @@ document.addEventListener('click', (ev) => {
 function guardText(f) {
   return f.why === 'encode' ? ' · OBS 부하 보호 중 (인코딩 지연)' : f.why === 'render' ? ' · OBS 부하 보호 중 (렌더링 지연)' : ' · OBS 부하 보호 중';
 }
+
+
+// ---------------- 사운드보드 ----------------
+// One button per file in the soundboard folder. A new sound replaces the one
+// playing; pressing the playing one stops it. Keys 1–9, 0 play the first ten.
+let sbKey = '';
+function renderSoundboard() {
+  const sb = S.soundboard;
+  if (!sb) return;
+  const msg = $('sbMsg');
+  let text = '', html = '';
+  if (sb.folderError === 'none') text = '방송 PC의 Stream Desk 설정에서 사운드보드 폴더를 지정하면 여기에 버튼이 생겨요';
+  else if (sb.folderError) text = sb.folderError;
+  else if (!S.obs?.connected) text = 'OBS 연결을 기다리는 중…';
+  else if (!sb.sourceOk) html = `OBS에 <b>${esc(sb.sourceName)}</b> 소스가 없어요 <button class="btn small-btn" id="sbCreate">만들기</button><br><span class="muted">BGM 소스가 있는 모든 장면(또는 그룹)에 추가돼요</span>`;
+  else if (!sb.sounds.length) text = '폴더에 사운드 파일이 없어요';
+  if (html) { if (msg.dataset.h !== html) { msg.innerHTML = html; msg.dataset.h = html; } } else { msg.textContent = text; msg.dataset.h = ''; }
+  msg.hidden = !text && !html;
+  if (document.activeElement !== $('sbVol')) $('sbVol').value = sb.volumeDb;
+  $('sbVolVal').textContent = `${sb.volumeDb} dB`;
+  $('sbStop').disabled = !sb.playing;
+  const grid = $('sbGrid');
+  const key = sb.sounds.map((s) => s.id).join('|') + '#' + sb.sourceOk;
+  if (key !== sbKey) {
+    sbKey = key;
+    grid.textContent = '';
+    sb.sounds.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.className = 'sb-btn';
+      b.dataset.id = s.id;
+      b.title = s.id;
+      b.disabled = !sb.sourceOk;
+      if (i < 10) { const k = document.createElement('span'); k.className = 'sb-key'; k.textContent = i === 9 ? '0' : String(i + 1); b.append(k); }
+      const t = document.createElement('span'); t.className = 'sb-title'; t.textContent = s.title;
+      b.append(t);
+      grid.append(b);
+    });
+  }
+  for (const b of grid.children) b.classList.toggle('playing', b.dataset.id === sb.playing);
+}
+function playSound(id) {
+  buzz();
+  const b = [...$('sbGrid').children].find((x) => x.dataset.id === id);
+  if (b) { b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit'); }
+  api('sb/play', { id });
+}
+$('sbGrid').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.sb-btn');
+  if (b) playSound(b.dataset.id);
+});
+$('sbMsg').addEventListener('click', async (ev) => {
+  if (ev.target.id !== 'sbCreate') return;
+  ev.target.disabled = true;
+  const r = await api('sb/create-source');
+  if (r.ok) toast(`사운드보드 소스를 만들었어요 (${(r.scenes || []).join(', ')})`);
+  ev.target.disabled = false;
+});
+$('sbStop').addEventListener('click', () => api('sb/stop'));
+$('sbVol').addEventListener('input', () => { $('sbVolVal').textContent = `${$('sbVol').value} dB`; });
+$('sbVol').addEventListener('change', () => api('sb/volume', { db: Number($('sbVol').value) }));

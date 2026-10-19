@@ -656,3 +656,41 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
 .marklist input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font: inherit; font-size: 13px; padding: 6px 8px; }
 .markmenu a { color: var(--accent); }
 @media (pointer: coarse) { .mark-btn { padding: 8px 14px; font-size: 14px; } .mark-more { padding: 0 12px; } }
+
+/* ---------- 자동정지 tab dot ---------- */
+.tab-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--line); margin-left: 3px; vertical-align: 1px; }
+.tab-dot.on { background: var(--ok); }
+.tab-dot.active { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+#musicAuto .auto { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* ---------- 사운드보드 (under the player, BGM tab) ---------- */
+#musicBgm:not([hidden]) { display: flex; flex-direction: column; }
+.sb { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.sb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.sb-tools { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+.sb-tools input[type=range] { width: 90px; }
+.sb-msg { line-height: 1.6; margin-bottom: 6px; }
+.sb-msg .btn { margin-left: 6px; }
+.sb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; max-height: 260px; overflow-y: auto; align-content: start; }
+.sb-btn {
+  position: relative; min-height: 44px; padding: 6px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2);
+  color: var(--text); font: inherit; font-size: 12.5px; line-height: 1.25; cursor: pointer; text-align: center;
+  display: flex; align-items: center; justify-content: center; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.sb-btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.sb-btn:disabled { opacity: .45; cursor: default; }
+.sb-title { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-all; }
+.sb-key { position: absolute; top: 3px; left: 5px; font-size: 9.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sb-btn.playing { background: color-mix(in srgb, var(--accent) 22%, var(--panel-2)); border-color: var(--accent); }
+.sb-btn.playing::after { content: ''; position: absolute; right: 6px; top: 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.sb-btn.hit { animation: sbhit .35s; }
+@keyframes sbhit { 0% { transform: scale(.94); filter: brightness(1.5); } 100% { transform: none; filter: none; } }
+/* when the side column has a set split, the soundboard fills what's left */
+.side.alert-sized #musicBgm { overflow: hidden; }
+.side.alert-sized .sb { flex: 1 1 auto; }
+.side.alert-sized .sb-grid { max-height: none; flex: 1 1 auto; min-height: 50px; }
+@media (pointer: coarse) { .sb-btn { min-height: 52px; font-size: 13.5px; } }
+@media (max-width: 640px), (max-height: 500px) and (orientation: landscape) {
+  #musicBgm:not([hidden]) { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .sb-grid { max-height: none; overflow: visible; }
+}

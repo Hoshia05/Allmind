@@ -115,6 +115,7 @@ function fillForm(r) {
   }
   form.elements.runAtLogin.checked = r.runAtLogin;
   showCount(r.musicCount);
+  showSbCount(r.soundCount);
   if (r.firstRun || !s.obsPassword && !r.obs.connected) {
     $('settingsBox').open = true;
     $('firstRunHint').textContent = r.firstRun ? '처음 설정이 필요해요' : '';
@@ -127,6 +128,27 @@ function showCount(n) {
   if (n === null || n === undefined) { el.textContent = form.elements.folder.value ? '폴더를 찾을 수 없어요' : ''; el.className = 'hint bad'; }
   else { el.textContent = `음악 파일 ${n}개`; el.className = n ? 'hint good' : 'hint bad'; }
 }
+
+function showSbCount(n) {
+  const el = $('sbFolderCount');
+  if (!form.elements.sbFolder.value) { el.textContent = ''; return; }
+  if (n === null || n === undefined) { el.textContent = '폴더를 찾을 수 없어요'; el.className = 'hint bad'; }
+  else { el.textContent = `사운드 파일 ${n}개`; el.className = n ? 'hint good' : 'hint bad'; }
+}
+let sbTimer;
+form.elements.sbFolder.addEventListener('input', () => {
+  clearTimeout(sbTimer);
+  sbTimer = setTimeout(async () => showSbCount((await call('/folder-count', { path: form.elements.sbFolder.value })).count), 400);
+});
+$('pickSbFolder').addEventListener('click', async () => {
+  $('pickSbFolder').disabled = true;
+  const r = await call('/pick-folder', { start: form.elements.sbFolder.value || form.elements.folder.value });
+  $('pickSbFolder').disabled = false;
+  if (r.path) {
+    form.elements.sbFolder.value = r.path;
+    showSbCount((await call('/folder-count', { path: r.path })).count);
+  }
+});
 
 let countTimer;
 form.elements.folder.addEventListener('input', () => {

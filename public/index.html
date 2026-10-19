@@ -134,6 +134,7 @@
           <div class="seg small" id="musicTabs">
             <button data-mt="bgm" class="on">BGM</button>
             <button data-mt="list">셋리스트 <span class="muted" id="count"></span></button>
+            <button data-mt="auto" title="영도가 나오면 BGM 자동 일시정지">자동정지 <i class="tab-dot" id="apDot"></i></button>
           </div>
           <div class="tools">
             <span class="muted small" id="bgmSource"></span>
@@ -147,6 +148,7 @@
         </div>
 
         <div id="musicBgm">
+          <div id="bgmPlayer">
           <div class="now-title" id="nowTitle">—</div>
           <div class="now-sub muted small" id="nowSub"></div>
           <div class="bgm-warn small" id="bgmWarn"></div>
@@ -162,7 +164,23 @@
             <input type="range" id="vol" min="-60" max="0" step="0.5">
             <span class="small mono" id="volVal"></span>
           </div>
+          </div>
 
+          <div class="sb" id="sb">
+            <div class="sb-head">
+              <span>사운드보드</span>
+              <div class="sb-tools">
+                <input type="range" id="sbVol" min="-60" max="0" step="0.5" title="사운드보드 볼륨">
+                <span class="small mono" id="sbVolVal"></span>
+                <button class="btn ghost icon small-btn" id="sbStop" title="재생 중인 사운드 정지">■</button>
+              </div>
+            </div>
+            <div class="sb-msg small muted" id="sbMsg"></div>
+            <div class="sb-grid" id="sbGrid"></div>
+          </div>
+        </div>
+
+        <div id="musicAuto" hidden>
           <div class="auto">
             <div class="auto-head">
               <span>영도 자동 일시정지</span>

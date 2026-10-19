@@ -15,9 +15,10 @@ import { FrameFeed } from './feed.js';
 import { ChzzkRemote } from './remote.js';
 import { Studio } from './studio.js';
 import { Markers } from './markers.js';
+import { Soundboard } from './soundboard.js';
 import * as win from './win.js';
 
-const VERSION = '0.14.3';
+const VERSION = '0.15.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -144,6 +145,7 @@ async function main() {
   const program = new ProgramViewer(obs);
   const studio = new Studio(obs, { mic: config.sources.mic });
   const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers') });
+  const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
   viewer.onUrl = (url) => interact.setSourceUrl(url);
   // "a 영도 is playing": its audio was loud in the last 20 s, or the 리모컨 says so
@@ -214,6 +216,7 @@ async function main() {
     bgm: bgmState(),
     studio: studio.status(),
     marks: markers.status(),
+    soundboard: soundboard.status(),
     donation: viewer.status(),
     interact: interact.status(),
     chatSource: { ...chatViewer.status(), pageUrl: chatPage.url, frameable: chatPage.frameable },
@@ -253,6 +256,7 @@ async function main() {
   remote.on('change', stateChanged);
   studio.on('change', stateChanged);
   markers.on('change', stateChanged);
+  soundboard.on('change', stateChanged);
   markers.on('saved', ({ count, file }) => sendAll('toast', { text: `⭐ 마크 ${count}개 저장됨${file ? ` — 영상과 함께 ${file} 도 올려 주세요` : ''}`, long: true }));
   studio.on('health', (h) => clients.size && sendAll('health', h));
   studio.wanted = () => clients.size > 0 || Object.values(feeds).some((f) => f.running);
@@ -435,6 +439,11 @@ async function main() {
     'POST /api/remote/stop': () => remote.stopVideo(),
     'POST /api/scene': (b) => studio.setScene(String(b.name || '')),
     'POST /api/mark/label': (b) => markers.setLabel(Number(b.index), b.label),
+    'POST /api/sb/play': (b) => soundboard.play(String(b.id || '')),
+    'POST /api/sb/stop': () => soundboard.stop(),
+    'POST /api/sb/volume': (b) => soundboard.setVolume(b.db),
+    'POST /api/sb/rescan': () => soundboard.rescan(),
+    'POST /api/sb/create-source': async () => ({ scenes: await soundboard.createSource() }),
     'POST /api/mic/toggle': async () => ({ muted: await studio.toggleMic() }),
     'POST /api/chzzk/donation-read': (b) => chzzk.markRead(b.key, b.read !== false),
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
@@ -465,6 +474,7 @@ async function main() {
         firewall: await firewall(),
         inputs,
         musicCount: countMusic(config.bgm.folder),
+        soundCount: config.soundboard?.folder ? countMusic(config.soundboard.folder) : undefined,
         settings: {
           obsPassword: config.obs.password,
           obsPort: Number(/:(\d+)/.exec(config.obs.url.replace(/^ws:\/\//, ''))?.[1] || 4455),
@@ -476,6 +486,7 @@ async function main() {
           mic: config.sources.mic || '',
           bgmSource: config.sources.bgm,
           folder: config.bgm.folder,
+          sbFolder: config.soundboard?.folder || '',
           channel: chzzk.channelId || '',
           port: PORT,
         },
@@ -491,6 +502,7 @@ async function main() {
         obs: { password: s.obsPassword ?? '', url: `ws://127.0.0.1:${Number(s.obsPort) || 4455}`, path: s.obsPath || '' },
         sources: { donation: s.donation, chat: s.chat, alert: s.alert || '', mic: s.mic || '', bgm: s.bgmSource },
         bgm: { folder: s.folder || '' },
+        soundboard: { folder: s.sbFolder || '' },
         chzzk: { channelId: parseChannelId(s.channel) || '' },
         server: { port: Number(s.port) || 8080 },
       });

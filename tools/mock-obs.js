@@ -109,6 +109,7 @@ function need(name) {
 // recording (for the ⭐ marker feature). MOCK_REC_DIR = where "videos" go;
 // MOCK_NO_CHAPTERS = behave like an OBS without Hybrid MP4 chapter support.
 const REC_DIR = process.env.MOCK_REC_DIR || '/tmp/mock-rec';
+const sceneAdds = {};
 const rec = { active: false, paused: false, acc: 0, since: 0, path: '', chapters: [] };
 const recMs = () => rec.acc + (rec.active && !rec.paused ? Date.now() - rec.since : 0);
 const recState = (s, extra = {}) => broadcast('RecordStateChanged', { outputActive: rec.active, outputState: 'OBS_WEBSOCKET_OUTPUT_' + s, outputPath: null, ...extra }, 1 << 6);
@@ -206,7 +207,23 @@ function handle(type, d) {
       broadcast('InputSettingsChanged', { inputName: d.inputName, inputSettings: i.settings }, 1 << 3);
       return;
     }
+    case 'GetSceneItemList': {
+      // Main / Just Chatting hold the BGM directly; BRB has it inside the "Music" group
+      const has = inputs.has(BGM);
+      if (d.sceneName === 'BRB') return { sceneItems: [{ sourceName: 'Music', isGroup: true, sceneItemId: 1 }] };
+      return { sceneItems: [...(has && ['Main', 'Just Chatting'].includes(d.sceneName) ? [{ sourceName: BGM, isGroup: false, sceneItemId: 2 }] : []), ...(sceneAdds[d.sceneName] || [])] };
+    }
+    case 'GetGroupSceneItemList': return { sceneItems: d.sceneName === 'Music' ? [{ sourceName: BGM, isGroup: false, sceneItemId: 3 }] : [] };
+    case 'CreateSceneItem': {
+      need(d.sourceName);
+      (sceneAdds[d.sceneName] ||= []).push({ sourceName: d.sourceName, isGroup: false, sceneItemId: 9 });
+      log('added', d.sourceName, 'to scene', d.sceneName);
+      return { sceneItemId: 9 };
+    }
+    case 'GetInputAudioTracks': need(d.inputName); return { inputAudioTracks: need(d.inputName).tracks || { 1: true, 2: false, 3: true, 4: false, 5: false, 6: false } };
+    case 'SetInputAudioTracks': need(d.inputName).tracks = d.inputAudioTracks; log('tracks', d.inputName, JSON.stringify(d.inputAudioTracks)); return;
     case 'CreateInput': {
+      if (d.sceneName === 'Music' && !process.env.MOCK_GROUP_OK) throw new Error('Scene is a group');
       inputs.set(d.inputName, { kind: d.inputKind, settings: d.inputSettings || {}, volumeDb: 0 });
       log('created input', d.inputName, 'in', d.sceneName);
       return { inputUuid: crypto.randomUUID(), sceneItemId: 7 };
@@ -220,6 +237,14 @@ function handle(type, d) {
     case 'SetMediaInputCursor': media.cursor = d.mediaCursor; return;
     case 'TriggerMediaInputAction': {
       need(d.inputName);
+      if (d.inputName !== BGM) { // e.g. the soundboard: plays for MOCK_SB_MS, then "ended"
+        const a = d.mediaAction.replace('OBS_WEBSOCKET_MEDIA_INPUT_ACTION_', '');
+        const i = need(d.inputName);
+        clearTimeout(i.endTimer);
+        log('media action', d.inputName, a, (i.settings.local_file || '').split(/[\\/]/).pop());
+        if (a === 'RESTART' || a === 'PLAY') i.endTimer = setTimeout(() => broadcast('MediaInputPlaybackEnded', { inputName: d.inputName }, 1 << 8), Number(process.env.MOCK_SB_MS || 1500));
+        return;
+      }
       const a = d.mediaAction.replace('OBS_WEBSOCKET_MEDIA_INPUT_ACTION_', '');
       if (a === 'PLAY' && media.file && !['OBS_MEDIA_STATE_OPENING', 'OBS_MEDIA_STATE_ENDED'].includes(media.state)) media.state = 'OBS_MEDIA_STATE_PLAYING';
       if (a === 'RESTART' && media.file) { media.cursor = 0; media.state = 'OBS_MEDIA_STATE_OPENING'; setTimeout(() => { if (media.state === 'OBS_MEDIA_STATE_OPENING') media.state = 'OBS_MEDIA_STATE_PLAYING'; }, 250); }
