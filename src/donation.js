@@ -45,11 +45,12 @@ export class DonationViewer {
     }
     try {
       const { inputSettings, inputKind } = await this.obs.call('GetInputSettings', { inputName: this.sourceName });
-      const { defaultInputSettings } = await this.obs.call('GetInputDefaultSettings', { inputKind });
+      const { defaultInputSettings } = await this.obs.call('GetInputDefaultSettings', { inputKind }).catch(() => ({ defaultInputSettings: {} }));
       const s = { ...defaultInputSettings, ...inputSettings };
       this.size = { width: s.width || 800, height: s.height || 600 };
       this.kind = inputKind;
-      this.url = s.url || '';
+      // a Browser source can also point at a local file instead of a URL
+      this.url = s.url || (s.is_local_file && s.local_file ? 'file:///' + String(s.local_file).replace(/\\/g, '/') : '');
       this.onUrl?.(this.url);
       this.sourceOk = true;
       this.error = inputKind === 'browser_source' || this.key !== 'donation' ? null : `"${this.sourceName}" is a ${inputKind}; clicks need a Browser source`;
@@ -212,7 +213,8 @@ export class Interact extends EventEmitter {
     const match = this.effectiveMatch();
     const target = match && list.find((t) => t.type === 'page' && t.url.includes(match));
     if (!target) {
-      throw new Error(match ? `No OBS browser page whose URL contains "${match}" — pick the 영도 below` : 'Waiting for the 영도 source URL from OBS…');
+      if (!match) this.needUrl?.(); // ask OBS again: the first answer may have come too early
+      throw new Error(match ? `No OBS browser page whose URL contains "${match}" — pick the 영도 below` : (this.urlHint?.() || 'Waiting for the 영도 source URL from OBS…'));
     }
     await this._open(target);
   }

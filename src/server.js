@@ -18,7 +18,7 @@ import { Markers } from './markers.js';
 import { Soundboard } from './soundboard.js';
 import * as win from './win.js';
 
-const VERSION = '0.16.3';
+const VERSION = '0.16.4';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -148,6 +148,15 @@ async function main() {
   const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
   viewer.onUrl = (url) => interact.setSourceUrl(url);
+  // Clicks need the 영도 source's URL from OBS. If it hasn't arrived (asked too
+  // early, or OBS has nothing to give), ask again and say what's wrong.
+  interact.needUrl = () => viewer.refreshInfo();
+  interact.urlHint = () => {
+    if (viewer.error && viewer.error !== 'not-set') return viewer.error;
+    if (viewer.error === 'not-set') return '영도 소스 이름이 설정에 없어요';
+    if (viewer.sourceOk && !viewer.url) return `OBS의 "${viewer.sourceName}" 소스에 URL이 비어 있어요 — 아래에서 영도 페이지를 직접 골라 주세요`;
+    return null;
+  };
   // "a 영도 is playing": its audio was loud in the last 20 s, or the 리모컨 says so
   let lastDonationSound = 0;
   setInterval(() => { if (bgm.levelDb() > -50) lastDonationSound = Date.now(); }, 250);
