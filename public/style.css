@@ -703,7 +703,17 @@ body.mp-alert .sb-panel { display: none !important; }
 .layout.docked .resizer { display: none !important; }
 .dock-col { display: flex; flex-direction: column; min-width: 220px; min-height: 0; }
 .dock-col.fill { flex: 1 1 0; }
-.dock-col > .panel { flex: var(--dh, 1) 1 0; min-height: 90px; overflow: hidden; margin: 0; grid-column: auto; grid-row: auto; }
+.dock-slot { flex: var(--dh, 1) 1 0; display: flex; flex-direction: column; min-height: 90px; }
+.dock-slot > .panel { flex: 1 1 auto; min-height: 0; overflow: hidden; margin: 0; grid-column: auto; grid-row: auto; }
+.dock-slot > .panel.dock-off { display: none !important; }
+.dock-tabs { display: flex; gap: 3px; flex: none; padding-left: 8px; overflow-x: auto; scrollbar-width: none; }
+.dock-tab {
+  flex: none; padding: 6px 14px 7px; margin-bottom: -1px; border: 1px solid var(--line); border-bottom: 0; border-radius: 9px 9px 0 0;
+  background: var(--bg); color: var(--muted); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; touch-action: none; user-select: none;
+}
+.dock-tab:hover { color: var(--text); }
+.dock-tab.on { background: var(--panel); color: var(--text); position: relative; z-index: 1; }
+.dock-slot.tabbed > .panel { border-top-left-radius: 0; }
 .dock-split { flex: none; position: relative; z-index: 4; touch-action: none; }
 .dock-split.v { width: 12px; cursor: col-resize; }
 .dock-split.h { height: 12px; cursor: row-resize; }
@@ -723,4 +733,4 @@ body.docking, body.docking * { cursor: grabbing !important; user-select: none; }
 body.docking canvas, body.docking iframe { pointer-events: none; }
 .dock-ghost { position: fixed; z-index: 60; pointer-events: none; padding: 6px 12px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--accent); font-size: 13px; font-weight: 700; box-shadow: 0 8px 30px #0008; }
 .dock-drop { position: fixed; z-index: 55; pointer-events: none; border-radius: 12px; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid var(--accent); transition: all .08s; }
-.dock-col > .panel.dock-dragging { opacity: .4; }
+.dock-drop.tab { border-style: dashed; background: color-mix(in srgb, var(--accent) 14%, transparent); }
