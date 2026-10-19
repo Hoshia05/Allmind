@@ -33,8 +33,13 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
   every file in `public/` as an asset; `tools/build-launcher.mjs` wraps it in a tiny C
   launcher (`tools/launcher/launcher.c`) that unpacks an xz payload. New files in
   `public/` are picked up automatically.
-- Release (owner does it on github.com): Releases → new → tag `vX.Y.Z` → attach the exe +
-  `THIRD_PARTY_NOTICES.txt` → publish. Give the owner Korean release notes to paste.
+- **Release is automatic** (`.github/workflows/release.yml`): bump the version in both places, add
+  Korean notes as `docs/release-notes/X.Y.Z.md` (copy `TEMPLATE.md`), commit, and — when the owner
+  says push — push `main`. GitHub Actions builds the exe and publishes release `vX.Y.Z` with the exe
+  + `THIRD_PARTY_NOTICES.txt`; the in-app updater then offers it. No notes file → it creates a
+  **draft** instead (owner publishes it on github.com). Nothing happens if `vX.Y.Z` already exists.
+  Still send the owner the exe from the local build for immediate testing. The workflow can't be
+  tested locally; if a run fails, read it on the repo's Actions tab (owner pastes the error).
 
 ## GitHub
 

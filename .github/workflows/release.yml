@@ -1,0 +1,69 @@
+# Builds Arkbird-X.Y.Z.exe and publishes the GitHub release when package.json gets a new version.
+#
+#   bump version (package.json + src/server.js) → add docs/release-notes/X.Y.Z.md → push main
+#
+# - A release is only created if v<version> doesn't exist yet, so other package.json edits are harmless.
+# - With docs/release-notes/X.Y.Z.md the release is published right away (and the in-app updater
+#   offers it). Without it, it's created as a DRAFT to review and publish by hand.
+# - "Run workflow" (Actions tab) re-runs this by hand, e.g. after a failed build.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version, skip if already released
+        id: v
+        run: |
+          V=$(node -p 'require("./package.json").version')
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "v$V already has a release - nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the two version numbers agree
+        if: steps.v.outputs.skip == 'false'
+        run: grep -q "const VERSION = '${{ steps.v.outputs.version }}'" src/server.js
+
+      - uses: actions/setup-node@v4
+        if: steps.v.outputs.skip == 'false'
+        with:
+          node-version: 22
+
+      - name: Build
+        if: steps.v.outputs.skip == 'false'
+        run: sh tools/setup-build.sh && sh tools/build-all.sh
+
+      - name: Publish release
+        if: steps.v.outputs.skip == 'false'
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          NOTES="docs/release-notes/$V.md"
+          DRAFT=""
+          if [ ! -f "$NOTES" ]; then
+            printf '## Arkbird %s\n\n(릴리스 설명을 채운 뒤 게시해 주세요.)\n' "$V" > release-notes.tmp.md
+            NOTES=release-notes.tmp.md
+            DRAFT="--draft"
+          fi
+          gh release create "v$V" "dist/Arkbird-$V.exe" THIRD_PARTY_NOTICES.txt \
+            --title "Arkbird $V" --notes-file "$NOTES" --target "$GITHUB_SHA" $DRAFT
