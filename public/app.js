@@ -106,9 +106,24 @@ function render() {
   window.syncAlertMirror?.();
 }
 
+// New-version notice (the stream PC's Arkbird checks GitHub; installing is done in its settings window).
+let UPD = null;
+let updDismissed = '';
+try { updDismissed = localStorage.getItem('sd.updDismissed') || ''; } catch {}
+async function loadUpdate() {
+  try {
+    const r = await fetch('/api/update', { cache: 'no-store' });
+    UPD = await r.json();
+    if (S) renderBanners();
+  } catch {}
+}
+
 function renderBanners() {
   const { obs, bgm, donation, interact } = S;
   const out = [];
+  if (UPD?.available && UPD.latest !== updDismissed) {
+    out.push(`<div class="banner info">Arkbird ${esc(UPD.latest)} 업데이트가 있어요 (지금 ${esc(UPD.current)}) — 방송 PC의 Arkbird 설정 창에서 설치할 수 있어요. <button class="btn" data-act="dismiss-update">나중에</button></div>`);
+  }
   if (!obs.connected) {
     out.push(`<div class="banner bad">OBS에 연결할 수 없음 — ${esc(obs.error || obs.url)}. OBS에서 도구 → WebSocket 서버 설정을 켜고, 비밀번호를 방송 PC의 Arkbird 설정에 넣어 주세요.</div>`);
   } else {
@@ -699,6 +714,11 @@ $('resumeAfter').addEventListener('change', () => api('autopause', { resumeAfter
 $('banners').addEventListener('click', async (ev) => {
   const btn = ev.target.closest('button[data-act]');
   if (!btn) return;
+  if (btn.dataset.act === 'dismiss-update') {
+    updDismissed = UPD?.latest || '';
+    try { localStorage.setItem('sd.updDismissed', updDismissed); } catch {}
+    renderBanners();
+  }
   if (btn.dataset.act === 'create-bgm') {
     const r = await api('bgm/create-source');
     if (r.ok) toast(`"${S.bgm.sourceName}" 소스를 "${r.scene}" 장면에 만들었어요`);
@@ -723,6 +743,8 @@ document.addEventListener('keydown', (ev) => {
 });
 
 connectEvents();
+loadUpdate();
+setInterval(loadUpdate, 30 * 60 * 1000);
 donationLoop.kick();
 
 // ---------------- live stats ----------------

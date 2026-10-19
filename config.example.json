@@ -9,6 +9,12 @@
     "openWindowOnStart": true
   },
 
+  "update": {
+    "check": true,
+    "repo": "Hoshia05/ArkBird",
+    "apiBase": "https://api.github.com"
+  },
+
   "obs": {
     "url": "ws://127.0.0.1:4455",
     "password": "",

@@ -16,9 +16,10 @@ import { ChzzkRemote } from './remote.js';
 import { Studio } from './studio.js';
 import { Markers } from './markers.js';
 import { Soundboard } from './soundboard.js';
+import { Updater } from './update.js';
 import * as win from './win.js';
 
-const VERSION = '0.17.1';
+const VERSION = '0.18.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -400,6 +401,22 @@ async function main() {
     setTimeout(() => process.exit(0), 200);
   }
 
+  // In-app updater: the downloaded Arkbird-X.Y.Z.exe takes over (like restart(), with another exe).
+  const updater = new Updater({
+    config,
+    version: VERSION,
+    obs,
+    isExe: IS_EXE,
+    launch: (file) => {
+      console.log(`[app] updating — starting ${file}`);
+      const passOn = [...args].filter((a) => a !== '--restart' && a !== '--minimized');
+      server.close();
+      for (const s of sockets) s.destroy();
+      spawn(file, [...passOn, '--restart'], { detached: true, stdio: 'ignore', cwd: path.dirname(file), windowsHide: true }).unref();
+      setTimeout(() => process.exit(0), 100);
+    },
+  });
+
   function countMusic(folder) {
     const exts = config.bgm.extensions.map((e) => e.toLowerCase());
     let n = 0;
@@ -456,6 +473,7 @@ async function main() {
     'POST /api/chzzk/donation-read': (b) => chzzk.markRead(b.key, b.read !== false),
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
     'POST /api/chzzk/donations-clear': () => chzzk.clearDonations(),
+    'GET /api/update': () => updater.state(),
   };
 
   // Launcher / settings: stream PC only (they expose the OBS password).
@@ -534,6 +552,8 @@ async function main() {
     'POST /api/launcher/open-dashboard': () => openDashboardHere(),
     'POST /api/launcher/open-data': () => win.openFolder(CONFIG_DIR),
     'POST /api/launcher/quit': () => quit(),
+    'POST /api/update/check': () => updater.check(),
+    'POST /api/update/install': () => updater.install(),
   };
 
   server.on('request', async (req, res) => {
@@ -668,6 +688,7 @@ async function main() {
   }
 
   obs.start();
+  updater.start();
 
   // ---------- desktop niceties ----------
   if (win.isWin) {

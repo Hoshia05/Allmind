@@ -62,6 +62,10 @@ Useful mock switches (`tools/mock-obs.js`): `MOCK_CHAT_PAGE=1` (fake 위플챗 p
 `MOCK_SKIP_EVERY_MS` / `MOCK_SKIP_TRANSITION=1` / `MOCK_OBS_STRUGGLES=1` (OBS skipped
 frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording stop delay),
 `MOCK_REQS=1` (prints OBS request counts every 20 s), `MOCK_TRACK_MS`, `MOCK_SB_MS`.
+Updater tests: `MOCK_UPDATE=9.9.9` (fake GitHub release on :9333; `MOCK_UPDATE_BAD=size|hash|mz`,
+`MOCK_UPDATE_NODIGEST=1`), `MOCK_OFFLINE=1` (OBS not streaming — otherwise installs are refused).
+From source the install is always a dry run (downloads + verifies, doesn't start the file); set
+`ARKBIRD_UPDATES_DIR` to keep it out of your home dir. The real Windows replace-and-restart can't be tested here.
 
 ## Code map
 
@@ -79,6 +83,7 @@ frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording sto
 - `src/markers.js` — ⭐ marks for VOD Scout (record chapters + `<video>.markers.json`).
 - `src/remote.js` — 치지직 리모컨 dock in OBS via DevTools (■ 정지 / 넘기기 / 알림 정지).
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
+- `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Arkbird-X.Y.Z.exe`**.
 - `src/config.js` — config/state paths (`%APPDATA%\Arkbird` in the exe), defaults from
   `config.example.json`, import from older versions. `src/win.js` — Windows bits (tray, firewall, pickers).
 - `public/index.html`, `app.js`, `style.css` — dashboard. `dock.js` — free panel layout

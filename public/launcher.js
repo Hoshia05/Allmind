@@ -180,10 +180,14 @@ form.addEventListener('submit', async (ev) => {
   }
   const r = await call('/save', { settings });
   if (!r.ok) return;
+  await waitForRestart(r.newUrl ? new URL(r.newUrl).origin : location.origin);
+});
+
+// Show the overlay, wait for the restarted app, then reload the settings page.
+async function waitForRestart(base, text = '다시 시작 중…', tries = 60) {
+  $('overlayText').textContent = text;
   $('overlay').hidden = false;
-  const base = r.newUrl ? new URL(r.newUrl).origin : location.origin;
-  // wait for the restarted app, then reload
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < tries; i++) {
     await new Promise((res) => setTimeout(res, 500));
     try {
       const p = await fetch(base + '/api/ping', { cache: 'no-store' });
@@ -191,7 +195,7 @@ form.addEventListener('submit', async (ev) => {
     } catch {}
   }
   $('overlayText').textContent = '다시 시작하지 못했어요. Arkbird를 다시 실행해 주세요.';
-});
+}
 
 let launching = false;
 $('startObs').addEventListener('click', async () => {
@@ -234,3 +238,76 @@ $('quitBtn').addEventListener('click', async () => {
 refresh();
 connectEvents();
 setInterval(refresh, 4000);
+
+
+// ---------------- updates ----------------
+let updBusy = false;
+async function upd(path) {
+  try {
+    const r = await fetch(`/api/update${path}`, path ? { method: 'POST' } : { cache: 'no-store' });
+    return await r.json();
+  } catch {
+    return { ok: false, offline: true };
+  }
+}
+
+function renderUpdate(u) {
+  if (!u || u.ok === false && !u.current) return;
+  const mb = (n) => (n / 1048576).toFixed(1);
+  let dot = 'ok';
+  let text;
+  if (u.phase === 'downloading') { dot = 'warn'; text = `새 버전 ${u.latest} 받는 중… ${Math.round((u.progress || 0) * 100)}%`; }
+  else if (u.phase === 'installing') { dot = 'warn'; text = '설치하고 다시 시작하는 중…'; }
+  else if (u.phase === 'dry-ready') { dot = 'ok'; text = `(시험) 받기·검증까지 끝났어요 — 실행 파일이 아니라 시작하지 않아요`; }
+  else if (u.phase === 'error') { dot = 'bad'; text = u.error || '업데이트에 실패했어요'; }
+  else if (u.available) { dot = 'warn'; text = `새 버전 ${u.latest} (현재 ${u.current}) · ${mb(u.size)} MB`; }
+  else if (u.checking) { dot = ''; text = '확인 중…'; }
+  else if (u.error) { dot = 'warn'; text = `확인하지 못했어요 (${u.error})`; }
+  else if (u.checkedAt) {
+    const t = new Date(u.checkedAt);
+    text = `최신 버전이에요 (${u.current}) · ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} 확인`;
+  } else { dot = ''; text = `현재 ${u.current} · 아직 확인하지 않았어요`; }
+  setDot('dUpd', dot);
+  $('vUpd').textContent = text;
+  $('vUpd').title = text;
+
+  const busy = u.phase === 'downloading' || u.phase === 'installing';
+  $('updBar').hidden = !busy;
+  $('updFill').style.width = `${Math.round((u.phase === 'installing' ? 1 : u.progress || 0) * 100)}%`;
+  $('updInstall').hidden = !u.available || u.phase === 'installing';
+  $('updInstall').disabled = busy;
+  $('updCheck').disabled = busy || u.checking;
+  $('updHint').hidden = !u.available;
+  const notes = (u.notes || '').trim();
+  $('updNotes').hidden = !(u.available && notes);
+  $('updNotesText').textContent = notes;
+}
+
+async function refreshUpdate() {
+  if (updBusy) return;
+  renderUpdate(await upd(''));
+}
+
+$('updCheck').addEventListener('click', async () => {
+  $('updCheck').disabled = true;
+  renderUpdate({ ...(await upd('')), checking: true });
+  const u = await upd('/check');
+  renderUpdate(u);
+  if (u.ok && !u.available && !u.error) toast('이미 최신 버전이에요');
+});
+
+$('updInstall').addEventListener('click', async () => {
+  updBusy = true;
+  $('updInstall').disabled = true;
+  // the request returns once the download is done, so show progress meanwhile
+  const poll = setInterval(async () => { const u = await upd(''); if (u.phase) renderUpdate(u); }, 400);
+  const r = await upd('/install');
+  clearInterval(poll);
+  updBusy = false;
+  if (r.restarting) return waitForRestart(location.origin, '업데이트를 설치하고 다시 시작하는 중…', 120);
+  if (!r.ok) toast(r.error || '업데이트에 실패했어요', true);
+  renderUpdate(await upd(''));
+});
+
+refreshUpdate();
+setInterval(refreshUpdate, 60 * 1000);

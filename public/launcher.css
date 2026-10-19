@@ -69,3 +69,8 @@ form input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16
 .small-addr { font-size: 12px; font-weight: 500; }
 #rcTip ol { margin-bottom: 6px; }
 [hidden] { display: none !important; }
+
+/* ---------- update card ---------- */
+.upd-bar { height: 8px; margin-top: 10px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.upd-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s linear; }
+#updNotesText { margin: 8px 0 0; padding: 8px 10px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.6 inherit; background: var(--panel-2); border-radius: 8px; color: var(--text); }

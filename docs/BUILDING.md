@@ -38,4 +38,6 @@ sh tools/dev/down.sh   # 끄기
 2. GitHub에서 **Releases → Draft a new release** → 태그 `vX.Y.Z` 입력 → **Create new tag**.
 3. `dist/Arkbird-X.Y.Z.exe`와 `THIRD_PARTY_NOTICES.txt`를 첨부하고 **Publish release**.
 
+> 앱 안의 업데이트 기능은 **가장 최신 Release**(초안·프리릴리스 제외)의 태그 `vX.Y.Z`와 첨부 파일 이름 `Arkbird-X.Y.Z.exe`를 보고 새 버전을 찾습니다. 태그 숫자와 파일 이름의 버전이 다르면 인식하지 못해요.
+
 exe는 저장소에 커밋하지 않습니다(`dist/`는 `.gitignore`). README의 다운로드 링크는 항상 최신 Release로 연결됩니다.

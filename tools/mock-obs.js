@@ -186,7 +186,7 @@ function handle(type, d) {
     case 'GetStreamStatus': {
       const sec = (Date.now() - t0) / 1000;
       const drops = process.env.MOCK_DROPS ? Math.floor(sec * 2) : 0;
-      return { outputActive: true, outputReconnecting: false, outputBytes: Math.round(sec * 6000 * 125 * (0.95 + Math.random() * 0.1)),
+      return { outputActive: !process.env.MOCK_OFFLINE, outputReconnecting: false, outputBytes: Math.round(sec * 6000 * 125 * (0.95 + Math.random() * 0.1)),
         outputTotalFrames: Math.round(sec * 60), outputSkippedFrames: drops, outputCongestion: process.env.MOCK_DROPS ? 0.4 : 0.02, outputDuration: sec * 1000 };
     }
     case 'GetVideoSettings': return { baseWidth: 1920, baseHeight: 1080, outputWidth: 1920, outputHeight: 1080 };
@@ -437,7 +437,44 @@ for (let i = 0; i < 12; i++) {
   recent.push(m);
 }
 
+// MOCK_UPDATE=9.9.9 pretends GitHub has a release v9.9.9 (for the updater):
+//   GET /repos/<o>/<r>/releases/latest  and  /mock-release/Arkbird-9.9.9.exe (3 MB, sent slowly)
+//   MOCK_UPDATE_BAD=size|hash|mz makes the download wrong; MOCK_UPDATE_NODIGEST=1 omits the digest.
+const UPD = process.env.MOCK_UPDATE || '';
+const updExe = Buffer.concat([Buffer.from('MZ'), crypto.randomBytes(3 * 1024 * 1024 - 2)]);
+const updHash = crypto.createHash('sha256').update(updExe).digest('hex');
+function updateRoutes(req, res) {
+  if (!UPD) return false;
+  if (/^\/repos\/[^/]+\/[^/]+\/releases\/latest/.test(req.url)) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      tag_name: `v${UPD}`, name: `Arkbird ${UPD}`,
+      body: '## 0.99 테스트 릴리스\n- 업데이트 기능 시험용 가짜 릴리스예요\n- 두 번째 줄',
+      assets: [
+        { name: 'THIRD_PARTY_NOTICES.txt', size: 10, browser_download_url: 'http://127.0.0.1:9333/mock-release/notices.txt' },
+        { name: `Arkbird-${UPD}.exe`, size: updExe.length, browser_download_url: `http://127.0.0.1:9333/mock-release/Arkbird-${UPD}.exe`, ...(process.env.MOCK_UPDATE_NODIGEST ? {} : { digest: 'sha256:' + (process.env.MOCK_UPDATE_BAD === 'hash' ? '0'.repeat(64) : updHash) }) },
+      ],
+    }));
+    return true;
+  }
+  if (req.url.startsWith('/mock-release/Arkbird-')) {
+    let body = updExe;
+    if (process.env.MOCK_UPDATE_BAD === 'size') body = updExe.subarray(0, updExe.length - 1000);
+    if (process.env.MOCK_UPDATE_BAD === 'mz') { body = Buffer.from(updExe); body[0] = 0x50; }
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': body.length });
+    let off = 0;
+    const tick = setInterval(() => { // ~3 s for 3 MB
+      if (off >= body.length) { clearInterval(tick); return res.end(); }
+      res.write(body.subarray(off, off + 256 * 1024)); off += 256 * 1024;
+    }, 250);
+    res.on('close', () => clearInterval(tick));
+    return true;
+  }
+  return false;
+}
+
 const chzzkHttp = http.createServer((req, res) => {
+  if (updateRoutes(req, res)) return;
   // fake 위플챗 overlay page (MOCK_CHAT_PAGE=1 points the 위플챗 source here)
   if (req.url.startsWith('/overlay')) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...(process.env.MOCK_CHAT_PAGE === 'deny' ? { 'X-Frame-Options': 'DENY' } : {}) });

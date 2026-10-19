@@ -69,6 +69,10 @@ button, input { font: inherit; color: inherit; }
   background: color-mix(in srgb, var(--bad) 12%, var(--panel));
   border-color: color-mix(in srgb, var(--bad) 40%, transparent);
 }
+.banner.info {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
 .banner .btn { padding: 3px 10px; font-size: 12px; }
 .banner code { background: #0006; padding: 1px 5px; border-radius: 4px; }
 
