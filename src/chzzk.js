@@ -213,7 +213,11 @@ export class Chzzk extends EventEmitter {
       case CMD.CHAT:
       case CMD.SPECIAL: {
         const arr = Array.isArray(msg.bdy) ? msg.bdy : [msg.bdy];
-        this._add(arr.map((m) => this._normalize(m)).filter(Boolean));
+        const list = arr.map((m) => this._normalize(m)).filter(Boolean);
+        this._add(list);
+        // Only these are "live" (the RECENT_RESULT history replayed on reconnect is not):
+        // the recording log (markers.js) listens to this one.
+        if (list.length) this.emit('live-chat', list);
         break;
       }
       case CMD.BLIND: {

@@ -9,6 +9,10 @@
     "openWindowOnStart": true
   },
 
+  "markers": {
+    "saveChat": true
+  },
+
   "update": {
     "check": true,
     "repo": "Hoshia05/ArkBird",

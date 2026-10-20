@@ -19,7 +19,7 @@ import { Soundboard } from './soundboard.js';
 import { Updater } from './update.js';
 import * as win from './win.js';
 
-const VERSION = '0.18.3';
+const VERSION = '0.19.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -145,7 +145,7 @@ async function main() {
   // footage), so it gets its own light, fixed settings instead of the 영도 quality.
   const program = new ProgramViewer(obs);
   const studio = new Studio(obs, { mic: config.sources.mic });
-  const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers') });
+  const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers'), saveChat: config.markers?.saveChat !== false });
   const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
   viewer.onUrl = (url) => interact.setSourceUrl(url);
@@ -266,7 +266,19 @@ async function main() {
   studio.on('change', stateChanged);
   markers.on('change', stateChanged);
   soundboard.on('change', stateChanged);
-  markers.on('saved', ({ count, file }) => sendAll('toast', { text: `⭐ 마크 ${count}개 저장됨${file ? ` — 영상과 함께 ${file} 도 올려 주세요` : ''}`, long: true }));
+  markers.on('saved', ({ count, chat, file }) => {
+    const parts = [];
+    if (chat) parts.push(`💬 채팅 ${chat.toLocaleString('en-US')}개`);
+    if (count) parts.push(chat ? `⭐ ${count}개` : `⭐ 마크 ${count}개`);
+    sendAll('toast', { text: `${parts.join(' · ')} 저장됨${file ? ` — 영상과 함께 ${file} 도 올려 주세요` : ''}`, long: true });
+  });
+  // chat log for SkyEye: only live messages (not the history replayed on reconnect)
+  chzzk.on('live-chat', (list) => { for (const m of list) markers.addChat(m); });
+  let chatWasUp = null;
+  chzzk.on('change', () => {
+    const up = chzzk.chatState === 'connected';
+    if (up !== chatWasUp) { chatWasUp = up; markers.chatLink(up); }
+  });
   studio.on('health', (h) => clients.size && sendAll('health', h));
   studio.wanted = () => clients.size > 0 || Object.values(feeds).some((f) => f.running);
   chzzk.on('chat', (list) => sendAll('chat', list));
@@ -506,6 +518,7 @@ async function main() {
           obsPort: Number(/:(\d+)/.exec(config.obs.url.replace(/^ws:\/\//, ''))?.[1] || 4455),
           obsPath: config.obs.path || info.exe || '',
           startObs: config.app.startObs,
+          saveChat: config.markers?.saveChat !== false,
           donation: config.sources.donation,
           chat: config.sources.chat,
           alert: config.sources.alert,
@@ -525,6 +538,7 @@ async function main() {
       }
       saveConfig({
         app: { startObs: !!s.startObs },
+        markers: { saveChat: s.saveChat !== false },
         obs: { password: s.obsPassword ?? '', url: `ws://127.0.0.1:${Number(s.obsPort) || 4455}`, path: s.obsPath || '' },
         sources: { donation: s.donation, chat: s.chat, alert: s.alert || '', mic: s.mic || '', bgm: s.bgmSource },
         bgm: { folder: s.folder || '' },

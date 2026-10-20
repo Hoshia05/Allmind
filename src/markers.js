@@ -1,35 +1,53 @@
-// ⭐ Mark moment: marks funny moments in the OBS recording for VOD Scout.
+// ⭐ Mark moment + chat log: marks funny moments in the OBS recording for VOD Scout
+// (SkyEye), and saves the stream's Chzzk chat with timestamps relative to the video.
 //
 // On each press: GetRecordStatus → t = outputDuration (OBS's own clock, so
 // pauses are already excluded) → CreateRecordChapter (lands inside the file
 // with Hybrid MP4 on OBS 30.2+; silently skipped otherwise) → append to the
 // markers file and save at once.
 //
-// The markers file (format "vodscout-markers" v1) lives in the OBS recording
-// folder as vodscout-markers-<start>.json while recording, and is renamed to
-// "<video name>.markers.json" next to the video when the recording stops.
-// A recording with no marks never gets a file.
+// The markers file (format "vodscout-markers", v2 with chat; v1 when the chat log
+// is switched off) lives in the OBS recording folder as vodscout-markers-<start>.json
+// while recording, and is renamed to "<video name>.markers.json" next to the video
+// when the recording stops. A recording with no marks and no chat gets no file.
+//
+// Chat: addChat() stamps each message with the recording's own clock
+// (t = seconds into the video file; monotonic, pauses excluded, corrected against
+// OBS's outputDuration once a minute). Kept in memory, saved every ~15 s if
+// anything new came in, never per message.
 //
 // Light by design: everything is driven by OBS's RecordStateChanged events;
-// the only OBS requests are one GetRecordStatus per press (plus one on connect).
+// the only OBS requests are one GetRecordStatus per press (plus one on connect)
+// and, while recording, one GetRecordStatus per minute to catch clock drift.
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 const VIDEO_EXT = new Set(['.mp4', '.mkv', '.mov', '.flv', '.ts', '.m3u8', '.fmp4']);
 const TMP_RE = /^vodscout-markers-\d{8}-\d{6}\.json$/;
+const SAVE_EVERY_MS = 15 * 1000;
+const DRIFT_EVERY_MS = 60 * 1000;
+const DRIFT_LIMIT_MS = 1000;
+const GAP_MIN_MS = 10 * 1000; // shorter chat drops aren't worth a note
+const CHAT_MAX = 500;
+const now = () => performance.now(); // monotonic: wall-clock changes don't matter
 
 export class Markers extends EventEmitter {
-  constructor(obs, { fallbackDir } = {}) {
+  constructor(obs, { fallbackDir, saveChat = true } = {}) {
     super();
     this.obs = obs;
+    this.saveChat = saveChat !== false; // 채팅 로그 저장 (SkyEye용)
+    this.chatUp = false; // is the Chzzk chat connected right now
+    this.timer = null;
+    this.ticks = 0;
     this.fallbackDir = fallbackDir; // used only if the recording folder can't be written
     this.cur = null; // the recording in progress, or the last finished one (for notes)
 
     obs.on('RecordStateChanged', (e) => this._onState(e).catch((err) => this._log('state', err)));
     obs.on('connected', () => this._sync().catch((err) => this._log('sync', err)));
     obs.on('disconnected', () => {
-      if (this.cur && !this.cur.done) this.cur.lostAt = Date.now();
+      if (this.cur && !this.cur.done) this.cur.lostAt = now();
     });
     if (obs.connected) this._sync().catch(() => {});
   }
@@ -48,13 +66,14 @@ export class Markers extends EventEmitter {
       this.emit('change');
     } else if (s === 'RESUMED' && r && r.paused) {
       r.paused = false;
-      r.runSince = Date.now();
+      r.runSince = now();
       this.emit('change');
     } else if (s === 'STOPPING' && r && !r.paused) {
       // freeze the length here: STOPPED can come seconds later, after OBS
       // has finished writing the file
       r.activeMs = this._elapsed(r);
       r.paused = true;
+      r.stopping = true;
     } else if (s === 'STOPPED' && r) {
       this._finish(r, outputPath || r.outputPath);
     }
@@ -83,11 +102,10 @@ export class Markers extends EventEmitter {
   }
 
   async _begin({ outputPath = null, durationMs = 0, paused = false, recover = false }) {
-    const now = Date.now();
     const r = {
-      startedAt: new Date(now - durationMs),
+      startedAt: new Date(Date.now() - durationMs),
       activeMs: durationMs,
-      runSince: now,
+      runSince: now(),
       paused: !!paused,
       outputPath: outputPath || null,
       dir: outputPath ? path.dirname(outputPath) : null,
@@ -95,10 +113,14 @@ export class Markers extends EventEmitter {
       file: null, // final markers file once stopped
       chapters: null,
       marks: [],
+      chat: [],
+      gap: null, // chat connection drop in progress: { t, at, mono }
+      dirty: false,
       done: false,
       lastObsMs: durationMs,
     };
     this.cur = r;
+    this._startTimer();
     this.emit('change');
     if (!r.dir) {
       try { r.dir = (await this.obs.call('GetRecordDirectory')).recordDirectory || null; } catch {}
@@ -106,6 +128,37 @@ export class Markers extends EventEmitter {
     if (recover) this._recover(r); // Arkbird restarted mid-recording: pick up its file
     if (!r.tmpFile) r.tmpFile = `vodscout-markers-${stamp(r.startedAt)}.json`;
     this.emit('change');
+  }
+
+  // ---------- timers: save when dirty (15 s), drift check (60 s) ----------
+
+  _startTimer() {
+    this._stopTimer();
+    this.ticks = 0;
+    this.timer = setInterval(() => {
+      const r = this.cur && !this.cur.done ? this.cur : null;
+      if (!r) return this._stopTimer();
+      if (r.dirty) this._save(r);
+      if (++this.ticks % (DRIFT_EVERY_MS / SAVE_EVERY_MS) === 0) this._drift(r).catch((e) => this._log('drift', e));
+    }, SAVE_EVERY_MS);
+    this.timer.unref?.();
+  }
+
+  _stopTimer() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  // Compare our clock with OBS's own; take OBS's if we're more than a second off.
+  async _drift(r) {
+    if (!this.obs.connected || r.paused || r.done) return;
+    const st = await this.obs.call('GetRecordStatus');
+    if (r.done || r !== this.cur || !st.outputActive) return;
+    const off = st.outputDuration - this._elapsed(r);
+    if (Math.abs(off) > DRIFT_LIMIT_MS) {
+      this._log('drift', `${(off / 1000).toFixed(1)} s off, corrected`);
+      this._resync(r, st);
+    }
   }
 
   // Find the in-progress markers file of this recording (started within 30 s
@@ -128,18 +181,29 @@ export class Markers extends EventEmitter {
     } catch { return; }
     if (!best) return;
     r.tmpFile = best.f;
+    r.savedAt = path.join(r.dir, best.f); // keep writing to it, and remove it once renamed at the end
     r.startedAt = new Date(best.t);
     r.marks = Array.isArray(best.j.markers) ? best.j.markers : [];
     r.chapters = best.j.recording?.obs_chapters ?? null;
-    this._log('recovered', `${r.marks.length} marks from ${best.f}`);
+    if (this.saveChat && Array.isArray(best.j.chat)) {
+      r.chat = best.j.chat;
+      // chat from the time Arkbird was closed is missing: say so
+      const saved = Number(best.j.recording?.duration);
+      const nowT = r.activeMs / 1000;
+      if (saved > 0 && nowT - saved > GAP_MIN_MS / 1000) r.chat.push({ t: saved, type: 'gap', text: 'chat not recorded (Arkbird was closed)' });
+    }
+    this._log('recovered', `${r.marks.length} marks, ${r.chat.length} chat items from ${best.f}`);
   }
 
   _finish(r, outputPath) {
     r.activeMs = r.lostAt ? r.activeMs + (r.paused ? 0 : r.lostAt - r.runSince) : this._elapsed(r);
     r.paused = false;
     r.done = true;
+    this._stopTimer();
+    this._closeGap(r, true);
     r.outputPath = outputPath || r.outputPath || this._guessVideo(r);
-    if (!r.marks.length) { this.emit('change'); return; }
+    const chatCount = r.chat.filter((c) => c.type !== 'gap').length;
+    if (!r.marks.length && !chatCount) { this.emit('change'); return; }
     const tmp = r.dir && path.join(r.dir, r.tmpFile);
     if (r.outputPath) {
       const p = path.parse(r.outputPath);
@@ -153,7 +217,7 @@ export class Markers extends EventEmitter {
     } else {
       r.file = r.savedAt; // the backup copy is still there
     }
-    this.emit('saved', { count: r.marks.length, file: r.file ? path.basename(r.file) : '' });
+    this.emit('saved', { count: r.marks.length, chat: chatCount, file: r.file ? path.basename(r.file) : '' });
     this.emit('change');
   }
 
@@ -172,6 +236,49 @@ export class Markers extends EventEmitter {
       }
     } catch {}
     return best ? path.join(r.dir, best.f) : null;
+  }
+
+  // ---------- chat ----------
+
+  // entry: { kind: 'chat'|'donation'|'subscription'|'system', nick, role, text, amount }
+  // (shape of Chzzk._normalize). Ignored when not recording or the log is off.
+  addChat(m) {
+    const r = this.cur && !this.cur.done ? this.cur : null;
+    if (!this.saveChat || !r || r.stopping) return;
+    if (m.kind !== 'chat' && m.kind !== 'donation' && m.kind !== 'subscription') return; // no system/notice lines
+    const text = String(m.text || '').slice(0, CHAT_MAX);
+    if (!text && m.kind === 'chat') return;
+    const item = {
+      t: Math.round(this._elapsed(r) / 100) / 10, // 0.1 s; frozen while paused
+      type: m.kind,
+      nick: String(m.nick || '').slice(0, 60),
+      role: m.role === 'streamer' || m.role === 'manager' ? m.role : 'viewer',
+      text,
+    };
+    const amount = Number(m.amount);
+    if (m.kind === 'donation' && Number.isFinite(amount) && m.amount !== null && m.amount !== '') item.amount = amount;
+    r.chat.push(item);
+    r.dirty = true;
+  }
+
+  // Chzzk chat connected / dropped. A drop of 10 s or more during a recording
+  // becomes one { type: 'gap' } item so SkyEye knows chat is missing there.
+  chatLink(up) {
+    const was = this.chatUp;
+    this.chatUp = !!up;
+    const r = this.cur && !this.cur.done ? this.cur : null;
+    if (!this.saveChat || !r) return;
+    if (!up && was && !r.gap) r.gap = { t: this._elapsed(r) / 1000, at: new Date(), mono: now() };
+    else if (up && r.gap) this._closeGap(r);
+  }
+
+  _closeGap(r, ending = false) {
+    const g = r.gap;
+    r.gap = null;
+    if (!g || now() - g.mono < GAP_MIN_MS) return;
+    const hm = (d) => `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    r.chat.push({ t: Math.round(g.t * 10) / 10, type: 'gap', text: `chat disconnected ${hm(g.at)}–${hm(new Date())}${ending ? ' (until the recording ended)' : ''}` });
+    r.dirty = true;
   }
 
   // ---------- marks ----------
@@ -216,9 +323,9 @@ export class Markers extends EventEmitter {
   // ---------- file ----------
 
   _json(r) {
-    return {
+    const o = {
       format: 'vodscout-markers',
-      version: 1,
+      version: this.saveChat ? 2 : 1,
       recording: {
         file: r.outputPath ? path.basename(r.outputPath) : null,
         started_at: iso(r.startedAt, true),
@@ -227,10 +334,12 @@ export class Markers extends EventEmitter {
       },
       markers: r.marks,
     };
+    if (this.saveChat) o.chat = r.chat;
+    return o;
   }
 
   _save(r) {
-    if (!r.marks.length) return;
+    if (!r.marks.length && !r.chat.some((c) => c.type !== 'gap')) return; // nothing worth a file yet
     const target = r.done ? r.file : r.savedAt || (r.dir ? path.join(r.dir, r.tmpFile) : null);
     if (target && this._write(r, target)) { r.savedAt = target; return; }
     // recording folder unknown or not writable: keep a copy in Arkbird's data folder
@@ -244,8 +353,15 @@ export class Markers extends EventEmitter {
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       const tmp = file + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(this._json(r), null, 2));
+      const o = this._json(r);
+      const chat = o.chat;
+      if (chat) o.chat = '@@CHAT@@';
+      let text = JSON.stringify(o, null, 2);
+      // one chat item per line: keeps the file small and readable
+      if (chat) text = text.replace('"@@CHAT@@"', () => (chat.length ? `[\n    ${chat.map((c) => JSON.stringify(c)).join(',\n    ')}\n  ]` : '[]'));
+      fs.writeFileSync(tmp, text);
       fs.renameSync(tmp, file);
+      r.dirty = false;
       return true;
     } catch (e) {
       this._log('write', `${file}: ${e.message}`);
@@ -257,12 +373,12 @@ export class Markers extends EventEmitter {
 
   _elapsed(r) {
     if (r.done || r.paused) return r.activeMs;
-    return r.activeMs + (Date.now() - r.runSince);
+    return r.activeMs + (now() - r.runSince);
   }
 
   _resync(r, st) {
     r.activeMs = st.outputDuration;
-    r.runSince = Date.now();
+    r.runSince = now();
     r.paused = !!st.outputPaused;
     r.lastObsMs = st.outputDuration;
   }

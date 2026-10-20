@@ -88,7 +88,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   ad skip), `ProgramViewer` (방송 화면), quality presets `QUALITY`.
 - `src/feed.js` — `FrameFeed`: paced OBS screenshots shared by all viewers; adaptive fps; `fpsCap` from the guard.
 - `src/studio.js` — scenes, mic mute/level, stream health (GetStats every 2 s only while watched).
-- `src/markers.js` — ⭐ marks for VOD Scout (record chapters + `<video>.markers.json`).
+- `src/markers.js` — ⭐ marks + chat log for VOD Scout/SkyEye (record chapters + `<video>.markers.json`, format v2: `markers` + `chat`). Monotonic recording clock (pauses excluded, 60 s `GetRecordStatus` drift check), 15 s dirty-save, recovery after restart, `gap` items. Chat comes from `chzzk` `'live-chat'` (live CHAT/SPECIAL only, not the RECENT_RESULT replay); toggle `config.markers.saveChat` (off = v1, marks only).
 - `src/remote.js` — 치지직 리모컨 dock in OBS via DevTools (■ 정지 / 넘기기 / 알림 정지).
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Arkbird-X.Y.Z.exe`**.
