@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0f0f14">
+<meta name="theme-color" content="#070b0c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="⭐ 마크">
@@ -11,7 +11,7 @@
 <link rel="icon" href="/icon-192.png">
 <title>⭐ 마크 · Allmind</title>
 <style>
-  :root { --bg:#0f0f14; --panel:#17171f; --line:#2a2a37; --text:#ececf3; --muted:#8b8b9c; --accent:#ff5c8a; --star:#ffc93c; --ok:#3ddc97; --bad:#ff5f5f; }
+  :root { --bg:#070b0c; --panel:#0d1416; --line:#20333a; --text:#dcefec; --muted:#7b9b9a; --accent:#2fd8c8; --star:#ffc93c; --ok:#5be37d; --bad:#ff5f5f; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
   body { display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); gap: 14px; }
@@ -23,9 +23,9 @@
   @keyframes blink { 50% { opacity: .35; } }
   .time { font-variant-numeric: tabular-nums; color: var(--muted); }
   a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
-  #mark { flex: 1 1 auto; min-height: 220px; border: 0; border-radius: 28px; background: linear-gradient(160deg, #ff7aa2, var(--accent)); color: #fff;
+  #mark { flex: 1 1 auto; min-height: 220px; border: 0; border-radius: 28px; background: linear-gradient(160deg, #6af0e2, var(--accent)); color: #03211e;
     font-family: inherit; font-weight: 800; font-size: clamp(34px, 10vw, 72px); line-height: 1.1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
-    box-shadow: 0 10px 40px #ff5c8a40; touch-action: manipulation; user-select: none; -webkit-user-select: none; transition: transform .08s, filter .2s; }
+    box-shadow: 0 10px 40px #2fd8c840; touch-action: manipulation; user-select: none; -webkit-user-select: none; transition: transform .08s, filter .2s; }
   #mark .sub { font-size: clamp(15px, 3.6vw, 20px); font-weight: 600; opacity: .9; }
   #mark:active { transform: scale(.97); }
   #mark:disabled { background: var(--panel); color: var(--muted); box-shadow: none; border: 1px solid var(--line); }
@@ -36,7 +36,7 @@
   li { display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
   li .t { font-variant-numeric: tabular-nums; color: var(--star); font-weight: 700; min-width: 64px; }
   li input { flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); font: inherit; padding: 6px 0; outline: none; }
-  li input::placeholder { color: #5d5d6e; }
+  li input::placeholder { color: #4d6867; }
   .empty { color: var(--muted); font-size: 13px; }
   .msg { min-height: 1.4em; text-align: center; color: var(--muted); font-size: 13px; }
   @media (orientation: landscape) and (max-height: 560px) {

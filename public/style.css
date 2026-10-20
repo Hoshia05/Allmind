@@ -1,13 +1,14 @@
 :root {
-  --bg: #0f0f14;
-  --panel: #17171f;
-  --panel-2: #1e1e28;
-  --line: #2a2a37;
-  --text: #ececf3;
-  --muted: #8b8b9c;
-  --accent: #ff5c8a;
-  --accent-2: #ff8fb0;
-  --ok: #3ddc97;
+  /* black with a dark teal tint; teal accent */
+  --bg: #070b0c;
+  --panel: #0d1416;
+  --panel-2: #131d20;
+  --line: #20333a;
+  --text: #dcefec;
+  --muted: #7b9b9a;
+  --accent: #2fd8c8;
+  --accent-2: #86efe3;
+  --ok: #5be37d;
   --warn: #ffb547;
   --bad: #ff5f5f;
   --radius: 12px;
@@ -37,7 +38,8 @@ button, input { font: inherit; color: inherit; }
   padding: 10px 16px; border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
-.brand { white-space: nowrap; font-weight: 700; letter-spacing: .02em; display: flex; align-items: center; gap: 8px; }
+.brand .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.brand { white-space: nowrap; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
 .brand-icon { width: 24px; height: 24px; border-radius: 7px; display: block; flex-shrink: 0; }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip {
@@ -104,7 +106,7 @@ button, input { font: inherit; color: inherit; }
 }
 .btn:hover { border-color: var(--muted); }
 .btn:active { transform: translateY(1px); }
-.btn.accent { background: var(--accent); border-color: var(--accent); color: #1a0a10; font-weight: 700; }
+.btn.accent { background: var(--accent); border-color: var(--accent); color: #031a18; font-weight: 700; }
 .btn.accent:hover { background: var(--accent-2); }
 .btn.ghost { background: transparent; }
 .btn.icon { padding: 6px 9px; }
@@ -142,7 +144,7 @@ input[type=search]:focus { border-color: var(--accent); }
 .viewer-panel { display: flex; flex-direction: column; min-height: 0; }
 .stage {
   flex: 1; min-height: 0; position: relative; border-radius: 10px; overflow: hidden;
-  background: repeating-conic-gradient(#14141b 0 25%, #111117 0 50%) 0 0 / 24px 24px;
+  background: repeating-conic-gradient(#0d1517 0 25%, #0a1113 0 50%) 0 0 / 24px 24px;
   display: grid; place-items: center;
 }
 .stage img, .stage canvas { max-width: 100%; max-height: 100%; object-fit: contain; display: block; user-select: none; }
@@ -176,8 +178,8 @@ input[type=search]:focus { border-color: var(--accent); }
 
 /* ---------- auto pause ---------- */
 .meter { position: relative; height: 12px; background: var(--panel-2); border-radius: 6px; margin-top: 12px; cursor: ew-resize; }
-.meter-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 6px; background: linear-gradient(90deg, #3ddc9766, #3ddc97); transition: width .08s linear; }
-.meter.hot .meter-fill { background: linear-gradient(90deg, #ff5c8a66, #ff5c8a); }
+.meter-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 6px; background: linear-gradient(90deg, #2fd8c866, #2fd8c8); transition: width .08s linear; }
+.meter.hot .meter-fill { background: linear-gradient(90deg, #ff5f5f66, #ff5f5f); }
 .meter-thresh { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); border-radius: 1px; }
 .auto.active { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
 #apState { color: var(--accent-2); }
@@ -245,8 +247,8 @@ input[type=search]:focus { border-color: var(--accent); }
 .msg .badge { width: 16px; height: 16px; vertical-align: -3px; margin-right: 3px; }
 .msg .nick { font-weight: 700; margin-right: 6px; }
 .msg .role { font-size: 10px; font-weight: 800; padding: 0 5px; border-radius: 4px; margin-right: 5px; vertical-align: 1px; }
-.msg .role.streamer { background: var(--accent); color: #1a0a10; }
-.msg .role.manager { background: #3ddc97; color: #062016; }
+.msg .role.streamer { background: var(--accent); color: #031a18; }
+.msg .role.manager { background: #5be37d; color: #04170b; }
 .msg .emo { height: 22px; vertical-align: -6px; }
 .msg.donation, .msg.subscription {
   background: color-mix(in srgb, var(--warn) 12%, transparent);
@@ -261,7 +263,7 @@ input[type=search]:focus { border-color: var(--accent); }
 .new-msgs { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); padding: 4px 12px; font-size: 12px; }
 .chat-body.mirror {
   display: grid; place-items: center; border-radius: 10px; overflow: hidden;
-  background: repeating-conic-gradient(#14141b 0 25%, #111117 0 50%) 0 0 / 24px 24px;
+  background: repeating-conic-gradient(#0d1517 0 25%, #0a1113 0 50%) 0 0 / 24px 24px;
 }
 .chat-body.mirror img, .chat-body.mirror canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .chat-body[hidden] { display: none; }
@@ -274,7 +276,7 @@ input[type=search]:focus { border-color: var(--accent); }
 .channel-form input:focus { border-color: var(--accent); }
 
 /* ---------- 후원 tab ---------- */
-.tab-count:not(:empty) { margin-left: 4px; background: var(--accent); color: #1a0a10; border-radius: 999px; padding: 0 6px; font-size: 10.5px; font-weight: 800; }
+.tab-count:not(:empty) { margin-left: 4px; background: var(--accent); color: #031a18; border-radius: 999px; padding: 0 6px; font-size: 10.5px; font-weight: 800; }
 .chat-body.donations { display: flex; flex-direction: column; gap: 8px; }
 .chat-body.donations[hidden] { display: none; }
 .don-summary { display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: var(--muted); padding: 2px 2px 8px; border-bottom: 1px solid var(--line); }
@@ -631,7 +633,7 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
 
 /* 위플챗: the overlay page itself, filling the panel */
 #chatPage { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; } /* matching scheme keeps a see-through page see-through */
-.chat-body.mirror.page { background: #101016; }
+.chat-body.mirror.page { background: #0a1113; }
 .chat-panel:not(.show-mirror) .mirror-only { display: none; }
 
 /* ---------- ⭐ mark button (live bar) ---------- */

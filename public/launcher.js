@@ -32,7 +32,7 @@ let live = null;
 function connectEvents() {
   const es = new EventSource('/api/events');
   es.addEventListener('state', (e) => { live = JSON.parse(e.data); renderLive(); });
-  es.addEventListener('bye', () => { document.body.innerHTML = '<p style="padding:30px;color:#8b8b9c">Allmind가 종료됐어요. 이 창은 닫아도 돼요.</p>'; });
+  es.addEventListener('bye', () => { document.body.innerHTML = '<p style="padding:30px;color:#7b9b9a">Allmind가 종료됐어요. 이 창은 닫아도 돼요.</p>'; });
 }
 
 function renderLive() {
