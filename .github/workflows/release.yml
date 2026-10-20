@@ -1,4 +1,4 @@
-# Builds Arkbird-X.Y.Z.exe and publishes the GitHub release when package.json gets a new version.
+# Builds Allmind-X.Y.Z.exe and publishes the GitHub release when package.json gets a new version.
 #
 #   bump version (package.json + src/server.js) → add docs/release-notes/X.Y.Z.md → push main
 #
@@ -61,9 +61,13 @@ jobs:
           NOTES="docs/release-notes/$V.md"
           DRAFT=""
           if [ ! -f "$NOTES" ]; then
-            printf '## Arkbird %s\n\n(릴리스 설명을 채운 뒤 게시해 주세요.)\n' "$V" > release-notes.tmp.md
+            printf '## Allmind %s\n\n(릴리스 설명을 채운 뒤 게시해 주세요.)\n' "$V" > release-notes.tmp.md
             NOTES=release-notes.tmp.md
             DRAFT="--draft"
           fi
-          gh release create "v$V" "dist/Arkbird-$V.exe" THIRD_PARTY_NOTICES.txt \
-            --title "Arkbird $V" --notes-file "$NOTES" --target "$GITHUB_SHA" $DRAFT
+          # Arkbird 0.17-0.19 (the old name) only look for an asset called Arkbird-X.Y.Z.exe. Attach the
+          # same file under that name too, so those copies can still update to the first Allmind release.
+          # Can be dropped once nobody runs an Arkbird build any more.
+          cp "dist/Allmind-$V.exe" "dist/Arkbird-$V.exe"
+          gh release create "v$V" "dist/Allmind-$V.exe" "dist/Arkbird-$V.exe" THIRD_PARTY_NOTICES.txt \
+            --title "Allmind $V" --notes-file "$NOTES" --target "$GITHUB_SHA" $DRAFT

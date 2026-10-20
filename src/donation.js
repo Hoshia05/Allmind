@@ -56,7 +56,7 @@ export class DonationViewer {
       this.error = inputKind === 'browser_source' || this.key !== 'donation' ? null : `"${this.sourceName}" is a ${inputKind}; clicks need a Browser source`;
     } catch {
       this.sourceOk = false;
-      this.error = `No source named "${this.sourceName}" in OBS — check the source name in Arkbird settings`;
+      this.error = `No source named "${this.sourceName}" in OBS — check the source name in Allmind settings`;
     }
   }
 
@@ -207,7 +207,7 @@ export class Interact extends EventEmitter {
       list = await res.json();
     } catch {
       this.candidates = [];
-      throw new Error(`OBS browser debugging isn't on — start OBS from Arkbird (OBS 시작 button)`);
+      throw new Error(`OBS browser debugging isn't on — start OBS from Allmind (OBS 시작 button)`);
     }
     this.candidates = list.filter((t) => t.type === 'page').map((t) => ({ url: t.url, title: t.title }));
     const match = this.effectiveMatch();
@@ -291,7 +291,7 @@ export class Interact extends EventEmitter {
   async _worldFor(frameId) {
     if (!this.worlds) this.worlds = new Map();
     if (this.worlds.has(frameId)) return this.worlds.get(frameId);
-    const { executionContextId } = await this.send('Page.createIsolatedWorld', { frameId, worldName: 'arkbird', grantUniveralAccess: true });
+    const { executionContextId } = await this.send('Page.createIsolatedWorld', { frameId, worldName: 'allmind', grantUniveralAccess: true });
     this.worlds.set(frameId, executionContextId);
     if (this.worlds.size > 50) this.worlds.delete(this.worlds.keys().next().value);
     return executionContextId;

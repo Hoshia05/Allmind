@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates the Arkbird icon set from one drawing (a flying wing seen from above).
+"""Regenerates the Allmind icon set from one drawing (a flying wing seen from above).
 
     python3 tools/make-icons.py
 

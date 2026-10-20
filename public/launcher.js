@@ -1,4 +1,4 @@
-// Arkbird launcher / settings window (stream PC only).
+// Allmind launcher / settings window (stream PC only).
 const $ = (id) => document.getElementById(id);
 const form = $('settings');
 let info = null;
@@ -32,7 +32,7 @@ let live = null;
 function connectEvents() {
   const es = new EventSource('/api/events');
   es.addEventListener('state', (e) => { live = JSON.parse(e.data); renderLive(); });
-  es.addEventListener('bye', () => { document.body.innerHTML = '<p style="padding:30px;color:#8b8b9c">Arkbird가 종료됐어요. 이 창은 닫아도 돼요.</p>'; });
+  es.addEventListener('bye', () => { document.body.innerHTML = '<p style="padding:30px;color:#8b8b9c">Allmind가 종료됐어요. 이 창은 닫아도 돼요.</p>'; });
 }
 
 function renderLive() {
@@ -68,7 +68,7 @@ async function refresh() {
   const note = $('obsNote');
   if (o.running && !o.debugOn) {
     note.hidden = false;
-    note.textContent = 'OBS가 Arkbird 밖에서 켜져서 클릭 전달·광고 스킵이 꺼져 있어요. 방송 중이 아닐 때 OBS를 닫고 "OBS 시작"으로 다시 켜 주세요.';
+    note.textContent = 'OBS가 Allmind 밖에서 켜져서 클릭 전달·광고 스킵이 꺼져 있어요. 방송 중이 아닐 때 OBS를 닫고 "OBS 시작"으로 다시 켜 주세요.';
   } else if (o.running && !o.connected) {
     note.hidden = false;
     note.textContent = 'OBS에 연결할 수 없어요. OBS → 도구 → WebSocket 서버 설정에서 서버를 켜고, 비밀번호를 아래 설정에 넣어 주세요.';
@@ -194,7 +194,7 @@ async function waitForRestart(base, text = '다시 시작 중…', tries = 60) {
       if (p.ok && i > 1) { location.href = base + '/launcher'; return; }
     } catch {}
   }
-  $('overlayText').textContent = '다시 시작하지 못했어요. Arkbird를 다시 실행해 주세요.';
+  $('overlayText').textContent = '다시 시작하지 못했어요. Allmind를 다시 실행해 주세요.';
 }
 
 let launching = false;
@@ -232,7 +232,7 @@ $('copyAddr').addEventListener('click', async () => {
   catch { getSelection().selectAllChildren($('addr')); toast('주소를 선택했어요 — Ctrl+C로 복사하세요'); }
 });
 $('quitBtn').addEventListener('click', async () => {
-  if (confirm('Arkbird를 종료할까요? 대시보드와 BGM 자동 일시정지가 멈춰요. (OBS는 계속 켜져 있어요)')) await call('/quit', {});
+  if (confirm('Allmind를 종료할까요? 대시보드와 BGM 자동 일시정지가 멈춰요. (OBS는 계속 켜져 있어요)')) await call('/quit', {});
 });
 
 refresh();

@@ -3,7 +3,7 @@
 #   .dev/frames/  v00..v29.jpg + idle.jpg   (mock 영도/program pictures, MOCK_FRAMES)
 #   .dev/music/   a few songs in subfolders, one with cover art
 #   .dev/sounds/  short soundboard clips
-#   .dev/config.json  Arkbird config pointing at the mock OBS/Chzzk
+#   .dev/config.json  Allmind config pointing at the mock OBS/Chzzk
 set -e
 cd "$(dirname "$0")/../.."
 D=.dev; mkdir -p $D/frames $D/music/Lofi $D/music/Game $D/sounds $D/data

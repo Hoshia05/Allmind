@@ -1,5 +1,5 @@
 // In-app updater: looks for a newer GitHub release, and on request downloads
-// Arkbird-X.Y.Z.exe and starts it in place of the running copy.
+// Allmind-X.Y.Z.exe and starts it in place of the running copy.
 // Never installs on its own, and never while OBS is streaming or recording.
 // See docs/plans/updater.md.
 import fs from 'node:fs';
@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-const ASSET_RE = /^Arkbird-(\d+\.\d+\.\d+)\.exe$/;
+const ASSET_RE = /^Allmind-(\d+\.\d+\.\d+)\.exe$/;
 const FIRST_CHECK_MS = 30 * 1000;
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -23,8 +23,8 @@ export function cmpVersion(a, b) {
 }
 
 export function updatesDir() {
-  if (process.env.ARKBIRD_UPDATES_DIR) return process.env.ARKBIRD_UPDATES_DIR;
-  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.arkbird'), 'Arkbird', 'updates');
+  if (process.env.ALLMIND_UPDATES_DIR) return process.env.ALLMIND_UPDATES_DIR;
+  return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.allmind'), 'Allmind', 'updates');
 }
 
 export class Updater {
@@ -63,7 +63,7 @@ export class Updater {
     try {
       const base = (this.cfg.apiBase || 'https://api.github.com').replace(/\/+$/, '');
       const res = await fetch(`${base}/repos/${this.cfg.repo}/releases/latest`, {
-        headers: { 'User-Agent': `Arkbird/${this.version}`, Accept: 'application/vnd.github+json' },
+        headers: { 'User-Agent': `Allmind/${this.version}`, Accept: 'application/vnd.github+json' },
         signal: AbortSignal.timeout(15000),
       });
       if (res.status === 404) {
@@ -113,10 +113,10 @@ export class Updater {
     if (!this.s.available || !this.asset) throw new Error('설치할 새 버전이 없어요');
     await this.assertIdle();
 
-    const dry = !this.isExe || process.env.ARKBIRD_UPDATE_DRY === '1';
+    const dry = !this.isExe || process.env.ALLMIND_UPDATE_DRY === '1';
     const version = this.s.latest;
     const dir = updatesDir();
-    const file = path.join(dir, `Arkbird-${version}.exe`);
+    const file = path.join(dir, `Allmind-${version}.exe`);
     const part = `${file}.part`;
     this.s.phase = 'downloading';
     this.s.progress = 0;
@@ -145,7 +145,7 @@ export class Updater {
 
   async download(asset, dest) {
     const res = await fetch(asset.url, {
-      headers: { 'User-Agent': `Arkbird/${this.version}` },
+      headers: { 'User-Agent': `Allmind/${this.version}` },
       signal: AbortSignal.timeout(15 * 60 * 1000),
     });
     if (!res.ok || !res.body) throw new Error(`다운로드 실패 (${res.status})`);
@@ -180,15 +180,25 @@ export class Updater {
         if (f.endsWith('.part') || (m && cmpVersion(m[1], this.version) <= 0)) rm(path.join(updatesDir(), f));
       }
     } catch {}
-    // Older unpacked copies next to the running one (…\Arkbird\app); locked ones just stay for next time.
+    // Older unpacked copies next to the running one (…\Allmind\app); locked ones just stay for next time.
     if (this.isExe) {
       const dir = path.dirname(process.execPath);
-      if (path.basename(dir).toLowerCase() === 'app' && path.basename(path.dirname(dir)).toLowerCase() === 'arkbird') {
+      if (path.basename(dir).toLowerCase() === 'app' && path.basename(path.dirname(dir)).toLowerCase() === 'allmind') {
         try {
           for (const f of fs.readdirSync(dir)) {
             if (ASSET_RE.test(f) && f !== path.basename(process.execPath)) rm(path.join(dir, f));
           }
         } catch {}
+      }
+    }
+    // The folder of the old name (Arkbird 0.17–0.19: its unpacked app and downloaded installers) is
+    // not needed any more. The old process may still be shutting down, so try again once later.
+    if (this.isExe && process.env.LOCALAPPDATA) {
+      const old = path.join(process.env.LOCALAPPDATA, 'Arkbird');
+      if (!path.resolve(process.execPath).toLowerCase().startsWith(old.toLowerCase() + path.sep)) {
+        const tryRm = () => { try { fs.rmSync(old, { recursive: true, force: true }); } catch {} };
+        tryRm();
+        setTimeout(tryRm, 60 * 1000).unref();
       }
     }
   }

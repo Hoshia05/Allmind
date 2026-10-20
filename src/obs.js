@@ -56,7 +56,7 @@ export class OBSClient extends EventEmitter {
       this.connected = false;
       for (const { reject } of this.pending.values()) reject(new Error('OBS disconnected'));
       this.pending.clear();
-      if (code === 4009) this.lastError = 'OBS rejected the password — check the OBS password in Arkbird settings';
+      if (code === 4009) this.lastError = 'OBS rejected the password — check the OBS password in Allmind settings';
       else if (!wasConnected && !this.lastError?.startsWith('OBS rejected')) this.lastError = `Can't reach OBS at ${this.url} — is OBS open with the WebSocket server enabled?`;
       if (wasConnected) {
         this.lastError = 'Lost the connection to OBS; reconnecting…';

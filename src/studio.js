@@ -77,7 +77,7 @@ export class Studio extends EventEmitter {
     try {
       if (!name) name = (await this.obs.call('GetSpecialInputs')).mic1 || '';
       if (!name) {
-        this.mic = { name: '', ok: false, muted: false, error: 'OBS 설정 → 오디오에 마이크가 없어요. 방송 PC의 Arkbird 설정에서 마이크 소스를 골라 주세요' };
+        this.mic = { name: '', ok: false, muted: false, error: 'OBS 설정 → 오디오에 마이크가 없어요. 방송 PC의 Allmind 설정에서 마이크 소스를 골라 주세요' };
       } else {
         const r = await this.obs.call('GetInputMute', { inputName: name });
         this.mic = { name, ok: true, muted: !!r.inputMuted, error: '' };

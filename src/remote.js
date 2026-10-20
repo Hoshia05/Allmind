@@ -2,7 +2,7 @@
 //
 // 넘기기 / 알림 정지 are server-side commands that only the logged-in 리모컨
 // can send. So the 리모컨 runs as an OBS custom browser dock (logged in once,
-// OBS remembers it), and Arkbird clicks its buttons through the same
+// OBS remembers it), and Allmind clicks its buttons through the same
 // DevTools link it uses for the 영도. The labels we show are read live from
 // the 리모컨 itself, so they always match its real state.
 import { EventEmitter } from 'node:events';
@@ -102,7 +102,7 @@ export class ChzzkRemote extends EventEmitter {
       const res = await fetch(`http://127.0.0.1:${this.port}/json/list`, { signal: AbortSignal.timeout(2000) });
       list = await res.json();
     } catch {
-      throw new Error('OBS를 Arkbird에서 시작해야 해요 (클릭 전달과 같은 조건)');
+      throw new Error('OBS를 Allmind에서 시작해야 해요 (클릭 전달과 같은 조건)');
     }
     const t = list.find((x) => x.type === 'page' && /studio\.chzzk\.naver\.com\/.+\/remotecontrol/.test(x.url));
     if (!t) throw new Error('OBS에 치지직 리모컨 독이 없어요');

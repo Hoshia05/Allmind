@@ -1,8 +1,8 @@
-// Arkbird.exe — small self-unpacking launcher.
+// Allmind.exe — small self-unpacking launcher.
 //
 // The real app (a ~80 MB Node single-executable) is appended to this file,
 // xz-compressed (~21 MB). On start we unpack it once to
-//   %LOCALAPPDATA%\Arkbird\app\Arkbird-<version>.exe
+//   %LOCALAPPDATA%\Allmind\app\Allmind-<version>.exe
 // and run it. Later starts of the same version skip straight to running it.
 //
 // Layout of this file:  [launcher exe][xz payload][u64 payload size]["SDPAYLD1"]
@@ -25,8 +25,8 @@
 
 static void fail(const wchar_t *what, DWORD err) {
   wchar_t msg[1024];
-  _snwprintf(msg, 1024, L"Arkbird를 시작하지 못했어요.\n\n%ls (오류 %lu)", what, (unsigned long)err);
-  MessageBoxW(NULL, msg, L"Arkbird", MB_ICONERROR | MB_OK);
+  _snwprintf(msg, 1024, L"Allmind를 시작하지 못했어요.\n\n%ls (오류 %lu)", what, (unsigned long)err);
+  MessageBoxW(NULL, msg, L"Allmind", MB_ICONERROR | MB_OK);
   ExitProcess(1);
 }
 
@@ -38,7 +38,7 @@ static int file_exists(const wchar_t *p) {
 // Remove app copies of other versions (ignored if one is still running).
 static void clean_old(const wchar_t *dir, const wchar_t *keep) {
   wchar_t pattern[MAX_PATH];
-  _snwprintf(pattern, MAX_PATH, L"%ls\\Arkbird-*.exe", dir);
+  _snwprintf(pattern, MAX_PATH, L"%ls\\Allmind-*.exe", dir);
   WIN32_FIND_DATAW fd;
   HANDLE h = FindFirstFileW(pattern, &fd);
   if (h == INVALID_HANDLE_VALUE) return;
@@ -114,15 +114,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
   if (!GetModuleFileNameW(NULL, self, MAX_PATH)) fail(L"경로를 알 수 없음", GetLastError());
 
   if (SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, base) != S_OK) fail(L"LOCALAPPDATA를 찾을 수 없음", 0);
-  _snwprintf(dir, MAX_PATH, L"%ls\\Arkbird", base);
+  _snwprintf(dir, MAX_PATH, L"%ls\\Allmind", base);
   CreateDirectoryW(dir, NULL);
-  _snwprintf(dir, MAX_PATH, L"%ls\\Arkbird\\app", base);
+  _snwprintf(dir, MAX_PATH, L"%ls\\Allmind\\app", base);
   CreateDirectoryW(dir, NULL);
-  _snwprintf(name, 128, L"Arkbird-%ls.exe", SD_VERSION);
+  _snwprintf(name, 128, L"Allmind-%ls.exe", SD_VERSION);
   _snwprintf(target, MAX_PATH, L"%ls\\%ls", dir, name);
 
   // Only one launcher unpacks at a time (double-clicks, auto-start…).
-  HANDLE mx = CreateMutexW(NULL, FALSE, L"Local\\ArkbirdUnpack");
+  HANDLE mx = CreateMutexW(NULL, FALSE, L"Local\\AllmindUnpack");
   if (mx) WaitForSingleObject(mx, 120000);
   if (!file_exists(target)) {
     unpack(self, target);

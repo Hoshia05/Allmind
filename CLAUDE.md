@@ -1,10 +1,10 @@
-# Arkbird — notes for Claude
+# Allmind — notes for Claude
 
-(Renamed from "Stream Desk" in 0.17.0. The code still reads the old `%APPDATA%\StreamDesk` settings, the old "Stream Desk" firewall rule and startup shortcut. The GitHub repo was renamed from CentralStreamingHQ to ArkBird (the old URL redirects).)
+(Names so far: Stream Desk → Arkbird (0.17.0) → **Allmind (0.20.0)**. The code still imports settings from `%APPDATA%\Arkbird` and `%APPDATA%\StreamDesk`, honours the old "Arkbird"/"Stream Desk" firewall rules and startup shortcuts, and deletes the old `%LOCALAPPDATA%\Arkbird` folder. The release workflow attaches every exe **twice** (`Allmind-X.Y.Z.exe` + identical `Arkbird-X.Y.Z.exe`) because Arkbird 0.17–0.19's updater only matches the old asset name — drop that once nobody runs Arkbird. The GitHub repo is still `Hoshia05/ArkBird` (CentralStreamingHQ → ArkBird earlier; old URLs redirect). The owner can rename it to Allmind on github.com; `update.repo` in `config.example.json` and the Repo line below should then be updated, and the redirect keeps old builds working.)
 
-Arkbird is a one-exe dashboard for a two-PC Chzzk (치지직) VTuber stream (호시아).
+Allmind is a one-exe dashboard for a two-PC Chzzk (치지직) VTuber stream (호시아).
 It runs on the **stream PC** next to OBS (Ryzen 3600X + RTX 2070, meant to run only
-OBS + Arkbird) and is used from browsers on the main PC, an iPad and a phone.
+OBS + Allmind) and is used from browsers on the main PC, an iPad and a phone.
 It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevTools
 (OBS is started with `--remote-debugging-port=9222`), and to Chzzk's web endpoints.
 
@@ -17,7 +17,7 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
   Don't push half-done work. (See "GitHub" below.) Never push tags or create releases yourself — blocked;
   the Actions workflow does it.
 - **Deliverable = one exe.** After a change: bump the version, build, send
-  `dist/Arkbird-<ver>.exe` to the owner as a file, and delete the previous exe from `dist/`.
+  `dist/Allmind-<ver>.exe` to the owner as a file, and delete the previous exe from `dist/`.
   No README/zip alongside unless asked.
 - **Lean matters.** Every OBS request and every preview frame costs the stream PC.
   Prefer OBS events over polling; poll only while a dashboard is open (`clients.size`).
@@ -30,8 +30,8 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 - Version lives in **two places**: `package.json` `"version"` and `VERSION` in `src/server.js`.
 - First time in a session: `sh tools/setup-build.sh` (fetches Windows node.exe of the same
   version via npm, xz-embedded via git, zig via pip → `.build-tools/`, git-ignored).
-- Build + verify: `sh tools/build-all.sh` → `dist/Arkbird-<ver>.exe` (~20 MB;
-  `dist/Arkbird.exe` is the 82 MB unpacked app, don't send that).
+- Build + verify: `sh tools/build-all.sh` → `dist/Allmind-<ver>.exe` (~20 MB;
+  `dist/Allmind.exe` is the 82 MB unpacked app, don't send that).
 - How it's built: `tools/build-exe.mjs` bundles `src/` with esbuild into a Node SEA with
   every file in `public/` as an asset; `tools/build-launcher.mjs` wraps it in a tiny C
   launcher (`tools/launcher/launcher.c`) that unpacks an xz payload. New files in
@@ -73,7 +73,7 @@ frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording sto
 Updater tests: `MOCK_UPDATE=9.9.9` (fake GitHub release on :9333; `MOCK_UPDATE_BAD=size|hash|mz`,
 `MOCK_UPDATE_NODIGEST=1`), `MOCK_OFFLINE=1` (OBS not streaming — otherwise installs are refused).
 From source the install is always a dry run (downloads + verifies, doesn't start the file); set
-`ARKBIRD_UPDATES_DIR` to keep it out of your home dir. The real Windows replace-and-restart can't be tested here.
+`ALLMIND_UPDATES_DIR` to keep it out of your home dir. The real Windows replace-and-restart can't be tested here.
 
 ## Code map
 
@@ -91,8 +91,8 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/markers.js` — ⭐ marks + chat log for VOD Scout/SkyEye (record chapters + `<video>.markers.json`, format v2: `markers` + `chat`). Monotonic recording clock (pauses excluded, 60 s `GetRecordStatus` drift check), 15 s dirty-save, recovery after restart, `gap` items. Chat comes from `chzzk` `'live-chat'` (live CHAT/SPECIAL only, not the RECENT_RESULT replay); toggle `config.markers.saveChat` (off = v1, marks only).
 - `src/remote.js` — 치지직 리모컨 dock in OBS via DevTools (■ 정지 / 넘기기 / 알림 정지).
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
-- `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Arkbird-X.Y.Z.exe`**.
-- `src/config.js` — config/state paths (`%APPDATA%\Arkbird` in the exe), defaults from
+- `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**.
+- `src/config.js` — config/state paths (`%APPDATA%\Allmind` in the exe), defaults from
   `config.example.json`, import from older versions. `src/win.js` — Windows bits (tray, firewall, pickers).
 - `public/index.html`, `app.js`, `style.css` — dashboard. `dock.js` — free panel layout
   (columns, slots, tabs; saved per browser in `localStorage['sd.dock']`; only on wide
@@ -111,7 +111,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.
 - OBS's own state isn't reset between streams unless it restarts; the owner's frame drops
   were mostly an OBS left open ~25 h. Ask for the OBS log (`%APPDATA%\obs-studio\logs`,
-  end-of-session lagged/skipped-frame lines) and `data\arkbird.log` (`[guard]` lines)
+  end-of-session lagged/skipped-frame lines) and `data\allmind.log` (`[guard]` lines)
   when diagnosing performance.
 - `dock.js` slot heights are *shares* of a column (flex-grow). Shares below 1 in total
   leave a panel only part-filling its column, so `normalize()` keeps each column's shares
@@ -127,9 +127,9 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 
 When the session is linked to the owner's computer (`mcp__remote-devices__*`), it is the
 **stream PC**. Folder access must be requested per folder (`device_request_folder_access`);
-`%APPDATA%\Arkbird` can't be granted, so ask the owner for logs. To install a build:
+`%APPDATA%\Allmind` can't be granted, so ask the owner for logs. To install a build:
 `SendUserFile` the exe, then `device_commit_files` it into `~/Downloads` (the owner keeps
-`Arkbird-<ver>.exe` there). There's no device shell, and files can't be deleted.
+`Allmind-<ver>.exe` there). There's no device shell, and files can't be deleted.
 
 ## Model split (to save tokens)
 

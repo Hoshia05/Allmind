@@ -125,7 +125,7 @@ export class Markers extends EventEmitter {
     if (!r.dir) {
       try { r.dir = (await this.obs.call('GetRecordDirectory')).recordDirectory || null; } catch {}
     }
-    if (recover) this._recover(r); // Arkbird restarted mid-recording: pick up its file
+    if (recover) this._recover(r); // Allmind restarted mid-recording: pick up its file
     if (!r.tmpFile) r.tmpFile = `vodscout-markers-${stamp(r.startedAt)}.json`;
     this.emit('change');
   }
@@ -187,10 +187,10 @@ export class Markers extends EventEmitter {
     r.chapters = best.j.recording?.obs_chapters ?? null;
     if (this.saveChat && Array.isArray(best.j.chat)) {
       r.chat = best.j.chat;
-      // chat from the time Arkbird was closed is missing: say so
+      // chat from the time Allmind was closed is missing: say so
       const saved = Number(best.j.recording?.duration);
       const nowT = r.activeMs / 1000;
-      if (saved > 0 && nowT - saved > GAP_MIN_MS / 1000) r.chat.push({ t: saved, type: 'gap', text: 'chat not recorded (Arkbird was closed)' });
+      if (saved > 0 && nowT - saved > GAP_MIN_MS / 1000) r.chat.push({ t: saved, type: 'gap', text: 'chat not recorded (Allmind was closed)' });
     }
     this._log('recovered', `${r.marks.length} marks, ${r.chat.length} chat items from ${best.f}`);
   }
@@ -342,7 +342,7 @@ export class Markers extends EventEmitter {
     if (!r.marks.length && !r.chat.some((c) => c.type !== 'gap')) return; // nothing worth a file yet
     const target = r.done ? r.file : r.savedAt || (r.dir ? path.join(r.dir, r.tmpFile) : null);
     if (target && this._write(r, target)) { r.savedAt = target; return; }
-    // recording folder unknown or not writable: keep a copy in Arkbird's data folder
+    // recording folder unknown or not writable: keep a copy in Allmind's data folder
     if (this.fallbackDir) {
       const fb = path.join(this.fallbackDir, r.tmpFile || `vodscout-markers-${stamp(r.startedAt)}.json`);
       if (this._write(r, fb)) { r.savedAt = fb; if (r.done) r.file = fb; }

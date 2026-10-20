@@ -1,4 +1,4 @@
-// Arkbird — runs on the stream PC next to OBS.
+// Allmind — runs on the stream PC next to OBS.
 // Serves the dashboard (open it from the main PC) and a small launcher /
 // settings window that only works on the stream PC itself.
 import http from 'node:http';
@@ -19,7 +19,7 @@ import { Soundboard } from './soundboard.js';
 import { Updater } from './update.js';
 import * as win from './win.js';
 
-const VERSION = '0.19.0';
+const VERSION = '0.20.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -28,7 +28,7 @@ const PORT = config.server.port;
 // ---------- logging (the exe has no console window) ----------
 if (IS_EXE) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  const logFile = path.join(DATA_DIR, 'arkbird.log');
+  const logFile = path.join(DATA_DIR, 'allmind.log');
   try { if (fs.statSync(logFile).size > 1 << 20) fs.renameSync(logFile, logFile + '.old'); } catch {}
   const out = fs.createWriteStream(logFile, { flags: 'a' });
   for (const level of ['log', 'warn', 'error']) {
@@ -55,7 +55,8 @@ const openDashboardHere = () => win.openAppWindow(`http://127.0.0.1:${PORT}/`, {
 async function otherInstanceRunning() {
   try {
     const r = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { signal: AbortSignal.timeout(1500) });
-    return (await r.json()).app === 'arkbird';
+    const app = (await r.json()).app;
+    return app === 'allmind' || app === 'arkbird'; // the old name: an Arkbird 0.17–0.19 still on the port
   } catch {
     return false;
   }
@@ -108,7 +109,7 @@ async function main() {
         setTimeout(() => process.exit(0), 500);
         return;
       }
-      await win.alertBox(`포트 ${PORT}을(를) 다른 프로그램이 쓰고 있어서 Arkbird를 시작할 수 없어요.\n설정 파일의 server.port 값을 바꿔 주세요:\n${configPath()}`);
+      await win.alertBox(`포트 ${PORT}을(를) 다른 프로그램이 쓰고 있어서 Allmind를 시작할 수 없어요.\n설정 파일의 server.port 값을 바꿔 주세요:\n${configPath()}`);
       process.exit(1);
     }
   }
@@ -394,7 +395,7 @@ async function main() {
       }
     }
     console.log('[obs] did not appear within 15s');
-    throw new Error(`OBS가 켜지지 않았어요 (${info.exe}). 설정 폴더의 data\\arkbird.log를 보내 주세요`);
+    throw new Error(`OBS가 켜지지 않았어요 (${info.exe}). 설정 폴더의 data\\allmind.log를 보내 주세요`);
   }
 
   function restart() {
@@ -413,7 +414,7 @@ async function main() {
     setTimeout(() => process.exit(0), 200);
   }
 
-  // In-app updater: the downloaded Arkbird-X.Y.Z.exe takes over (like restart(), with another exe).
+  // In-app updater: the downloaded Allmind-X.Y.Z.exe takes over (like restart(), with another exe).
   const updater = new Updater({
     config,
     version: VERSION,
@@ -587,7 +588,7 @@ async function main() {
       return res.end(readAsset('public/mark.html'));
     }
 
-    if (key === 'GET /api/ping') return json(res, 200, { app: 'arkbird', version: VERSION });
+    if (key === 'GET /api/ping') return json(res, 200, { app: 'allmind', version: VERSION });
 
     if (key === 'GET /api/events') {
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
@@ -696,7 +697,7 @@ async function main() {
     json(res, 404, { error: 'Not found' });
   });
 
-  console.log(`Arkbird ${VERSION} on port ${PORT} — ${lanAddresses().join(', ') || 'no network'}`);
+  console.log(`Allmind ${VERSION} on port ${PORT} — ${lanAddresses().join(', ') || 'no network'}`);
   if (!IS_EXE) {
     console.log(`\n  Launcher:  ${launcherUrl()}\n  Dashboard: ${lanAddresses()[0] || `http://localhost:${PORT}`}\n`);
   }
@@ -708,7 +709,7 @@ async function main() {
   if (win.isWin) {
     win.startTray({
       exe: process.execPath,
-      labels: { open: 'Arkbird 열기', dashboard: '대시보드 열기 (이 PC)', quit: '종료' },
+      labels: { open: 'Allmind 열기', dashboard: '대시보드 열기 (이 PC)', quit: '종료' },
       onOpen: openLauncher,
       onDashboard: openDashboardHere,
       onQuit: quit,
@@ -726,6 +727,6 @@ async function main() {
 
 main().catch(async (e) => {
   console.error(e.stack || e);
-  await win.alertBox(`Arkbird를 시작하지 못했어요:\n${e.message}`);
+  await win.alertBox(`Allmind를 시작하지 못했어요:\n${e.message}`);
   process.exit(1);
 });

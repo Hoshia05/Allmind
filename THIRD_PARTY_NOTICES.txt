@@ -1,7 +1,7 @@
-Third-party software in Arkbird.exe
+Third-party software in Allmind.exe
 ======================================
 
-Arkbird itself is MIT licensed (see LICENSE). The released Arkbird-x.y.z.exe
+Allmind itself is MIT licensed (see LICENSE). The released Allmind-x.y.z.exe
 also contains the following third-party software.
 
 1. Node.js runtime (v22) — the exe is a Node.js single executable application.

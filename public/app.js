@@ -1,4 +1,4 @@
-// Arkbird control page. Talks only to the helper on the stream PC.
+// Allmind control page. Talks only to the helper on the stream PC.
 const $ = (id) => document.getElementById(id);
 let S = null; // latest state from the helper
 let TRACKS = []; // the setlist (sent only when it changes)
@@ -15,7 +15,7 @@ async function api(path, body = {}) {
     if (!data.ok) toast(data.error || 'Request failed', true);
     return data;
   } catch {
-    toast('Arkbird helper is not reachable', true);
+    toast('Allmind helper is not reachable', true);
     return { ok: false };
   }
 }
@@ -106,7 +106,7 @@ function render() {
   window.syncAlertMirror?.();
 }
 
-// New-version notice (the stream PC's Arkbird checks GitHub; installing is done in its settings window).
+// New-version notice (the stream PC's Allmind checks GitHub; installing is done in its settings window).
 let UPD = null;
 let updDismissed = '';
 try { updDismissed = localStorage.getItem('sd.updDismissed') || ''; } catch {}
@@ -122,10 +122,10 @@ function renderBanners() {
   const { obs, bgm, donation, interact } = S;
   const out = [];
   if (UPD?.available && UPD.latest !== updDismissed) {
-    out.push(`<div class="banner info">Arkbird ${esc(UPD.latest)} 업데이트가 있어요 (지금 ${esc(UPD.current)}) — 방송 PC의 Arkbird 설정 창에서 설치할 수 있어요. <button class="btn" data-act="dismiss-update">나중에</button></div>`);
+    out.push(`<div class="banner info">Allmind ${esc(UPD.latest)} 업데이트가 있어요 (지금 ${esc(UPD.current)}) — 방송 PC의 Allmind 설정 창에서 설치할 수 있어요. <button class="btn" data-act="dismiss-update">나중에</button></div>`);
   }
   if (!obs.connected) {
-    out.push(`<div class="banner bad">OBS에 연결할 수 없음 — ${esc(obs.error || obs.url)}. OBS에서 도구 → WebSocket 서버 설정을 켜고, 비밀번호를 방송 PC의 Arkbird 설정에 넣어 주세요.</div>`);
+    out.push(`<div class="banner bad">OBS에 연결할 수 없음 — ${esc(obs.error || obs.url)}. OBS에서 도구 → WebSocket 서버 설정을 켜고, 비밀번호를 방송 PC의 Allmind 설정에 넣어 주세요.</div>`);
   } else {
     if (bgm.sourceError) {
       const canCreate = bgm.sourceError.startsWith('No Media Source');
@@ -545,7 +545,7 @@ function renderRemote() {
 async function remotePress(path) {
   buzz();
   const r = S.remote;
-  if (!r.connected) return toast(`${r.error || '치지직 리모컨에 연결되지 않음'} — 방송 PC의 Arkbird 창에서 설정 방법을 확인하세요`, true);
+  if (!r.connected) return toast(`${r.error || '치지직 리모컨에 연결되지 않음'} — 방송 PC의 Allmind 창에서 설정 방법을 확인하세요`, true);
   if (r.needsLogin) return toast('OBS의 치지직 리모컨 독에서 네이버에 로그인해 주세요', true);
   const res = await api(path);
   if (res.ok) toast(`리모컨: "${res.pressed}" 눌렀어요`);
@@ -988,7 +988,7 @@ function renderAlertState() {
   if (!a.sourceOk) {
     $('alertMirrorEmpty').style.display = '';
     $('alertMirrorEmpty').textContent = a.error === 'not-set'
-      ? '방송 PC의 Arkbird 설정 → "도네 알림 브라우저 소스"에서 소스를 골라 주세요'
+      ? '방송 PC의 Allmind 설정 → "도네 알림 브라우저 소스"에서 소스를 골라 주세요'
       : `"${a.sourceName}" 소스를 OBS에서 찾을 수 없어요`;
   }
   alertMirrorLoop.sync();
@@ -1386,7 +1386,7 @@ async function markNow() {
     const j = await r.json();
     if (j.ok) toast(`⭐ ${fmtT(j.t)} 마크 (${j.count})`);
     else toast(j.reason === 'not recording' ? '녹화 중이 아니에요' : `마크 실패: ${j.reason}`, true);
-  } catch { toast('Arkbird에 연결할 수 없어요', true); }
+  } catch { toast('Allmind에 연결할 수 없어요', true); }
 }
 $('markBtn').addEventListener('click', markNow);
 $('markMore').addEventListener('click', (ev) => { ev.stopPropagation(); $('markMenu').hidden = !$('markMenu').hidden; });
@@ -1409,7 +1409,7 @@ function renderSoundboard() {
   if (!sb) return;
   const msg = $('sbMsg');
   let text = '', html = '';
-  if (sb.folderError === 'none') text = '방송 PC의 Arkbird 설정에서 사운드보드 폴더를 지정하면 여기에 버튼이 생겨요';
+  if (sb.folderError === 'none') text = '방송 PC의 Allmind 설정에서 사운드보드 폴더를 지정하면 여기에 버튼이 생겨요';
   else if (sb.folderError) text = sb.folderError;
   else if (!S.obs?.connected) text = 'OBS 연결을 기다리는 중…';
   else if (!sb.sourceOk) html = `OBS에 <b>${esc(sb.sourceName)}</b> 소스가 없어요 <button class="btn small-btn" id="sbCreate">만들기</button><br><span class="muted">BGM 소스가 있는 모든 장면(또는 그룹)에 추가돼요</span>`;

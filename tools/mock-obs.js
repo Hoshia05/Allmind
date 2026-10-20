@@ -1,4 +1,4 @@
-// Fake OBS for testing Arkbird without the stream PC.
+// Fake OBS for testing Allmind without the stream PC.
 //  - obs-websocket v5 on ws://127.0.0.1:4455 (password via MOCK_OBS_PASSWORD)
 //  - Chrome DevTools endpoint on http://127.0.0.1:9222 pretending to be the 영도 browser source
 // Simulates: a BGM media source that "plays" (20s per track), a 영도 that
@@ -438,7 +438,7 @@ for (let i = 0; i < 12; i++) {
 }
 
 // MOCK_UPDATE=9.9.9 pretends GitHub has a release v9.9.9 (for the updater):
-//   GET /repos/<o>/<r>/releases/latest  and  /mock-release/Arkbird-9.9.9.exe (3 MB, sent slowly)
+//   GET /repos/<o>/<r>/releases/latest  and  /mock-release/Allmind-9.9.9.exe (3 MB, sent slowly)
 //   MOCK_UPDATE_BAD=size|hash|mz makes the download wrong; MOCK_UPDATE_NODIGEST=1 omits the digest.
 const UPD = process.env.MOCK_UPDATE || '';
 const updExe = Buffer.concat([Buffer.from('MZ'), crypto.randomBytes(3 * 1024 * 1024 - 2)]);
@@ -448,16 +448,16 @@ function updateRoutes(req, res) {
   if (/^\/repos\/[^/]+\/[^/]+\/releases\/latest/.test(req.url)) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      tag_name: `v${UPD}`, name: `Arkbird ${UPD}`,
+      tag_name: `v${UPD}`, name: `Allmind ${UPD}`,
       body: '## 0.99 테스트 릴리스\n- 업데이트 기능 시험용 가짜 릴리스예요\n- 두 번째 줄',
       assets: [
         { name: 'THIRD_PARTY_NOTICES.txt', size: 10, browser_download_url: 'http://127.0.0.1:9333/mock-release/notices.txt' },
-        { name: `Arkbird-${UPD}.exe`, size: updExe.length, browser_download_url: `http://127.0.0.1:9333/mock-release/Arkbird-${UPD}.exe`, ...(process.env.MOCK_UPDATE_NODIGEST ? {} : { digest: 'sha256:' + (process.env.MOCK_UPDATE_BAD === 'hash' ? '0'.repeat(64) : updHash) }) },
+        { name: `Allmind-${UPD}.exe`, size: updExe.length, browser_download_url: `http://127.0.0.1:9333/mock-release/Allmind-${UPD}.exe`, ...(process.env.MOCK_UPDATE_NODIGEST ? {} : { digest: 'sha256:' + (process.env.MOCK_UPDATE_BAD === 'hash' ? '0'.repeat(64) : updHash) }) },
       ],
     }));
     return true;
   }
-  if (req.url.startsWith('/mock-release/Arkbird-')) {
+  if (req.url.startsWith('/mock-release/Allmind-')) {
     let body = updExe;
     if (process.env.MOCK_UPDATE_BAD === 'size') body = updExe.subarray(0, updExe.length - 1000);
     if (process.env.MOCK_UPDATE_BAD === 'mz') { body = Buffer.from(updExe); body[0] = 0x50; }

@@ -1,5 +1,5 @@
 // Config + small persistent state.
-// When running as Arkbird.exe, config.json and data/ live next to the exe
+// When running as Allmind.exe, config.json and data/ live next to the exe
 // and the web page / example config are read from inside the exe.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,17 +23,17 @@ const here = (() => {
 })();
 
 export const ROOT = IS_EXE ? path.dirname(process.execPath) : path.resolve(here, '..');
-// The exe keeps settings in one fixed place (%APPDATA%\Arkbird), so every
+// The exe keeps settings in one fixed place (%APPDATA%\Allmind), so every
 // new version uses them no matter which folder it was unzipped into.
 // Running from source keeps them next to the code.
-export const CONFIG_DIR = process.env.ARKBIRD_HOME
-  || (IS_EXE && process.platform === 'win32' && process.env.APPDATA ? path.join(process.env.APPDATA, 'Arkbird') : ROOT);
-const CONFIG_PATH = process.env.ARKBIRD_CONFIG || path.join(CONFIG_DIR, 'config.json');
-export const DATA_DIR = process.env.ARKBIRD_DATA || path.join(CONFIG_DIR, 'data');
+export const CONFIG_DIR = process.env.ALLMIND_HOME
+  || (IS_EXE && process.platform === 'win32' && process.env.APPDATA ? path.join(process.env.APPDATA, 'Allmind') : ROOT);
+const CONFIG_PATH = process.env.ALLMIND_CONFIG || path.join(CONFIG_DIR, 'config.json');
+export const DATA_DIR = process.env.ALLMIND_DATA || path.join(CONFIG_DIR, 'data');
 
 // ---------- carry settings over from an older version ----------
 // Old versions kept config.json (and data\) next to the exe, e.g.
-//   Downloads\StreamDesk-0.3.3\StreamDesk\config.json   (the program was called Stream Desk before Arkbird)
+//   Downloads\StreamDesk-0.3.3\StreamDesk\config.json   (the program was called Stream Desk, then Arkbird, before Allmind)
 // On first start, take the newest one found next to this copy.
 function looksLikeOurConfig(file) {
   try {
@@ -56,17 +56,18 @@ function findOlderInstall() {
     } catch {}
   };
   consider(ROOT); // config.json right next to this exe
-  // Before the rename (Stream Desk -> Arkbird) the exe kept its settings in %APPDATA%\StreamDesk
-  if (process.env.APPDATA) consider(path.join(process.env.APPDATA, 'StreamDesk'));
-  // Sibling folders: ..\* and ..\..\*\Arkbird (each zip unzips to its own folder)
+  // Before the renames the exe kept its settings in %APPDATA%\Arkbird (0.17–0.19) or %APPDATA%\StreamDesk (older);
+  // the newest of them wins. The old folders are left alone.
+  if (process.env.APPDATA) for (const old of ['Arkbird', 'StreamDesk']) consider(path.join(process.env.APPDATA, old));
+  // Sibling folders: ..\* and ..\..\*\Allmind (each zip unzips to its own folder)
   for (const base of [path.resolve(ROOT, '..'), path.resolve(ROOT, '..', '..')]) {
     let entries = [];
     try { entries = fs.readdirSync(base, { withFileTypes: true }).slice(0, 500); } catch { continue; }
     for (const e of entries) {
-      if (!e.isDirectory() || !/(arkbird|stream.?desk)/i.test(e.name)) continue;
+      if (!e.isDirectory() || !/(allmind|arkbird|stream.?desk)/i.test(e.name)) continue;
       const d = path.join(base, e.name);
       consider(d);
-      for (const sub of ['Arkbird', 'arkbird', 'StreamDesk', 'stream-desk']) consider(path.join(d, sub));
+      for (const sub of ['Allmind', 'allmind', 'Arkbird', 'arkbird', 'StreamDesk', 'stream-desk']) consider(path.join(d, sub));
     }
   }
   found.sort((a, b) => b.mtime - a.mtime);
@@ -80,7 +81,7 @@ function copyDir(from, to) {
 }
 export let IMPORTED_FROM = null;
 export function migrateFromOlderVersion() {
-  if (fs.existsSync(CONFIG_PATH) || process.env.ARKBIRD_CONFIG) return null;
+  if (fs.existsSync(CONFIG_PATH) || process.env.ALLMIND_CONFIG) return null;
   const dir = findOlderInstall();
   if (!dir) return null;
   try {
