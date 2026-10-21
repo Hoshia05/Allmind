@@ -7,6 +7,7 @@ import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { cmpVersion } from './update.js';
 
 export const isWin = process.platform === 'win32';
 const OBS_DEBUG_ARGS = ['--remote-debugging-port=9222', '--remote-allow-origins=*'];
@@ -122,9 +123,111 @@ export function openAppWindow(url, { width = 480, height = 760 } = {}) {
     const c = spawn(browser, [`--app=${url}`, `--window-size=${width},${height}`], { detached: true, stdio: 'ignore' });
     c.on('error', () => openInDefaultBrowser(url));
     c.unref();
+    stampAppWindows(); // make the taskbar show it as Allmind, not Edge
   } else {
     openInDefaultBrowser(url);
   }
+}
+
+// ---------------- taskbar identity ----------------
+// The Allmind window is Edge (or Chrome) in app mode, so the taskbar would call it "Microsoft Edge"
+// and pinning it would pin Edge. Windows lets a window carry its own taskbar identity (AppUserModelID +
+// "relaunch" command/name/icon); we set those on our app windows so they group as "Allmind" and
+// "Pin to taskbar" creates an Allmind shortcut that starts the exe. The exe it points at must keep
+// working across updates, so each start keeps a copy of the launcher at a fixed path.
+export function stableLauncherPath() {
+  return process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Allmind', 'Allmind.exe') : null;
+}
+export function ensureStableLauncher(version) {
+  const from = process.env.ALLMIND_LAUNCHER; // set by the launcher exe that started us
+  const to = stableLauncherPath();
+  if (!isWin || !from || !to) return;
+  try {
+    const verFile = path.join(path.dirname(to), 'launcher.version');
+    if (path.resolve(from).toLowerCase() === path.resolve(to).toLowerCase()) return; // we were started from it
+    const have = fs.existsSync(to) && fs.existsSync(verFile) ? fs.readFileSync(verFile, 'utf8').trim() : '';
+    if (have && cmpVersion(have, version) >= 0) return; // same or newer is already there
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to + '.tmp');
+    fs.renameSync(to + '.tmp', to);
+    fs.writeFileSync(verFile, version);
+    console.log(`[window] launcher copy for the taskbar: ${to}`);
+  } catch (e) {
+    console.log(`[window] couldn't keep a launcher copy: ${e.message}`);
+  }
+}
+
+const STAMP_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+if (-not ('AllmindWin' -as [type])) {
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class AllmindWin {
+  [StructLayout(LayoutKind.Sequential)] public struct PKEY { public Guid fmt; public uint pid; }
+  [StructLayout(LayoutKind.Explicit, Size = 24)] public struct PV { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr p; }
+  [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IPropertyStore {
+    [PreserveSig] int GetCount(out uint c);
+    [PreserveSig] int GetAt(uint i, out PKEY k);
+    [PreserveSig] int GetValue(ref PKEY k, out PV v);
+    [PreserveSig] int SetValue(ref PKEY k, ref PV v);
+    [PreserveSig] int Commit();
+  }
+  [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore ps);
+  delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder sb, int n);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  static void SetStr(IPropertyStore ps, uint pid, string s) {
+    PKEY k = new PKEY(); k.fmt = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"); k.pid = pid;
+    PV v = new PV(); v.vt = 31; v.p = Marshal.StringToCoTaskMemUni(s);
+    ps.SetValue(ref k, ref v);
+  }
+  static HashSet<long> done = new HashSet<long>();
+  // Windows titled exactly "Allmind" that belong to Edge/Chrome (a normal tab would be "Allmind - Microsoft Edge").
+  public static int Stamp(string id, string cmd, string name, string icon) {
+    int n = 0;
+    EnumWindows(delegate (IntPtr h, IntPtr l) {
+      if (!IsWindowVisible(h) || done.Contains(h.ToInt64())) return true;
+      StringBuilder sb = new StringBuilder(256); GetWindowText(h, sb, 256);
+      if (!sb.ToString().Equals("Allmind", StringComparison.OrdinalIgnoreCase)) return true;
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      string pn = ""; try { pn = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant(); } catch {}
+      if (pn != "msedge" && pn != "chrome") return true;
+      Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
+      IPropertyStore ps;
+      if (SHGetPropertyStoreForWindow(h, ref iid, out ps) != 0 || ps == null) return true;
+      SetStr(ps, 5, id); SetStr(ps, 2, cmd); SetStr(ps, 4, name); SetStr(ps, 3, icon);
+      ps.Commit(); done.Add(h.ToInt64()); n++;
+      return true;
+    }, IntPtr.Zero);
+    return n;
+  }
+}
+'@
+}
+$exe = $env:SD_EXE
+$total = 0
+for ($i = 0; $i -lt 30; $i++) {
+  $total += [AllmindWin]::Stamp('Hoshia.Allmind', ('"' + $exe + '"'), 'Allmind', ($exe + ',0'))
+  Start-Sleep -Milliseconds 500
+}
+[Console]::Out.Write("stamped $total")
+`;
+let stamping = false;
+function stampAppWindows() {
+  const exe = stableLauncherPath();
+  if (!isWin || !exe || !fs.existsSync(exe) || stamping) return;
+  stamping = true;
+  powershell(STAMP_SCRIPT, { timeout: 40000, env: { ...process.env, SD_EXE: exe } }).then((r) => {
+    stamping = false;
+    console.log(`[window] taskbar identity: ${r.ok ? r.stdout.trim() : `failed — ${(r.stderr || r.err?.message || '').trim().slice(0, 300)}`}`);
+  });
 }
 
 export function openInDefaultBrowser(url) {

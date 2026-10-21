@@ -130,6 +130,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
   }
   if (mx) { ReleaseMutex(mx); CloseHandle(mx); }
 
+  // Tell the app which exe started it (it keeps a copy at %LOCALAPPDATA%\Allmind\Allmind.exe
+  // for the taskbar pin / "relaunch" command, which must survive updates).
+  SetEnvironmentVariableW(L"ALLMIND_LAUNCHER", self);
+
   // Run it with the same arguments we got.
   size_t n = wcslen(target) + wcslen(cmd) + 8;
   wchar_t *line = (wchar_t *)malloc(n * sizeof(wchar_t));
