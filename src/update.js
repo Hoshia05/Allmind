@@ -177,7 +177,8 @@ export class Updater {
     try {
       for (const f of fs.readdirSync(updatesDir())) {
         const m = ASSET_RE.exec(f);
-        if (f.endsWith('.part') || (m && cmpVersion(m[1], this.version) <= 0)) rm(path.join(updatesDir(), f));
+        // older than us only: the current version's installer may be the exe that just started us (see server.js)
+        if (f.endsWith('.part') || (m && cmpVersion(m[1], this.version) < 0)) rm(path.join(updatesDir(), f));
       }
     } catch {}
     // Older unpacked copies next to the running one (…\Allmind\app); locked ones just stay for next time.

@@ -102,6 +102,8 @@
           <label class="check"><input type="checkbox" name="driveEnabled"> 녹화가 끝나면 영상과 ….markers.json을 드라이브에 올리기</label>
           <span class="hint">방송·녹화 중에는 올리지 않아요. 원본 파일은 그대로 두고, 드라이브의 <b>Allmind 녹화</b> 폴더에 올려요 (폴더는 드라이브에서 원하는 곳으로 옮겨도 돼요).</span>
           <label>파일 이름 형식 <span class="hint">{date}, {title} — 제목은 그 녹화에서 가장 오래 걸려 있던 치지직 제목</span><input type="text" name="nameTemplate" placeholder="{date} - {title}"></label>
+          <label>올릴 폴더 <span class="hint">드라이브에서 폴더를 열고 주소창의 링크를 붙여 넣으세요. 비워 두면 "Allmind 녹화" 폴더를 만들어 거기에 올려요.</span><input type="text" name="driveFolder" placeholder="https://drive.google.com/drive/folders/…" autocomplete="off"></label>
+          <div class="hint" id="driveFolderNote"></div>
           <label>업로드 속도 제한 (Mbps) <span class="hint">0 = 제한 없음</span><input type="number" name="maxMbps" min="0" max="1000"></label>
         </fieldset>
 

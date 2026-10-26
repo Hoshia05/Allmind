@@ -557,6 +557,7 @@ const yt = { streams: new Map(), broadcasts: new Map(), n: 0 };
 const drv = { files: new Map(), sessions: new Map(), n: 0, puts: 0, failAt: Number(process.env.MOCK_DRIVE_FAIL || 0) };
 const DRIVE_DIR = process.env.MOCK_DRIVE_DIR || '/tmp/mock-drive';
 const codes = new Map();
+const scopes = new Map();
 function mockYouTubeStreaming(on) {
   for (const s of yt.streams.values()) s.status.streamStatus = on && !process.env.MOCK_YT_NOFEED ? 'active' : 'inactive';
   for (const b of yt.broadcasts.values()) {
@@ -585,6 +586,7 @@ async function mockApis(req, res) {
     if (/youtube/.test(sc) && /drive/.test(sc)) return out(400, { error: 'invalid_request: scopes that cannot be requested together' });
     const code = 'gcode' + (++yt.n);
     codes.set(code, u.searchParams.get('code_challenge'));
+    scopes.set(code, u.searchParams.get('scope') || '');
     res.writeHead(302, { Location: `${u.searchParams.get('redirect_uri')}?code=${code}&state=${u.searchParams.get('state')}&scope=x` });
     return res.end();
   }
@@ -596,7 +598,7 @@ async function mockApis(req, res) {
       const ok = crypto.createHash('sha256').update(f.get('code_verifier') || '').digest('base64url') === ch;
       if (!ok) return out(400, { error: 'invalid_grant', error_description: 'PKCE mismatch' });
       log('google login');
-      return out(200, { access_token: 'gat1', expires_in: 3600, refresh_token: 'grt', scope: 'youtube drive.file', token_type: 'Bearer' });
+      return out(200, { access_token: 'gat1', expires_in: 3600, refresh_token: 'grt', scope: process.env.MOCK_DRIVE_OLDSCOPE ? 'https://www.googleapis.com/auth/drive.file' : scopes.get(f.get('code')) || '', token_type: 'Bearer' });
     }
     if (f.get('grant_type') === 'refresh_token') return f.get('refresh_token') === 'grt' ? out(200, { access_token: 'gat' + Date.now(), expires_in: 3600 }) : out(400, { error: 'invalid_grant' });
     return out(400, { error: 'unsupported_grant_type' });
@@ -632,6 +634,8 @@ async function mockApis(req, res) {
   }
   if (p === '/g/youtube/v3/liveBroadcasts/bind') {
     const b = yt.broadcasts.get(u.searchParams.get('id'));
+    // like YouTube: a key from another channel (or deleted) isn't found
+    if (!yt.streams.has(u.searchParams.get('streamId'))) return out(404, { error: { message: 'Stream not found', errors: [{ reason: 'liveStreamNotFound' }] } });
     b.contentDetails.boundStreamId = u.searchParams.get('streamId');
     b.status.lifeCycleStatus = 'ready';
     if (stream.active) mockYouTubeStreaming(true);
@@ -653,8 +657,11 @@ async function mockApis(req, res) {
     return out(200, { id });
   }
   if (p.startsWith('/g/drive/v3/files/')) {
-    const f = drv.files.get(p.split('/').pop());
-    return f ? out(200, { id: f.id, trashed: false }) : out(404, { error: { message: 'File not found' } });
+    const id = p.split('/').pop();
+    // MOCK_DRIVE_FOLDER=<id>: a folder the owner made in the browser ("방송 녹화")
+    if (id === process.env.MOCK_DRIVE_FOLDER) return out(200, { id, name: '방송 녹화', mimeType: 'application/vnd.google-apps.folder', trashed: false, capabilities: { canAddChildren: true } });
+    const f = drv.files.get(id);
+    return f ? out(200, { id: f.id, name: f.name, mimeType: f.mimeType || 'application/octet-stream', trashed: false, capabilities: { canAddChildren: true } }) : out(404, { error: { message: 'File not found' } });
   }
   if (p === '/g/upload/drive/v3/files' && u.searchParams.get('uploadType') === 'resumable') {
     const sid = 's' + (++drv.n);

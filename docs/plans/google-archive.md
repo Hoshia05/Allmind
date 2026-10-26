@@ -28,6 +28,7 @@ YouTube = fix automatically; setup = Stream now / default key.
   **Not in one request** (found on the real login, 0.24.3): Google answers with "Error 400: invalid_request —
   scopes that cannot be requested together". Two consents in a row, separate tokens per scope.
   Publishing the app ("In production") also needs a homepage and a privacy-policy URL on the Branding page.
+  0.30: Drive scope widened to full `drive` so uploads can go into the owner's existing folder (`drive.folder` link).
 - Tokens in `DATA_DIR/google.json`. **Secret**: never shown on the dashboard, never in the log
   bundle, never logged. Access token refreshed on demand.
 - `src/google.js`: `GoogleAuth` (token store, refresh, `fetch` wrapper with retry/backoff),

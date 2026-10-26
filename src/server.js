@@ -19,7 +19,7 @@ import { writeLogBundle, redact, obsConfigDir } from './logbundle.js';
 import { Soundboard } from './soundboard.js';
 import { Google } from './google.js';
 import { YouTubeGuard, fillTemplate } from './youtube.js';
-import { DriveUploader, safeName } from './drive.js';
+import { DriveUploader, safeName, parseFolderId } from './drive.js';
 import { ChzzkOpen, cleanTags } from './chzzkopen.js';
 import { loadState, saveState, freezeState, configPath as cfgPath } from './config.js';
 import * as backup from './backup.js';
@@ -30,7 +30,7 @@ import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.29.0';
+const VERSION = '0.30.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -612,7 +612,7 @@ async function main() {
       google: { clientId: config.google?.clientId || '', clientSecret: config.google?.clientSecret ? SECRET_MASK : '', redirect: `http://127.0.0.1:${PORT}/api/google/callback`, ...google.status() },
       chzzk: { clientId: config.chzzkOpen?.clientId || '', clientSecret: config.chzzkOpen?.clientSecret ? SECRET_MASK : '', redirect: chzzkRedirect(), ...chzzkOpen.status() },
       youtube: { enabled: config.youtube?.enabled !== false, titleTemplate: config.youtube?.titleTemplate || '{date} - {title}', ...youtube.status() },
-      drive: { enabled: config.drive?.enabled !== false, nameTemplate: config.drive?.nameTemplate || '{date} - {title}', maxMbps: config.drive?.maxMbps || 0, ...drive.status() },
+      drive: { folder: config.drive?.folder || '', enabled: config.drive?.enabled !== false, nameTemplate: config.drive?.nameTemplate || '{date} - {title}', maxMbps: config.drive?.maxMbps || 0, ...drive.status() },
     };
   }
   // The browser comes back here after the Google / CHZZK login page (this PC only).
@@ -765,7 +765,9 @@ async function main() {
         clientSecret: b.chzzkClientSecret === SECRET_MASK ? (config.chzzkOpen?.clientSecret || '') : clean(b.chzzkClientSecret),
       };
       const y = { enabled: !!b.youtubeEnabled, titleTemplate: String(b.titleTemplate || '{date} - {title}').trim() || '{date} - {title}' };
-      const d = { enabled: !!b.driveEnabled, nameTemplate: String(b.nameTemplate || '{date} - {title}').trim() || '{date} - {title}', maxMbps: Math.max(0, Number(b.maxMbps) || 0) };
+      const folder = String(b.driveFolder || '').trim();
+      if (folder && !parseFolderId(folder)) throw new Error('드라이브 폴더 링크를 확인해 주세요 (…/drive/folders/… 형태)');
+      const d = { folder, enabled: !!b.driveEnabled, nameTemplate: String(b.nameTemplate || '{date} - {title}').trim() || '{date} - {title}', maxMbps: Math.max(0, Number(b.maxMbps) || 0) };
       saveConfig({ google: g, chzzkOpen: c, youtube: y, drive: d });
       // apply now, no restart needed
       config.google = { ...(config.google || {}), ...g };
@@ -981,6 +983,10 @@ async function main() {
   }
 
   obs.start();
+  // Before the updater's housekeeping (prune), which removes downloaded installers: right after an update
+  // the exe that started us IS such a file, and both of these copy it.
+  win.ensureStableLauncher(VERSION); // fixed-path launcher copy for the taskbar pin
+  win.syncOriginLauncher(); // after an update: also replace the exe the owner started from
   updater.start();
 
   // ---------- desktop niceties ----------
@@ -996,8 +1002,6 @@ async function main() {
   }
   firewall().then((st) => console.log(`[firewall] inbound rule for ${PORT}: ${st.ok ? 'present' : 'MISSING'}`));
   if (config._importedFrom) console.log(`[config] imported settings from ${config._importedFrom}`);
-  win.ensureStableLauncher(VERSION); // fixed-path launcher copy for the taskbar pin
-  win.syncOriginLauncher(); // after an update: also replace the exe the owner started from
   // If "start with Windows" is on, point it at this copy of the exe (the old one may be gone).
   if (IS_EXE && win.runAtLoginEnabled()) win.setRunAtLogin(true, process.execPath).catch(() => {});
   if (config.app.startObs && !args.has('--restart') && !config._firstRun) {

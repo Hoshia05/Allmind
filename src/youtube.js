@@ -37,7 +37,12 @@ export class YouTubeGuard extends EventEmitter {
     this.liveSince = 0;
     this.timer = null;
     this.busy = null;
-    google.on('login', () => this.ensureReady('login').catch(() => {}));
+    google.on('login', () => {
+      // logged in to a different channel: the saved key/broadcast belong to the old one
+      const ch = google.auth?.channelId;
+      if (ch && this.st.streamId && this.st.channelId && this.st.channelId !== ch) this._keyGone('다른 채널로 로그인했어요');
+      this.ensureReady('login').catch(() => {});
+    });
   }
 
   get cfg() { return this.config.youtube || {}; }
@@ -76,6 +81,7 @@ export class YouTubeGuard extends EventEmitter {
       },
     });
     this.st.streamId = s.id;
+    this.st.channelId = this.g.auth?.channelId || '';
     this.st.broadcastId = null;
     this._save();
     console.log(`[youtube] created stream key ${s.id}`);
@@ -128,6 +134,8 @@ export class YouTubeGuard extends EventEmitter {
       this._set({ b: this._summary(b), error: null });
       return b;
     } catch (e) {
+      // the saved key isn't on the logged-in channel (deleted, or another channel/account)
+      if (/stream not found|liveStreamNotFound/i.test(`${e.message} ${e.reason || ''}`)) { this._keyGone('저장된 스트림 키가 지금 로그인한 채널에 없어요'); throw e; }
       this._set({ error: e.message });
       console.log(`[youtube] ensureReady failed: ${e.message}`);
       throw e;
@@ -241,6 +249,13 @@ export class YouTubeGuard extends EventEmitter {
       this._save();
     }
     await this.ensureReady('after stream');
+  }
+
+  _keyGone(why) {
+    console.log(`[youtube] ${why} — forgetting stream ${this.st.streamId}`);
+    this.st = {};
+    this._save();
+    this._set({ b: null, alert: null, error: `${why} — 설정 창 → 연동에서 "스트림 키 만들기"를 다시 누르고, 새 주소·키를 OBS Multi-RTMP에 넣어 주세요` });
   }
 
   forgetKey() {

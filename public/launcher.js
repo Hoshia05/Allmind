@@ -330,7 +330,7 @@ function fillLinks(r) {
     googleClientId: r.google.clientId, googleClientSecret: r.google.clientSecret,
     chzzkClientId: r.chzzk.clientId, chzzkClientSecret: r.chzzk.clientSecret,
     youtubeEnabled: r.youtube.enabled, titleTemplate: r.youtube.titleTemplate,
-    driveEnabled: r.drive.enabled, nameTemplate: r.drive.nameTemplate, maxMbps: r.drive.maxMbps,
+    driveEnabled: r.drive.enabled, nameTemplate: r.drive.nameTemplate, maxMbps: r.drive.maxMbps, driveFolder: r.drive.folder || '',
   };
   for (const [k, x] of Object.entries(v)) {
     const el = lf.elements[k];
@@ -374,8 +374,9 @@ function renderLinks(r) {
   const up = d.items.find((i) => i.status === 'uploading');
   const waiting = d.items.filter((i) => i.status === 'waiting' && i.kind === 'video').length;
   const err = d.items.find((i) => i.status === 'error');
-  let dv = !d.enabled ? '꺼짐' : !g.drive ? 'Google 로그인 필요' : err ? `실패: ${err.name}` : up ? `올리는 중 ${Math.floor((up.offset / up.size) * 100)}% · ${up.name}` : waiting ? `대기 ${waiting}개${d.paused ? ' (방송·녹화 끝나면)' : ''}` : '녹화가 끝나면 자동으로 올려요';
-  setDot('dDrive', !d.enabled || !g.drive ? '' : err ? 'bad' : 'ok');
+  let dv = !d.enabled ? '꺼짐' : !g.drive ? 'Google 로그인 필요' : d.needsReauth ? 'Google 로그인을 한 번 더 해 주세요 (고른 폴더에 올리려면 드라이브 권한이 더 필요해요)' : err ? `실패: ${err.name}` : up ? `올리는 중 ${Math.floor((up.offset / up.size) * 100)}% · ${up.name}` : waiting ? `대기 ${waiting}개${d.paused ? ' (방송·녹화 끝나면)' : ''}` : '녹화가 끝나면 자동으로 올려요';
+  $('driveFolderNote').innerHTML = d.custom ? (d.folderName ? `지금 올리는 곳: <a href="${d.folderUrl}" target="_blank" rel="noopener">${escapeAttr(d.folderName)}</a>` : '폴더는 다음 업로드 때 확인해요') : (d.folderUrl ? `지금 올리는 곳: <a href="${d.folderUrl}" target="_blank" rel="noopener">Allmind 녹화</a>` : '');
+  setDot('dDrive', !d.enabled || !g.drive ? '' : d.needsReauth ? 'warn' : err ? 'bad' : 'ok');
   $('vDrive').textContent = dv;
 
   const c = r.chzzk;

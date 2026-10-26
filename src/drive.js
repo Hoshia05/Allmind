@@ -31,6 +31,14 @@ export function safeName(s) {
     .trim();
 }
 
+// A Drive folder link (…/drive/folders/<id>, ?id=<id>, …/u/0/folders/<id>?…) or a bare id → id
+export function parseFolderId(input) {
+  const s = String(input || '').trim();
+  if (!s) return null;
+  const m = /\/folders\/([\w-]{10,})/.exec(s) || /[?&]id=([\w-]{10,})/.exec(s) || /^([\w-]{10,})$/.exec(s);
+  return m ? m[1] : null;
+}
+
 export class DriveUploader extends EventEmitter {
   // busy(): true while OBS streams or records
   constructor(google, config, { busy }) {
@@ -59,7 +67,10 @@ export class DriveUploader extends EventEmitter {
     const busy = this.busy();
     return {
       enabled: this.cfg.enabled !== false,
-      folderUrl: this.folderId ? `https://drive.google.com/drive/folders/${this.folderId}` : null,
+      folderUrl: this.target() ? `https://drive.google.com/drive/folders/${this.target()}` : this.folderId ? `https://drive.google.com/drive/folders/${this.folderId}` : null,
+      folderName: this.folderName || null,
+      custom: !!this.target(),
+      needsReauth: !!(this.target() && this.g.has('drive') && !this.g.driveFull()),
       paused: busy && this.items.some((i) => i.status === 'waiting' || i.status === 'uploading'),
       error: this.error,
       speed: this.speed,
@@ -138,7 +149,27 @@ export class DriveUploader extends EventEmitter {
       });
   }
 
+  // the owner's own folder (settings → 연동 → 올릴 폴더), if set
+  target() { return parseFolderId(this.cfg.folder); }
+
   async _folder() {
+    const want = this.target();
+    if (want) {
+      if (!this.g.driveFull()) throw new Error('고른 폴더에 올리려면 Google 로그인을 한 번 더 해서 드라이브 권한을 허용해 주세요 (설정 창 → 연동)');
+      let f;
+      try {
+        f = await this.g.api('GET', `/drive/v3/files/${want}`, { query: { fields: 'id,name,mimeType,trashed,capabilities(canAddChildren)', supportsAllDrives: 'true' } });
+      } catch (e) {
+        if (e.status === 404) throw new Error('올릴 폴더를 찾을 수 없어요 — 폴더 링크와, 드라이브에 로그인한 계정을 확인해 주세요');
+        throw e;
+      }
+      if (f.mimeType !== 'application/vnd.google-apps.folder') throw new Error('올릴 폴더 링크가 폴더가 아니에요');
+      if (f.trashed) throw new Error('올릴 폴더가 휴지통에 있어요');
+      if (f.capabilities && f.capabilities.canAddChildren === false) throw new Error('그 폴더에 파일을 올릴 권한이 없어요');
+      if (this.folderName !== f.name) { this.folderName = f.name; this.emit('change'); }
+      return want;
+    }
+    this.folderName = null;
     if (this.folderId) {
       try {
         const f = await this.g.api('GET', `/drive/v3/files/${this.folderId}`, { query: { fields: 'id,trashed' } });
@@ -173,7 +204,7 @@ export class DriveUploader extends EventEmitter {
       if (now !== i.size) { i.size = now; i.session = null; i.offset = 0; }
     }
     if (!i.session) {
-      const res = await fetchRetry(`${this.uploadBase}/drive/v3/files?uploadType=resumable&fields=id`, {
+      const res = await fetchRetry(`${this.uploadBase}/drive/v3/files?uploadType=resumable&fields=id&supportsAllDrives=true`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${await this.g.token('drive')}`,

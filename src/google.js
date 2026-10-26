@@ -12,7 +12,8 @@ import { loadState, saveState } from './config.js';
 // cannot be requested together"), so they are two separate sign-ins in a row, each with its own tokens.
 export const GOOGLE_SCOPES = {
   youtube: 'https://www.googleapis.com/auth/youtube',
-  drive: 'https://www.googleapis.com/auth/drive.file',
+  // full Drive (not drive.file): uploads go into the owner's own existing folder, which drive.file can't see
+  drive: 'https://www.googleapis.com/auth/drive',
 };
 const GROUPS = ['youtube', 'drive'];
 
@@ -73,6 +74,8 @@ export class Google extends EventEmitter {
   configured() { return !!(this.cfg.clientId && this.cfg.clientSecret); }
   has(group) { return !!this.auth?.tokens?.[group]?.refresh_token; }
   loggedIn() { return GROUPS.every((g) => this.has(g)); }
+  // Drive login made before 0.30 only had drive.file (Allmind's own files); a chosen folder needs full Drive.
+  driveFull() { return / https:\/\/www\.googleapis\.com\/auth\/drive( |$)/.test(` ${this.auth?.tokens?.drive?.scope || ''} `); }
 
   status() {
     return {
@@ -80,6 +83,8 @@ export class Google extends EventEmitter {
       loggedIn: this.loggedIn(),
       youtube: this.has('youtube'),
       drive: this.has('drive'),
+      driveFull: this.driveFull(),
+      channelId: this.auth?.channelId || '',
       account: this.auth?.account || '',
       error: this.error,
     };
@@ -131,13 +136,14 @@ export class Google extends EventEmitter {
     if (!res.ok || !j.refresh_token) throw new Error(`로그인 실패: ${j.error_description || j.error || res.status}`);
     this.auth ||= { tokens: {}, account: '' };
     this.auth.tokens ||= {};
-    this.auth.tokens[p.group] = { refresh_token: j.refresh_token, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 };
+    this.auth.tokens[p.group] = { refresh_token: j.refresh_token, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000, scope: j.scope || GOOGLE_SCOPES[p.group] };
     this.error = null;
     if (p.group === 'youtube') {
       // Which YouTube channel this is, to show in the settings window.
       try {
         const ch = await this.api('GET', '/youtube/v3/channels', { query: { part: 'snippet', mine: 'true' } });
         this.auth.account = ch.items?.[0]?.snippet?.title || this.auth.account || '';
+        this.auth.channelId = ch.items?.[0]?.id || '';
       } catch {}
     }
     this._save();
