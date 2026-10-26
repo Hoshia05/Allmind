@@ -35,6 +35,8 @@ export class Chzzk extends EventEmitter {
     this.history = []; // viewer count samples [{t, n}]
 
     this.chat = []; // ring buffer of normalized messages
+    // Per-viewer notes for the nickname popup: what Allmind has seen since it started (memory only).
+    this.users = new Map(); // uid -> { nick, role, firstSeen, lastSeen, chats, recent: [...] }
     // 후원/구독 for the current broadcast, kept separately (chat scrolls away)
     // and saved, so a Allmind restart mid-stream doesn't lose them.
     const savedDon = loadState('donations', {});
@@ -272,10 +274,53 @@ export class Chzzk extends EventEmitter {
       this._saveDonations();
       this.emit('donations', fresh);
     }
+    for (const m of list) this._noteUser(m);
     this.chat.push(...list);
     const max = this.cfg.chatHistory || 300;
     if (this.chat.length > max) this.chat.splice(0, this.chat.length - max);
     this.emit('chat', list);
+  }
+
+  _noteUser(m) {
+    if (!m.uid || m.kind === 'system') return;
+    let u = this.users.get(m.uid);
+    if (!u) {
+      if (this.users.size >= 5000) this.users.delete(this.users.keys().next().value); // oldest first
+      u = { nick: m.nick, role: m.role, firstSeen: m.time, lastSeen: m.time, chats: 0, recent: [] };
+      this.users.set(m.uid, u);
+    }
+    if (m.nick) u.nick = m.nick;
+    u.role = m.role || u.role;
+    u.firstSeen = Math.min(u.firstSeen, m.time);
+    u.lastSeen = Math.max(u.lastSeen, m.time);
+    if (m.kind === 'chat') u.chats++;
+    u.recent.push({ time: m.time, kind: m.kind, text: String(m.text || '').slice(0, 300), amount: m.amount ?? null, donationType: m.donationType, months: m.months ?? null, emojis: m.emojis || {} });
+    if (u.recent.length > 30) u.recent.shift();
+  }
+
+  // Everything Allmind knows about one viewer (nickname popup).
+  userInfo(uid) {
+    uid = String(uid || '');
+    const u = this.users.get(uid);
+    const dons = this.donations.filter((d) => d.uid === uid);
+    const money = dons.filter((d) => d.kind === 'donation');
+    const subs = dons.filter((d) => d.kind === 'subscription');
+    const fromChat = this.chat.find((m) => m.uid === uid);
+    if (!u && !dons.length && !fromChat) return { found: false, uid };
+    return {
+      found: true,
+      uid,
+      nick: u?.nick || dons.at(-1)?.nick || fromChat?.nick || '',
+      role: u?.role || fromChat?.role || '',
+      badges: fromChat?.badges || [],
+      firstSeen: u?.firstSeen ?? dons[0]?.time ?? null,
+      lastSeen: u?.lastSeen ?? dons.at(-1)?.time ?? null,
+      chats: u?.chats || 0,
+      recent: (u?.recent || []).slice(-15).reverse(),
+      donations: { count: money.length, total: money.reduce((a, d) => a + (Number(d.amount) || 0), 0) },
+      subMonths: subs.reduce((a, d) => Math.max(a, Number(d.months) || 0), 0) || null,
+      channelUrl: /^[0-9a-f]{32}$/i.test(uid) ? `https://chzzk.naver.com/${uid}` : null,
+    };
   }
 
   _saveDonations() {

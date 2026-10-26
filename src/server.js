@@ -608,6 +608,7 @@ async function main() {
       return json(res, r.ok ? 200 : 409, r);
     }
     if (key === 'GET /api/marks') return json(res, 200, markers.status());
+    if (key === 'GET /api/chzzk/user') return json(res, 200, { ok: true, ...chzzk.userInfo(url.searchParams.get('uid')) });
     if (key === 'GET /mark') {
       res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
       return res.end(readAsset('public/mark.html'));

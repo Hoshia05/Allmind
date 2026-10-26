@@ -804,7 +804,7 @@ function chatHtml(m) {
     amt = `<span class="amt">${what} · ${Number(m.amount || 0).toLocaleString('ko-KR')} 치즈</span>`;
   }
   if (m.kind === 'subscription') amt = `<span class="amt">구독${m.months ? ` · ${m.months}개월` : ''}</span>`;
-  const nick = m.nick ? `<span class="nick" style="color:${nickColor(m.nick)}">${esc(m.nick)}</span>` : '';
+  const nick = m.nick ? `<span class="nick${m.uid ? ' clickable' : ''}"${m.uid ? ` data-uid="${esc(m.uid)}" title="눌러서 시청자 정보 보기"` : ''} style="color:${nickColor(m.nick)}">${esc(m.nick)}</span>` : '';
   return `<li class="msg ${m.kind}${m.hidden ? ' hidden-msg' : ''}" data-id="${m.id}">${amt}<span class="tm">${tm}</span>${badges}${role}${nick}${text}</li>`;
 }
 
@@ -835,6 +835,58 @@ function chatUpdate(m) {
 }
 
 $('chatList').addEventListener('scroll', () => { if (nearBottom()) $('newMsgs').hidden = true; });
+
+// ---------- viewer popup (click a nickname) ----------
+// Shows what Allmind has seen from this viewer since it started: chats, recent lines, 후원/구독.
+const fmtTime = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+async function openUserCard(uid, at) {
+  const card = $('userCard');
+  card.hidden = false;
+  card.innerHTML = '<div class="muted small">불러오는 중…</div>';
+  placeCard(card, at);
+  let u;
+  try { u = await (await fetch(`/api/chzzk/user?uid=${encodeURIComponent(uid)}`, { cache: 'no-store' })).json(); } catch { u = null; }
+  if (card.hidden) return;
+  if (!u?.found) { card.innerHTML = '<div class="muted small">이 시청자 정보가 아직 없어요</div>'; return; }
+  const role = u.role ? `<span class="role ${u.role}">${u.role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
+  const badges = (u.badges || []).map((b) => `<img class="badge" src="${esc(b)}" alt="">`).join('');
+  const stat = (k, v) => `<div class="uc-stat"><b>${v}</b><span>${k}</span></div>`;
+  const lines = (u.recent || []).map((r) => {
+    const text = esc(r.text).replace(/\{:([^:{}]+):\}/g, (all, name) => r.emojis?.[name] ? `<img class="emo" src="${esc(r.emojis[name])}" alt="${esc(name)}">` : all);
+    const tag = r.kind === 'donation' ? `<span class="uc-tag don">${Number(r.amount || 0).toLocaleString('ko-KR')}</span>` : r.kind === 'subscription' ? '<span class="uc-tag sub">구독</span>' : '';
+    return `<li><span class="tm">${fmtTime(r.time)}</span>${tag}${text || '<span class="muted">(내용 없음)</span>'}</li>`;
+  }).join('');
+  card.innerHTML = `
+    <div class="uc-head">${badges}${role}<span class="nick" style="color:${nickColor(u.nick || '?')}">${esc(u.nick || '이름 없음')}</span><button class="btn ghost icon uc-x" title="닫기">✕</button></div>
+    <div class="uc-stats">
+      ${stat('채팅', u.chats.toLocaleString('ko-KR'))}
+      ${stat('후원', u.donations.count ? `${u.donations.total.toLocaleString('ko-KR')}<small> 치즈</small>` : '—')}
+      ${stat('구독', u.subMonths ? `${u.subMonths}<small>개월</small>` : '—')}
+    </div>
+    <div class="muted small">${u.firstSeen ? `처음 본 시각 ${fmtTime(u.firstSeen)}` : ''}${u.donations.count ? ` · 후원 ${u.donations.count}번` : ''} · Allmind가 켜진 뒤 기준</div>
+    ${lines ? `<ol class="uc-lines">${lines}</ol>` : ''}
+    ${u.channelUrl ? `<a class="btn ghost small-btn" href="${esc(u.channelUrl)}" target="_blank" rel="noopener">치지직 채널 열기 ↗</a>` : ''}`;
+  placeCard(card, at);
+}
+function placeCard(card, at) {
+  if (window.matchMedia('(max-width: 640px)').matches) { card.style.left = card.style.top = ''; return; } // phones: bottom sheet (CSS)
+  const r = card.getBoundingClientRect();
+  card.style.left = `${Math.max(8, Math.min(at.x + 8, innerWidth - r.width - 8))}px`;
+  card.style.top = `${Math.max(8, Math.min(at.y + 8, innerHeight - r.height - 8))}px`;
+}
+for (const id of ['chatList', 'donList']) {
+  $(id).addEventListener('click', (ev) => {
+    const n = ev.target.closest('[data-uid]');
+    if (!n) return;
+    ev.stopImmediatePropagation(); // not the 후원 card's own click (mark as read)
+    openUserCard(n.dataset.uid, { x: ev.clientX, y: ev.clientY });
+  });
+}
+document.addEventListener('click', (ev) => {
+  const card = $('userCard');
+  if (!card.hidden && (ev.target.closest('.uc-x') || !ev.target.closest('#userCard'))) card.hidden = true;
+});
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $('userCard').hidden = true; });
 $('newMsgs').addEventListener('click', () => {
   $('chatList').scrollTop = $('chatList').scrollHeight;
   $('newMsgs').hidden = true;
@@ -930,7 +982,7 @@ function donHtml(d) {
     if (d.donationType === 'VIDEO') cls += ' video';
   }
   return `<li class="don ${cls}${d.read ? ' read' : ''}" data-key="${esc(d.key)}" title="클릭해서 읽음 표시">
-    <div class="don-top"><span class="don-amt">${amt}</span><span class="don-type">${type}</span><span class="don-nick">${esc(d.nick || '익명')}</span><span class="tm">${tm}</span></div>
+    <div class="don-top"><span class="don-amt">${amt}</span><span class="don-type">${type}</span><span class="don-nick${d.uid ? ' clickable' : ''}"${d.uid ? ` data-uid="${esc(d.uid)}"` : ''}>${esc(d.nick || '익명')}</span><span class="tm">${tm}</span></div>
     <div class="don-msg">${richText(d)}</div></li>`;
 }
 
