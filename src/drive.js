@@ -50,7 +50,7 @@ export class DriveUploader extends EventEmitter {
   }
 
   get cfg() { return this.config.drive || {}; }
-  enabled() { return this.cfg.enabled !== false && this.g.loggedIn(); }
+  enabled() { return this.cfg.enabled !== false && this.g.has('drive'); }
 
   _save() { saveState('uploads', { folderId: this.folderId, items: this.items.slice(-100) }); }
   _changed() { this._save(); this.emit('change'); }
@@ -175,7 +175,7 @@ export class DriveUploader extends EventEmitter {
       const res = await fetchRetry(`${this.uploadBase}/drive/v3/files?uploadType=resumable&fields=id`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${await this.g.token()}`,
+          Authorization: `Bearer ${await this.g.token('drive')}`,
           'Content-Type': 'application/json; charset=UTF-8',
           'X-Upload-Content-Type': i.mime,
           'X-Upload-Content-Length': String(i.size),

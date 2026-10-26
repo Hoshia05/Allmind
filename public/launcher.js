@@ -342,16 +342,20 @@ function renderLinks(r) {
   links = r;
   $('chzzkRedirect').textContent = r.chzzk.redirect;
   const g = r.google;
-  setDot('dGoogle', g.loggedIn ? 'ok' : g.error ? 'bad' : '');
-  $('vGoogle').textContent = g.loggedIn ? `로그인됨${g.account ? ` · ${g.account}` : ''}` : g.error || (g.configured ? '로그인 필요' : '설정 필요 (아래 안내)');
-  $('googleLogout').hidden = !g.loggedIn;
+  const gAny = g.youtube || g.drive;
+  const gPart = gAny && !g.loggedIn; // one of the two consents is missing
+  setDot('dGoogle', g.loggedIn ? 'ok' : gPart ? 'warn' : g.error ? 'bad' : '');
+  $('vGoogle').textContent = g.loggedIn ? `로그인됨${g.account ? ` · ${g.account}` : ''}`
+    : gPart ? `${g.youtube ? '유튜브만' : '드라이브만'} 연결됨 — "Google 로그인"을 다시 눌러 나머지도 허용해 주세요`
+    : g.error || (g.configured ? '로그인 필요' : '설정 필요 (아래 안내)');
+  $('googleLogout').hidden = !gAny;
   $('googleLogin').textContent = g.loggedIn ? '다시 로그인' : 'Google 로그인';
 
   const y = r.youtube;
   const b = y.broadcast;
   let yt = '꺼짐';
   let ytDot = '';
-  if (y.enabled && !g.loggedIn) yt = 'Google 로그인 필요';
+  if (y.enabled && !g.youtube) yt = 'Google 로그인 필요';
   else if (y.enabled && !y.hasKey) { yt = '스트림 키 필요 (아래 버튼)'; ytDot = 'warn'; }
   else if (y.enabled && y.error) { yt = y.error; ytDot = 'bad'; }
   else if (y.enabled && b) {
@@ -364,14 +368,14 @@ function renderLinks(r) {
   $('vYt').title = yt;
   $('ytKey').textContent = y.hasKey ? '키 다시 만들기' : '스트림 키 만들기';
   $('ytShowKey').hidden = !y.hasKey;
-  $('ytKey').disabled = $('ytShowKey').disabled = !g.loggedIn;
+  $('ytKey').disabled = $('ytShowKey').disabled = !g.youtube;
 
   const d = r.drive;
   const up = d.items.find((i) => i.status === 'uploading');
   const waiting = d.items.filter((i) => i.status === 'waiting' && i.kind === 'video').length;
   const err = d.items.find((i) => i.status === 'error');
-  let dv = !d.enabled ? '꺼짐' : !g.loggedIn ? 'Google 로그인 필요' : err ? `실패: ${err.name}` : up ? `올리는 중 ${Math.floor((up.offset / up.size) * 100)}% · ${up.name}` : waiting ? `대기 ${waiting}개${d.paused ? ' (방송·녹화 끝나면)' : ''}` : '녹화가 끝나면 자동으로 올려요';
-  setDot('dDrive', !d.enabled || !g.loggedIn ? '' : err ? 'bad' : 'ok');
+  let dv = !d.enabled ? '꺼짐' : !g.drive ? 'Google 로그인 필요' : err ? `실패: ${err.name}` : up ? `올리는 중 ${Math.floor((up.offset / up.size) * 100)}% · ${up.name}` : waiting ? `대기 ${waiting}개${d.paused ? ' (방송·녹화 끝나면)' : ''}` : '녹화가 끝나면 자동으로 올려요';
+  setDot('dDrive', !d.enabled || !g.drive ? '' : err ? 'bad' : 'ok');
   $('vDrive').textContent = dv;
 
   const c = r.chzzk;
@@ -403,7 +407,7 @@ lf.addEventListener('submit', (ev) => { ev.preventDefault(); saveLinks(); });
 $('googleLogin').addEventListener('click', async () => {
   if (!(await saveLinks(true))) return;
   const r = await call('/google-login', {});
-  if (r.ok) toast('브라우저에서 Google 로그인을 마쳐 주세요');
+  if (r.ok) toast('브라우저에서 Google 허용 화면 2번(유튜브 → 드라이브)을 차례로 마쳐 주세요');
 });
 $('googleLogout').addEventListener('click', async () => { await call('/google-logout', {}); refreshLinks(); });
 $('chzzkLogin').addEventListener('click', async () => {

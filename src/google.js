@@ -8,10 +8,13 @@ import { EventEmitter } from 'node:events';
 import crypto from 'node:crypto';
 import { loadState, saveState } from './config.js';
 
-export const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/youtube',
-  'https://www.googleapis.com/auth/drive.file',
-];
+// Google refuses to hand out these two scopes in ONE consent ("Error 400: invalid_request – scopes that
+// cannot be requested together"), so they are two separate sign-ins in a row, each with its own tokens.
+export const GOOGLE_SCOPES = {
+  youtube: 'https://www.googleapis.com/auth/youtube',
+  drive: 'https://www.googleapis.com/auth/drive.file',
+};
+const GROUPS = ['youtube', 'drive'];
 
 const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -48,9 +51,18 @@ export class Google extends EventEmitter {
   constructor(config) {
     super();
     this.config = config;
-    this.auth = loadState('google-auth', null); // { refresh_token, access_token, expires_at, account }
-    this.pending = new Map(); // state -> { verifier, redirect, at }
+    // { tokens: { youtube: { refresh_token, access_token, expires_at }, drive: {…} }, account }
+    this.auth = this._migrate(loadState('google-auth', null));
+    this.pending = new Map(); // state -> { verifier, redirect, group, rest, at }
     this.error = null;
+  }
+
+  _migrate(a) {
+    if (a?.refresh_token && !a.tokens) { // first builds: one token for both
+      const t = { refresh_token: a.refresh_token, access_token: a.access_token, expires_at: a.expires_at };
+      return { account: a.account || '', tokens: { youtube: { ...t }, drive: { ...t } } };
+    }
+    return a;
   }
 
   get cfg() { return this.config.google || {}; }
@@ -59,32 +71,41 @@ export class Google extends EventEmitter {
   get apiBase() { return (this.cfg.apiBase || 'https://www.googleapis.com').replace(/\/+$/, ''); }
 
   configured() { return !!(this.cfg.clientId && this.cfg.clientSecret); }
-  loggedIn() { return !!this.auth?.refresh_token; }
+  has(group) { return !!this.auth?.tokens?.[group]?.refresh_token; }
+  loggedIn() { return GROUPS.every((g) => this.has(g)); }
 
   status() {
     return {
       configured: this.configured(),
       loggedIn: this.loggedIn(),
+      youtube: this.has('youtube'),
+      drive: this.has('drive'),
       account: this.auth?.account || '',
       error: this.error,
     };
   }
 
+  _save() { saveState('google-auth', this.auth); }
+
+  // First step of a sign-in: YouTube, then (callback redirects on) Drive.
   loginUrl(redirect) {
     if (!this.configured()) throw new Error('먼저 Google 클라이언트 ID와 보안 비밀번호를 넣어 주세요');
+    return this._authUrl(GROUPS[0], redirect, GROUPS.slice(1));
+  }
+
+  _authUrl(group, redirect, rest) {
     const state = b64url(crypto.randomBytes(18));
     const verifier = b64url(crypto.randomBytes(48));
     const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
     for (const [k, v] of this.pending) if (Date.now() - v.at > 15 * 60000) this.pending.delete(k);
-    this.pending.set(state, { verifier, redirect, at: Date.now() });
+    this.pending.set(state, { verifier, redirect, group, rest, at: Date.now() });
     const q = new URLSearchParams({
       client_id: this.cfg.clientId,
       redirect_uri: redirect,
       response_type: 'code',
-      scope: GOOGLE_SCOPES.join(' '),
+      scope: GOOGLE_SCOPES[group],
       access_type: 'offline',
       prompt: 'consent', // always hand out a refresh token
-      include_granted_scopes: 'true',
       state,
       code_challenge: challenge,
       code_challenge_method: 'S256',
@@ -92,6 +113,7 @@ export class Google extends EventEmitter {
     return `${this.authUrl}?${q}`;
   }
 
+  // → { next } where next is the address of the following consent page (or null when done)
   async callback({ code, state, error }) {
     if (error) throw new Error(error === 'access_denied' ? '로그인을 취소했어요' : `Google 오류: ${error}`);
     const p = this.pending.get(state);
@@ -107,63 +129,76 @@ export class Google extends EventEmitter {
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok || !j.refresh_token) throw new Error(`로그인 실패: ${j.error_description || j.error || res.status}`);
-    this.auth = { refresh_token: j.refresh_token, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000, scope: j.scope || '' };
+    this.auth ||= { tokens: {}, account: '' };
+    this.auth.tokens ||= {};
+    this.auth.tokens[p.group] = { refresh_token: j.refresh_token, access_token: j.access_token, expires_at: Date.now() + (j.expires_in || 3600) * 1000 };
     this.error = null;
-    // Which YouTube channel this is, to show in the settings window.
-    try {
-      const ch = await this.api('GET', '/youtube/v3/channels', { query: { part: 'snippet', mine: 'true' } });
-      this.auth.account = ch.items?.[0]?.snippet?.title || '';
-    } catch {}
-    saveState('google-auth', this.auth);
-    console.log(`[google] logged in${this.auth.account ? ` as ${this.auth.account}` : ''}`);
-    this.emit('login');
+    if (p.group === 'youtube') {
+      // Which YouTube channel this is, to show in the settings window.
+      try {
+        const ch = await this.api('GET', '/youtube/v3/channels', { query: { part: 'snippet', mine: 'true' } });
+        this.auth.account = ch.items?.[0]?.snippet?.title || this.auth.account || '';
+      } catch {}
+    }
+    this._save();
+    console.log(`[google] ${p.group} signed in${this.auth.account ? ` (${this.auth.account})` : ''}`);
     this.emit('change');
+    if (p.rest.length) return { next: this._authUrl(p.rest[0], p.redirect, p.rest.slice(1)) };
+    this.emit('login');
+    return { next: null };
   }
 
   async logout() {
-    const t = this.auth?.refresh_token;
+    const tokens = Object.values(this.auth?.tokens || {}).map((t) => t.refresh_token).filter(Boolean);
     this.auth = null;
     saveState('google-auth', null);
     this.emit('change');
-    if (t) fetch(`${this.cfg.revokeUrl || 'https://oauth2.googleapis.com/revoke'}?token=${encodeURIComponent(t)}`, { method: 'POST' }).catch(() => {});
+    for (const t of new Set(tokens)) fetch(`${this.cfg.revokeUrl || 'https://oauth2.googleapis.com/revoke'}?token=${encodeURIComponent(t)}`, { method: 'POST' }).catch(() => {});
   }
 
-  async token() {
-    if (!this.loggedIn()) throw new GoogleError('Google에 로그인하지 않았어요', 401, 'notLoggedIn');
-    if (this.auth.access_token && Date.now() < this.auth.expires_at - 60000) return this.auth.access_token;
+  async token(group = 'youtube') {
+    const t = this.auth?.tokens?.[group];
+    if (!t?.refresh_token) throw new GoogleError(`Google에 로그인하지 않았어요 (${group === 'drive' ? '드라이브' : '유튜브'})`, 401, 'notLoggedIn');
+    if (t.access_token && Date.now() < t.expires_at - 60000) return t.access_token;
     const res = await fetchRetry(this.tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: this.cfg.clientId, client_secret: this.cfg.clientSecret, refresh_token: this.auth.refresh_token, grant_type: 'refresh_token' }),
+      body: new URLSearchParams({ client_id: this.cfg.clientId, client_secret: this.cfg.clientSecret, refresh_token: t.refresh_token, grant_type: 'refresh_token' }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (j.error === 'invalid_grant') {
         // revoked, expired ("Testing" projects expire refresh tokens after 7 days) or password changed
         this.error = 'Google 로그인이 만료됐어요 — 설정 창에서 다시 로그인해 주세요';
-        this.auth = null;
-        saveState('google-auth', null);
+        delete this.auth.tokens[group];
+        this._save();
         this.emit('change');
       }
       throw new GoogleError(`토큰 갱신 실패: ${j.error_description || j.error || res.status}`, res.status, j.error);
     }
-    this.auth.access_token = j.access_token;
-    this.auth.expires_at = Date.now() + (j.expires_in || 3600) * 1000;
-    saveState('google-auth', this.auth);
+    t.access_token = j.access_token;
+    t.expires_at = Date.now() + (j.expires_in || 3600) * 1000;
+    this._save();
     return j.access_token;
   }
 
+  // Which sign-in a request needs: Drive for /drive/ and /upload/, YouTube otherwise.
+  _groupFor(path) {
+    return /\/(drive|upload)\//.test(path) ? 'drive' : 'youtube';
+  }
+
   // JSON API call. path is relative to apiBase ("/youtube/v3/…") or a full URL.
-  async api(method, path, { query, body, headers = {}, raw = false } = {}) {
+  async api(method, path, { query, body, headers = {}, raw = false, scope } = {}) {
     const url = new URL(path.startsWith('http') ? path : this.apiBase + path);
+    const group = scope || this._groupFor(url.pathname);
     if (query) for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
     for (let attempt = 0; attempt < 2; attempt++) {
       const res = await fetchRetry(url, {
         method,
-        headers: { Authorization: `Bearer ${await this.token()}`, ...(body !== undefined && !Buffer.isBuffer(body) ? { 'Content-Type': 'application/json' } : {}), ...headers },
+        headers: { Authorization: `Bearer ${await this.token(group)}`, ...(body !== undefined && !Buffer.isBuffer(body) ? { 'Content-Type': 'application/json' } : {}), ...headers },
         body: body === undefined ? undefined : Buffer.isBuffer(body) ? body : JSON.stringify(body),
       });
-      if (res.status === 401 && attempt === 0) { this.auth.access_token = null; continue; }
+      if (res.status === 401 && attempt === 0) { if (this.auth?.tokens?.[group]) this.auth.tokens[group].access_token = null; continue; }
       if (raw) return res;
       const text = await res.text();
       const j = text ? (() => { try { return JSON.parse(text); } catch { return { text }; } })() : {};

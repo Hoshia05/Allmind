@@ -754,7 +754,7 @@ function renderPrepTargets() {
   const c = prepState.category;
   $('prepCat').textContent = c ? c.categoryValue || c.categoryId : '없음';
   const chz = S.chzzkOpen?.loggedIn;
-  const yt = S.google?.loggedIn && S.youtube?.hasKey && S.youtube?.enabled;
+  const yt = S.google?.youtube && S.youtube?.hasKey && S.youtube?.enabled;
   $('prevChzzk').innerHTML = chz ? esc(title) : '<span class="muted">연동 안 됨 — 방송 PC 설정 창에서 치지직 로그인</span>';
   $('prevYt').innerHTML = yt ? esc(fillTpl(S.prep?.ytTemplate, title)) : '<span class="muted">연동 안 됨 — 방송 PC 설정 창에서 Google 로그인 + 스트림 키</span>';
   // same clean-up as the upload (Windows can't have \\ / : * ? " < > | in names)
@@ -814,7 +814,7 @@ function renderUploads() {
   if (d.folderUrl) $('driveFolder').href = d.folderUrl;
   const vids = (d.items || []).filter((i) => i.kind === 'video');
   let html;
-  if (!S.google?.loggedIn) html = '<li class="muted small">Google에 로그인하면 녹화가 끝날 때마다 자동으로 올려요 (방송 PC 설정 창)</li>';
+  if (!S.google?.drive) html = '<li class="muted small">Google에 로그인하면 녹화가 끝날 때마다 자동으로 올려요 (방송 PC 설정 창)</li>';
   else if (!vids.length) html = '<li class="muted small">아직 올린 녹화가 없어요. 녹화가 끝나면 여기에 나타나요.</li>';
   else {
     const label = { waiting: d.paused ? '방송·녹화가 끝나면 올려요' : '대기 중', uploading: '올리는 중', done: '완료', error: '실패' };

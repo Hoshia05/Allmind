@@ -27,7 +27,7 @@ import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.24.2';
+const VERSION = '0.24.3';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -589,8 +589,14 @@ async function main() {
     if (!isLocal(req)) return page(false, '방송 PC에서만 로그인할 수 있어요');
     const q = Object.fromEntries(url.searchParams);
     try {
-      if (which === 'google') await google.callback(q);
-      else await chzzkOpen.callback(q);
+      if (which === 'google') {
+        const r = await google.callback(q);
+        if (r.next) { // YouTube is done, now the Drive consent (Google won't take both in one)
+          stateChanged();
+          res.writeHead(302, { Location: r.next });
+          return res.end();
+        }
+      } else await chzzkOpen.callback(q);
       stateChanged();
       page(true, which === 'google' ? `Google에 로그인했어요${google.auth?.account ? ` (${google.auth.account})` : ''}` : `치지직에 로그인했어요${chzzkOpen.auth?.channelName ? ` (${chzzkOpen.auth.channelName})` : ''}`);
     } catch (e) {

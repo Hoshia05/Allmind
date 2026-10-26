@@ -25,6 +25,9 @@ YouTube = fix automatically; setup = Stream now / default key.
   `http://127.0.0.1:<port>/api/google/callback` (local-only route), PKCE + state.
 - Scopes: `https://www.googleapis.com/auth/youtube` (sensitive) and
   `https://www.googleapis.com/auth/drive.file` (only files/folders Allmind creates).
+  **Not in one request** (found on the real login, 0.24.3): Google answers with "Error 400: invalid_request —
+  scopes that cannot be requested together". Two consents in a row, separate tokens per scope.
+  Publishing the app ("In production") also needs a homepage and a privacy-policy URL on the Branding page.
 - Tokens in `DATA_DIR/google.json`. **Secret**: never shown on the dashboard, never in the log
   bundle, never logged. Access token refreshed on demand.
 - `src/google.js`: `GoogleAuth` (token store, refresh, `fetch` wrapper with retry/backoff),

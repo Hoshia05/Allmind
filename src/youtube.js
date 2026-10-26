@@ -39,7 +39,7 @@ export class YouTubeGuard extends EventEmitter {
   }
 
   get cfg() { return this.config.youtube || {}; }
-  enabled() { return this.cfg.enabled !== false && this.g.loggedIn() && !!this.st.streamId; }
+  enabled() { return this.cfg.enabled !== false && this.g.has('youtube') && !!this.st.streamId; }
 
   status() {
     return {

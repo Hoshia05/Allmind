@@ -580,6 +580,9 @@ async function mockApis(req, res) {
 
   // --- Google OAuth: consent is skipped, we bounce straight back with a code ---
   if (p === '/g/auth') {
+    // like real Google: YouTube + Drive scopes can't be requested together
+    const sc = u.searchParams.get('scope') || '';
+    if (/youtube/.test(sc) && /drive/.test(sc)) return out(400, { error: 'invalid_request: scopes that cannot be requested together' });
     const code = 'gcode' + (++yt.n);
     codes.set(code, u.searchParams.get('code_challenge'));
     res.writeHead(302, { Location: `${u.searchParams.get('redirect_uri')}?code=${code}&state=${u.searchParams.get('state')}&scope=x` });
