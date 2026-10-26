@@ -5,10 +5,11 @@
 <title>공중전 · Allmind</title>
 <!--
   공중전 (dogfight) — OBS browser source overlay, 1920×1080, transparent.
-  Chat: !출격 join · !미사일 fire a missile · !플레어 flares · !귀환 leave
-        !시작 (streamer/manager) start now. A donation repairs your jet (or joins you).
+  Chat: !출격 join · !미사일 fire a missile · !플레어 flares · !회피 cobra (missiles overshoot)
+        !특수 special weapon (random: QAAM, 4AAM, HPAA, ADMM, EML, TLS) · !귀환 leave
+        !시작 (streamer/manager) start now. A donation repairs your jet and reloads (or joins you).
   URL options: ?lobby=25 (seconds before a round) · ?fighters=4 (bots fill up to this)
-               ?board=0 (hide ranking) · ?demo=1 (fake viewers, for testing)
+               ?board=0 (hide ranking) · ?help=0 (hide the command list) · ?demo=1 (fake viewers)
 -->
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; }
@@ -27,6 +28,11 @@ const LOBBY_S = Math.max(5, Number(Q.get('lobby')) || 25);
 const FIGHTERS = Math.max(2, Math.min(12, Number(Q.get('fighters')) || 4));
 const SHOW_BOARD = Q.get('board') !== '0';
 const DEMO = Q.get('demo') === '1';
+const SHOW_HELP = Q.get('help') !== '0';
+const SP_CD = 25;      // special weapon reload (s)
+const COBRA_CD = 12;   // evade reload (s)
+const COBRA_S = 1.1;   // how long the cobra lasts
+const EVADE_S = 3.5;   // after !회피, missiles that come close still overshoot (chat runs seconds behind the stream)
 const ROUND_LIMIT = 80;      // seconds; then the healthiest jet wins
 const RESULT_S = 8;
 const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif';
@@ -43,7 +49,7 @@ const BOT_NAMES = ['BOGEY', 'BANDIT', 'SKULL', 'VIPER', 'RAVEN', 'COBRA', 'JESTE
 // ---------- state ----------
 const roster = new Map();   // uid → {uid, nick, human:true, role}
 let jets = [];              // fighters this round (or lobby flyers)
-let bullets = [], missiles = [], flares = [], parts = [], floats = [], feed = [];
+let bullets = [], missiles = [], flares = [], parts = [], floats = [], feed = [], beams = [];
 let board = [];
 let phase = 'lobby';        // lobby | fight | result
 let phaseT = 0;             // seconds into phase
@@ -63,6 +69,7 @@ function makeJet(p, i, n, fight) {
     hp: 100, alive: true, kills: 0,
     gunCd: rnd(0.5, 1.5), msslCd: p.human ? rnd(6, 10) : rnd(5, 9), manualMsslCd: 0,
     flareCd: 0, autoMsslAt: p.human ? rnd(14, 20) : rnd(8, 13),
+    spCd: p.human ? 0 : rnd(18, 30), cobraCd: 0, cobra: 0, evade: 0, laser: 0, laserTarget: null,
     target: null, retarget: 0, jink: 0, jinkDir: 1, wp: null, trail: [], trailT: 0, flash: 0,
   };
   return j;
@@ -108,7 +115,7 @@ function startFight() {
   for (let i = 0; i < nBots; i++) list.push({ uid: `bot:${++botSeq}`, nick: names[i % names.length], human: false });
   list.sort(() => Math.random() - 0.5);
   jets = list.map((p, i) => makeJet(p, i, list.length, true));
-  bullets = []; missiles = []; flares = [];
+  bullets = []; missiles = []; flares = []; beams = [];
   phase = 'fight'; phaseT = 0; roundT = 0; winner = null;
   say('교전 개시 — ENGAGE!', '#ffd34d', true);
 }
@@ -129,7 +136,7 @@ function endFight() {
 
 function backToLobby() {
   phase = 'lobby'; phaseT = 0; lobbyLeft = LOBBY_S;
-  bullets = []; missiles = []; flares = [];
+  bullets = []; missiles = []; flares = []; beams = [];
   jets = jets.filter((j) => j.human && roster.has(j.uid));
   rebuildLobbyJets();
 }
@@ -144,39 +151,105 @@ function onCmd(c) {
     if (phase === 'lobby' && roster.size) lobbyLeft = 0;
     return;
   }
+  const MSSL = ['!미사일', '!fox2', '!missile', '!발사'];
+  const FLARE = ['!플레어', '!flare'];
+  const EVADE = ['!회피', '!코브라', '!evade', '!cobra'];
+  const SPECIAL = ['!특수', '!특수무기', '!특수병기', '!sp', '!special'];
   if (phase !== 'fight') {
     // firing before the round counts as joining: less to explain
-    if (['!미사일', '!fox2', '!missile', '!발사', '!플레어', '!flare', '!회피'].includes(t)) join(p);
+    if ([...MSSL, ...FLARE, ...EVADE, ...SPECIAL].includes(t)) join(p);
     return;
   }
   const j = jetOf(p.uid);
   if (!j || !j.alive) return;
-  if (['!미사일', '!fox2', '!missile', '!발사'].includes(t)) {
+  if (MSSL.includes(t)) {
     if (j.manualMsslCd <= 0) { if (fireMissile(j)) j.manualMsslCd = 7; }
     else floatText(j, `재장전 ${Math.ceil(j.manualMsslCd)}`, '#9fb8b6');
-  } else if (['!플레어', '!flare', '!회피'].includes(t)) {
+  } else if (FLARE.includes(t)) {
     if (j.flareCd <= 0) dropFlares(j, true); else floatText(j, `플레어 ${Math.ceil(j.flareCd)}`, '#9fb8b6');
+  } else if (EVADE.includes(t)) {
+    if (j.cobraCd <= 0) cobra(j); else floatText(j, `회피 ${Math.ceil(j.cobraCd)}`, '#9fb8b6');
+  } else if (SPECIAL.includes(t)) {
+    if (j.spCd <= 0) { if (fireSpecial(j)) j.spCd = SP_CD; }
+    else floatText(j, `특수무기 ${Math.ceil(j.spCd)}`, '#9fb8b6');
   }
 }
 function onDonation(d) {
   const p = { uid: d.uid, nick: d.nick || '익명' };
   const j = phase === 'fight' && jetOf(p.uid);
-  if (j && j.alive) { j.hp = 100; j.manualMsslCd = 0; floatText(j, '보급 완료! HP 100', '#5be37d'); say(`${p.nick} 긴급 보급!`, '#5be37d'); }
+  if (j && j.alive) { j.hp = 100; j.manualMsslCd = 0; j.spCd = 0; j.cobraCd = 0; floatText(j, '보급 완료! HP 100 · 전 무장 재장전', '#5be37d'); say(`${p.nick} 긴급 보급!`, '#5be37d'); }
   else join(p);
 }
 
 // ---------- weapons ----------
+// o: spd (launch), max, acc, turn (rad/s), dmg, life, flareRes (0..1, chance to ignore flares/cobra),
+//    color, size, label (shown in the kill feed)
+function launch(j, t, o = {}) {
+  const a = j.a + (o.spread || 0);
+  missiles.push({
+    x: j.x + Math.cos(a) * 20, y: j.y + Math.sin(a) * 20, a, owner: j, target: t, trail: [], decoyed: false, lost: false,
+    spd: o.spd || 480, max: o.max || 780, acc: o.acc || 420, turn: o.turn || 2.3, dmg: o.dmg || 45, life: o.life || 3.6,
+    flareRes: o.flareRes || 0, color: o.color || '#f2f2f2', size: o.size || 1, label: o.label || '미사일', smoke: o.smoke || 'rgba(220,220,220,',
+  });
+}
 function fireMissile(j) {
   const t = j.target && j.target.alive ? j.target : nearestEnemy(j);
   if (!t) return false;
-  missiles.push({ x: j.x + Math.cos(j.a) * 20, y: j.y + Math.sin(j.a) * 20, a: j.a, spd: 480, life: 3.6, owner: j, target: t, trail: [], decoyed: false });
+  launch(j, t);
   floatText(j, 'FOX 2!', '#ffd34d');
   return true;
+}
+function enemiesBy(j, maxD = 1e9) {
+  return jets.filter((o) => o !== j && o.alive && dist(j, o) < maxD).sort((a, b) => dist(j, a) - dist(j, b));
+}
+
+// Special weapons — one at random per !특수 (Ace Combat-style arsenal)
+const SPECIALS = [
+  { id: 'QAAM', name: 'QAAM · 고기동 미사일', color: '#7fe3ff', fire(j, t) { launch(j, t, { turn: 5.2, life: 5, dmg: 50, flareRes: 0.6, color: '#7fe3ff', label: 'QAAM', smoke: 'rgba(127,227,255,' }); } },
+  { id: '4AAM', name: '4AAM · 4목표 동시 공격', color: '#ffd34d', fire(j) { const ts = enemiesBy(j).slice(0, 4); ts.forEach((t, i) => launch(j, t, { spread: (i - 1.5) * 0.25, dmg: 40, color: '#ffd34d', label: '4AAM' })); } },
+  { id: 'HPAA', name: 'HPAA · 고위력 미사일', color: '#ff7a59', fire(j, t) { launch(j, t, { spd: 900, max: 1300, acc: 600, turn: 2.0, dmg: 75, flareRes: 0.35, size: 1.5, color: '#ff7a59', label: 'HPAA', smoke: 'rgba(255,160,120,' }); } },
+  { id: 'ADMM', name: 'ADMM · 전방위 다탄두', color: '#ff9f43', fire(j) { const ts = enemiesBy(j, 800); if (!ts.length) ts.push(...enemiesBy(j).slice(0, 1)); for (let i = 0; i < 8; i++) launch(j, ts[i % ts.length], { spread: (i / 8) * Math.PI * 2, spd: 380, max: 700, turn: 3.2, dmg: 22, life: 3, size: 0.7, color: '#ff9f43', label: 'ADMM' }); } },
+  { id: 'EML', name: 'EML · 레일건', color: '#9db8ff', fire(j, t) {
+    j.a = Math.atan2(t.y - j.y, t.x - j.x);
+    const hit = Math.random() < 0.85;
+    const ex = hit ? t.x : t.x + rnd(-60, 60), ey = hit ? t.y : t.y + rnd(-60, 60);
+    const len = Math.hypot(ex - j.x, ey - j.y) || 1;
+    beams.push({ x1: j.x, y1: j.y, x2: j.x + (ex - j.x) / len * 2400, y2: j.y + (ey - j.y) / len * 2400, life: 0.35, max: 0.35, color: '157,184,255', w: 5 });
+    if (hit) { damage(t, 60, j, 'EML'); explode(t.x, t.y, false); } else floatText(t, 'MISS', '#9fb8b6');
+  } },
+  { id: 'TLS', name: 'TLS · 전술 레이저', color: '#ff4fd8', fire(j, t) { j.laser = 1.6; j.laserTarget = t; } },
+];
+function fireSpecial(j) {
+  const t = j.target && j.target.alive ? j.target : nearestEnemy(j);
+  if (!t) return false;
+  const w = SPECIALS[Math.floor(Math.random() * SPECIALS.length)];
+  w.fire(j, t);
+  floatText(j, w.id + '!', w.color);
+  say(`${j.nick} ▸ 특수무기 ${w.name}`, w.color);
+  return true;
+}
+// Evade: cobra — nose up, speed bleeds off, missiles overshoot; the nose swings onto the nearest enemy.
+function cobra(j) {
+  j.cobra = COBRA_S; j.cobraCd = COBRA_CD; j.evade = EVADE_S;
+  for (const m of missiles) if (m.target === j && !m.decoyed && dist(m, j) < 650) breakLock(m);
+  parts.push({ x: j.x, y: j.y, vx: 0, vy: 0, life: 0.45, max: 0.45, kind: 'vapor', r: 8 });
+  floatText(j, 'COBRA!', '#c9f7ff');
+}
+function breakLock(m) {
+  if (m.tried) return;
+  m.tried = true;
+  if (Math.random() < 0.9 * (1 - m.flareRes * 0.5)) { m.lost = true; floatText(m.target, '회피 성공!', '#c9f7ff'); }
+}
+// distance from point p to segment a→b
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
+  const k = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1);
+  return Math.hypot(px - (ax + dx * k), py - (ay + dy * k));
 }
 function dropFlares(j, manual) {
   j.flareCd = manual ? 9 : 12;
   for (let i = 0; i < 6; i++) flares.push({ x: j.x, y: j.y, vx: -Math.cos(j.a) * rnd(60, 160) + rnd(-90, 90), vy: -Math.sin(j.a) * rnd(60, 160) + rnd(-90, 90), life: rnd(1.2, 1.8) });
-  for (const m of missiles) if (m.target === j && dist(m, j) < 520 && Math.random() < (manual ? 0.95 : 0.6)) m.decoyed = true;
+  for (const m of missiles) if (m.target === j && dist(m, j) < 520 && Math.random() < (manual ? 0.95 : 0.6) * (1 - m.flareRes)) m.decoyed = true;
   floatText(j, 'FLARE', '#ff9f43');
 }
 function nearestEnemy(j) {
@@ -233,10 +306,33 @@ function flyLobby(j, dt) {
 
 function flyFight(j, dt) {
   j.gunCd -= dt; j.msslCd -= dt; j.manualMsslCd -= dt; j.flareCd -= dt; j.retarget -= dt; j.jink -= dt;
+  j.spCd -= dt; j.cobraCd -= dt; j.evade -= dt;
   if (!j.target || !j.target.alive || j.retarget <= 0) { j.target = nearestEnemy(j); j.retarget = rnd(2.5, 4.5); }
   const t = j.target;
+  if (j.cobra > 0) { // nose high, nearly stalled, swinging onto the nearest enemy
+    j.cobra -= dt;
+    const n = nearestEnemy(j);
+    if (n) steer(j, Math.atan2(n.y - j.y, n.x - j.x), dt, 4.2);
+    j.spd += (60 - j.spd) * Math.min(1, dt * 7);
+    return;
+  }
+  if (j.laser > 0) { // TLS: keep the beam on the target
+    j.laser -= dt;
+    const lt = j.laserTarget && j.laserTarget.alive ? j.laserTarget : nearestEnemy(j);
+    if (lt) steer(j, Math.atan2(lt.y - j.y, lt.x - j.x), dt, 2.6);
+    const x2 = j.x + Math.cos(j.a) * 1000, y2 = j.y + Math.sin(j.a) * 1000;
+    for (const o of jets) if (o !== j && o.alive && segDist(o.x, o.y, j.x, j.y, x2, y2) < 16) damage(o, 75 * dt, j, 'TLS');
+    j.spd += (220 - j.spd) * dt * 2;
+    return;
+  }
+  // bots (and only bots) use evade and specials on their own; viewers do it from chat
+  if (!j.human) {
+    const close = missiles.find((m) => m.target === j && !m.decoyed && !m.lost && dist(m, j) < 260);
+    if (close && j.cobraCd <= 0 && Math.random() < dt * 1.5) cobra(j);
+    if (j.spCd <= 0 && roundT > 6 && t && dist(j, t) < 900) { if (fireSpecial(j)) j.spCd = rnd(22, 34); }
+  }
   // incoming missile?
-  const threat = missiles.find((m) => m.target === j && !m.decoyed && dist(m, j) < 420);
+  const threat = missiles.find((m) => m.target === j && !m.decoyed && !m.lost && dist(m, j) < 420);
   if (threat) {
     if (j.flareCd <= 0 && Math.random() < (j.human ? 0.5 : 0.65) * dt * 3) dropFlares(j, false);
     if (j.jink <= 0) { j.jink = rnd(0.5, 0.9); j.jinkDir = Math.random() < 0.5 ? -1 : 1; }
@@ -288,16 +384,18 @@ function update(dt) {
       for (const j of jets) if (j.alive && j !== b.owner && Math.hypot(j.x - b.x, j.y - b.y) < 18) { damage(j, 6, b.owner, '기관포'); b.life = 0; parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.15, max: 0.15, kind: 'fire', r: 4 }); break; }
     }
     for (const m of missiles) {
-      m.life -= dt; m.spd = Math.min(780, m.spd + 420 * dt);
+      m.life -= dt; m.spd = Math.min(m.max, m.spd + m.acc * dt);
       let tx, ty;
-      if (m.decoyed) { const f = flares[flares.length - 1]; tx = f ? f.x : m.x + Math.cos(m.a) * 100; ty = f ? f.y : m.y + Math.sin(m.a) * 100; }
+      if (!m.lost && !m.decoyed && m.target.alive && m.target.evade > 0 && dist(m, m.target) < 220) breakLock(m);
+      if (m.lost) { tx = m.x + Math.cos(m.a) * 100; ty = m.y + Math.sin(m.a) * 100; } // overshot a cobra: flies on
+      else if (m.decoyed) { const f = flares[flares.length - 1]; tx = f ? f.x : m.x + Math.cos(m.a) * 100; ty = f ? f.y : m.y + Math.sin(m.a) * 100; }
       else if (m.target.alive) { tx = m.target.x; ty = m.target.y; }
       else { tx = m.x + Math.cos(m.a) * 100; ty = m.y + Math.sin(m.a) * 100; }
       const d = wrapA(Math.atan2(ty - m.y, tx - m.x) - m.a);
-      m.a = wrapA(m.a + clamp(d, -2.3 * dt, 2.3 * dt));
+      m.a = wrapA(m.a + clamp(d, -m.turn * dt, m.turn * dt));
       m.x += Math.cos(m.a) * m.spd * dt; m.y += Math.sin(m.a) * m.spd * dt;
       m.trail.push({ x: m.x, y: m.y }); if (m.trail.length > 26) m.trail.shift();
-      if (!m.decoyed && m.target.alive && dist(m, m.target) < 26) { damage(m.target, 45, m.owner, '미사일'); explode(m.x, m.y, false); m.life = 0; }
+      if (!m.decoyed && !m.lost && m.target.alive && dist(m, m.target) < 26) { damage(m.target, m.dmg, m.owner, m.label); explode(m.x, m.y, false); m.life = 0; }
       if (m.life <= 0 && !(m.target.alive && dist(m, m.target) < 26)) explode(m.x, m.y, false);
     }
     bullets = bullets.filter((b) => b.life > 0);
@@ -308,9 +406,11 @@ function update(dt) {
     if (winner && winner.alive) { flyLobby(winner, dt); moveJet(winner, dt); }
     if (phaseT > RESULT_S) backToLobby();
   }
+  for (const b of beams) b.life -= dt;
+  beams = beams.filter((b) => b.life > 0);
   for (const f of flares) { f.x += f.vx * dt; f.y += f.vy * dt + 40 * dt; f.vx *= 0.97; f.vy *= 0.97; f.life -= dt; }
   flares = flares.filter((f) => f.life > 0);
-  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy = p.vy * 0.96 + (p.kind === 'smoke' ? -20 : 60) * dt; p.life -= dt; if (p.kind === 'ring') p.r += 420 * dt; }
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy = p.vy * 0.96 + (p.kind === 'smoke' ? -20 : 60) * dt; p.life -= dt; if (p.kind === 'ring') p.r += 420 * dt; if (p.kind === 'vapor') p.r += 160 * dt; }
   parts = parts.filter((p) => p.life > 0);
   for (const f of floats) { f.y -= 26 * dt; f.life -= dt; }
   floats = floats.filter((f) => f.life > 0);
@@ -341,6 +441,8 @@ function drawJet(j, now) {
     }
   }
   g.save(); g.translate(j.x, j.y); g.rotate(j.a);
+  // cobra: seen from above the nose pitches up, so the jet looks foreshortened
+  if (j.cobra > 0) { const k = Math.sin(Math.PI * (1 - j.cobra / COBRA_S)); g.scale(1 - 0.6 * k, 1); }
   // afterburner
   const fl = 10 + Math.sin(now * 40 + j.x) * 4;
   g.fillStyle = 'rgba(255,170,60,.9)';
@@ -365,14 +467,21 @@ function draw(now) {
   g.clearRect(0, 0, W, H);
   for (const f of flares) { g.fillStyle = `rgba(255,${150 + Math.random() * 80},60,${clamp(f.life, 0, 1)})`; g.beginPath(); g.arc(f.x, f.y, 4 + Math.random() * 2, 0, Math.PI * 2); g.fill(); }
   for (const m of missiles) {
-    for (let i = 1; i < m.trail.length; i++) { g.strokeStyle = `rgba(220,220,220,${(i / m.trail.length) * 0.5})`; g.lineWidth = 3; g.beginPath(); g.moveTo(m.trail[i - 1].x, m.trail[i - 1].y); g.lineTo(m.trail[i].x, m.trail[i].y); g.stroke(); }
-    g.save(); g.translate(m.x, m.y); g.rotate(m.a); g.fillStyle = '#f2f2f2'; g.fillRect(-7, -2, 14, 4); g.fillStyle = '#ffb347'; g.fillRect(-11, -1.5, 4, 3); g.restore();
+    for (let i = 1; i < m.trail.length; i++) { g.strokeStyle = `${m.smoke}${(i / m.trail.length) * 0.5})`; g.lineWidth = 3 * m.size; g.beginPath(); g.moveTo(m.trail[i - 1].x, m.trail[i - 1].y); g.lineTo(m.trail[i].x, m.trail[i].y); g.stroke(); }
+    g.save(); g.translate(m.x, m.y); g.rotate(m.a); g.scale(m.size, m.size); g.fillStyle = m.color; g.fillRect(-7, -2, 14, 4); g.fillStyle = '#ffb347'; g.fillRect(-11, -1.5, 4, 3); g.restore();
   }
   g.fillStyle = '#ffe9a0';
   for (const b of bullets) { g.save(); g.translate(b.x, b.y); g.rotate(Math.atan2(b.vy, b.vx)); g.fillRect(-6, -1.2, 12, 2.4); g.restore(); }
+  for (const b of beams) { const k = b.life / b.max; g.strokeStyle = `rgba(${b.color},${k})`; g.lineWidth = b.w * (0.5 + k); g.beginPath(); g.moveTo(b.x1, b.y1); g.lineTo(b.x2, b.y2); g.stroke(); g.strokeStyle = `rgba(255,255,255,${k})`; g.lineWidth = 1.5; g.stroke(); }
+  for (const j of jets) if (j.alive && j.laser > 0 && phase === 'fight') {
+    const x2 = j.x + Math.cos(j.a) * 1000, y2 = j.y + Math.sin(j.a) * 1000;
+    g.strokeStyle = `rgba(255,79,216,${0.45 + Math.random() * 0.3})`; g.lineWidth = 7; g.beginPath(); g.moveTo(j.x, j.y); g.lineTo(x2, y2); g.stroke();
+    g.strokeStyle = 'rgba(255,230,250,.9)'; g.lineWidth = 2; g.stroke();
+  }
   for (const j of jets) if (j.alive) drawJet(j, now);
   for (const p of parts) {
     const k = clamp(p.life / p.max, 0, 1);
+    if (p.kind === 'vapor') { g.strokeStyle = `rgba(220,245,255,${k * 0.8})`; g.lineWidth = 4; g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.stroke(); continue; }
     if (p.kind === 'ring') { g.strokeStyle = `rgba(255,220,150,${k})`; g.lineWidth = 3; g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.stroke(); continue; }
     g.fillStyle = p.kind === 'smoke' ? `rgba(70,70,70,${k * 0.6})` : `rgba(255,${120 + k * 120},40,${k})`;
     g.beginPath(); g.arc(p.x, p.y, p.r * (p.kind === 'smoke' ? 2 - k : 1), 0, Math.PI * 2); g.fill();
@@ -387,18 +496,26 @@ function drawHud() {
   g.globalAlpha = 1;
   if (phase === 'lobby') {
     const n = roster.size;
-    const w = 760, x = (W - w) / 2, y = H - 150;
-    panel(x, y, w, 110);
+    const w = 860, x = (W - w) / 2, hh = SHOW_HELP ? 196 : 110, y = H - 40 - hh;
+    panel(x, y, w, hh);
     text('공중전', x + 28, y + 34, 30, ACCENT, 'left', 900);
     text(n ? `출격까지 ${Math.ceil(lobbyLeft)}초  ·  조종사 ${n}명` : '조종사 대기 중', x + w - 28, y + 34, 24, '#e8f6f4', 'right');
     text('채팅에  !출격  을 입력해서 참전하세요', x + 28, y + 78, 24, '#ffd34d', 'left', 800);
+    if (SHOW_HELP) {
+      cmdRow(x + 28, y + 124, [['!미사일', '미사일'], ['!플레어', '플레어'], ['!회피', '코브라 기동'], ['!특수', '특수무기']]);
+      cmdRow(x + 28, y + 162, [['!귀환', '나가기'], ['후원', '긴급 보급 + 전 무장 재장전']]);
+    }
   } else if (phase === 'fight') {
     const alive = jets.filter((j) => j.alive).length;
     const left = Math.max(0, ROUND_LIMIT - roundT);
     panel(W / 2 - 260, 24, 520, 60);
     text(`생존 ${alive} / ${jets.length}`, W / 2 - 236, 54, 26, '#e8f6f4', 'left', 800);
     text(`${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`, W / 2 + 236, 54, 26, left < 10 ? '#ff5f5f' : ACCENT, 'right', 800);
-    text('!미사일   !플레어', W / 2, 108, 20, '#9fb8b6', 'center', 700);
+    if (SHOW_HELP) {
+      const cw = 980;
+      panel(W / 2 - cw / 2, 96, cw, 48);
+      cmdRow(W / 2 - cw / 2 + 24, 120, [['!미사일', '미사일 7초'], ['!플레어', '플레어'], ['!회피', '코브라'], ['!특수', `특수무기 ${SP_CD}초`], ['후원', '보급']], 20);
+    }
   } else if (phase === 'result' && winner) {
     const a = clamp(phaseT * 2, 0, 1);
     g.globalAlpha = a;
@@ -419,6 +536,18 @@ function drawHud() {
       text(p.nick.length > 10 ? p.nick.slice(0, 10) + '…' : p.nick, x + 56, yy, 22, '#e8f6f4', 'left');
       text(`${p.wins} · ${p.kills}`, x + 314, yy, 22, '#e8f6f4', 'right');
     });
+  }
+}
+
+// "!명령 설명   !명령 설명 …" on one line, commands highlighted
+function cmdRow(x, y, items, size = 22) {
+  let cx = x;
+  for (const [cmd, desc] of items) {
+    g.font = `900 ${size}px ${FONT}`; const w1 = g.measureText(cmd).width;
+    text(cmd, cx, y, size, '#ffd34d', 'left', 900);
+    g.font = `700 ${size}px ${FONT}`; const w2 = g.measureText(desc).width;
+    text(desc, cx + w1 + 8, y, size, '#e8f6f4', 'left', 700);
+    cx += w1 + 8 + w2 + 26;
   }
 }
 
@@ -448,7 +577,7 @@ if (DEMO) {
     if (phase === 'fight') {
       const humans = [...roster.values()];
       const p = humans[Math.floor(Math.random() * humans.length)];
-      if (p) onCmd({ uid: p.uid, nick: p.nick, text: Math.random() < 0.7 ? '!미사일' : '!플레어' });
+      if (p) { const r = Math.random(); onCmd({ uid: p.uid, nick: p.nick, text: r < 0.45 ? '!미사일' : r < 0.6 ? '!플레어' : r < 0.8 ? '!회피' : '!특수' }); }
     }
   }, 1500);
 }
