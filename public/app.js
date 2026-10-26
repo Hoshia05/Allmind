@@ -723,7 +723,7 @@ $('resumeAfter').addEventListener('change', () => api('autopause', { resumeAfter
 
 // ---------------- 방송 준비 (title for Chzzk + YouTube archive + file name) ----------------
 const pct = (i) => (i.size ? Math.floor((i.offset / i.size) * 100) : 0);
-const prepState = { category: null, loaded: false };
+const prepState = { category: null, loaded: false, autoYt: true, autoFile: true };
 const p2d = (n) => String(n).padStart(2, '0');
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${p2d(d.getMonth() + 1)}-${p2d(d.getDate())}`; };
 const fillTpl = (tpl, title) => String(tpl || '{date} - {title}').replace(/\{date\}/g, todayYmd()).replace(/\{title\}/g, title).replace(/\s+/g, ' ').trim();
@@ -741,6 +741,11 @@ async function openPrep() {
   $('prepTitle').value = r.title || '';
   prepState.category = r.category || null;
   $('prepTags').value = (r.tags || []).join(', ');
+  // separately typed YouTube title / file name from the last apply (else they follow the Chzzk title)
+  prepState.autoYt = !r.ytTitle;
+  prepState.autoFile = !r.fileName;
+  if (r.ytTitle) $('prepYt').value = r.ytTitle;
+  if (r.fileName) $('prepFile').value = r.fileName;
   $('prepSrc').textContent = r.from === 'chzzk' ? '· 치지직에서 불러옴' : '· 마지막으로 적용한 값';
   if (r.warn) toast(r.warn, true);
   renderPrepTargets();
@@ -750,16 +755,18 @@ function closePrep() { $('prepWrap').hidden = true; }
 
 function renderPrepTargets() {
   if (!S) return;
-  const title = $('prepTitle').value.trim() || '(제목)';
+  const title = $('prepTitle').value.trim();
   const c = prepState.category;
   $('prepCat').textContent = c ? c.categoryValue || c.categoryId : '없음';
-  const chz = S.chzzkOpen?.loggedIn;
   const yt = S.google?.youtube && S.youtube?.hasKey && S.youtube?.enabled;
-  $('prevChzzk').innerHTML = chz ? esc(title) : '<span class="muted">연동 안 됨 — 방송 PC 설정 창에서 치지직 로그인</span>';
-  $('prevYt').innerHTML = yt ? esc(fillTpl(S.prep?.ytTemplate, title)) : '<span class="muted">연동 안 됨 — 방송 PC 설정 창에서 Google 로그인 + 스트림 키</span>';
   // same clean-up as the upload (Windows can't have \\ / : * ? " < > | in names)
   const safe = (s) => s.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
-  $('prevFile').textContent = `${safe(fillTpl(S.prep?.fileTemplate, safe(title)))}.mp4`;
+  if (prepState.autoYt) $('prepYt').value = title ? fillTpl(S.prep?.ytTemplate, title) : '';
+  if (prepState.autoFile) $('prepFile').value = title ? safe(fillTpl(S.prep?.fileTemplate, safe(title))) : '';
+  $('prepYtAuto').hidden = prepState.autoYt;
+  $('prepFileAuto').hidden = prepState.autoFile;
+  $('ytHint').textContent = !yt ? '· 연동 안 됨 (설정 창에서 Google 로그인 + 스트림 키)' : prepState.autoYt ? '· 자동 (치지직 제목)' : '· 직접 입력';
+  $('fileHint').textContent = prepState.autoFile ? '· 자동 (치지직 제목) — 드라이브에 올릴 때 이름' : '· 직접 입력 — 드라이브에 올릴 때 이름';
   $('prepCatQ').disabled = !S.chzzkOpen?.configured;
   $('prepCatQ').placeholder = S.chzzkOpen?.configured ? '검색해서 바꾸기…' : '치지직 연동 후 검색 가능';
 }
@@ -787,6 +794,11 @@ $('prepCatQ').addEventListener('input', () => {
   }, 300);
 });
 $('prepTitle').addEventListener('input', renderPrepTargets);
+// typing in the YouTube / file field detaches it from the Chzzk title; ↺ 자동 re-attaches
+$('prepYt').addEventListener('input', () => { prepState.autoYt = false; renderPrepTargets(); }); // left empty = automatic on apply
+$('prepFile').addEventListener('input', () => { prepState.autoFile = false; renderPrepTargets(); }); // left empty = automatic on apply
+$('prepYtAuto').addEventListener('click', () => { prepState.autoYt = true; renderPrepTargets(); });
+$('prepFileAuto').addEventListener('click', () => { prepState.autoFile = true; renderPrepTargets(); });
 $('prepBtn').addEventListener('click', openPrep);
 $('prepClose').addEventListener('click', closePrep);
 $('prepWrap').addEventListener('click', (ev) => { if (ev.target === $('prepWrap')) closePrep(); });
@@ -795,7 +807,7 @@ $('prepApply').addEventListener('click', async () => {
   const btn = $('prepApply');
   btn.disabled = true;
   $('prepNote').textContent = '적용 중…';
-  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value });
+  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value, ytTitle: prepState.autoYt ? '' : $('prepYt').value, fileName: prepState.autoFile ? '' : $('prepFile').value });
   btn.disabled = false;
   $('prepNote').textContent = '';
   if (!r.ok) return;

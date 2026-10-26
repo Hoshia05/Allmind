@@ -27,7 +27,7 @@ import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.24.6';
+const VERSION = '0.25.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -159,14 +159,18 @@ async function main() {
 
   // ---------- stream title (방송 준비), YouTube archive, Drive upload (docs/plans/google-archive.md) ----------
   const prep = loadState('prep', { title: '', category: null, tags: [], appliedAt: 0 });
-  const prepFresh = () => (prep.title && Date.now() - prep.appliedAt < 12 * 3600000 ? prep.title : '');
+  const prepIsFresh = () => Date.now() - (prep.appliedAt || 0) < 12 * 3600000;
+  const prepFresh = () => (prep.title && prepIsFresh() ? prep.title : '');
+  // separately typed YouTube title / file name (null = follow the template with the Chzzk title)
+  const prepYt = () => (prep.ytTitle && prepIsFresh() ? prep.ytTitle : '');
+  const prepFile = () => (prep.fileName && prepIsFresh() ? prep.fileName : '');
   // While live, Chzzk's own title is the truth (it may be edited there); before that, the panel's.
   const streamTitle = () => (chzzk.live?.isLive ? chzzk.live.title : '') || prepFresh() || chzzk.live?.title || chzzk.live?.category || '';
   const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers'), saveChat: config.markers?.saveChat !== false, getTitle: streamTitle });
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
   let obsStreaming = false;
-  const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle() });
+  const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
   const drive = new DriveUploader(google, config, { busy: () => obsStreaming || markers.status().recording });
   viewer.onUrl = (url) => interact.setSourceUrl(url);
   // Clicks need the 영도 source's URL from OBS. If it hasn't arrived (asked too
@@ -292,7 +296,7 @@ async function main() {
   remote.on('change', stateChanged);
   studio.on('change', stateChanged);
   markers.on('change', stateChanged);
-  markers.on('finished', (rec) => drive.add(rec));
+  markers.on('finished', (rec) => drive.add({ ...rec, name: prepFile() }));
   for (const x of [google, youtube, drive, chzzkOpen]) x.on('change', stateChanged);
   for (const x of [youtube, drive]) x.on('toast', (t) => sendAll('toast', { long: true, ...t }));
   // OBS's own stream output (the Multi-RTMP plugin's outputs aren't visible over obs-websocket)
@@ -539,7 +543,7 @@ async function main() {
     // 방송 준비: one title for Chzzk, the YouTube archive and the Drive file name
     'POST /api/prep/load': async () => {
       if (chzzkOpen.loggedIn()) {
-        try { return { from: 'chzzk', ...(await chzzkOpen.getSetting()) }; } catch (e) { return { from: 'local', ...prepView(), warn: e.message }; }
+        try { return { from: 'chzzk', ...(await chzzkOpen.getSetting()), ytTitle: prepYt(), fileName: prepFile() }; } catch (e) { return { from: 'local', ...prepView(), warn: e.message }; }
       }
       return { from: 'local', ...prepView() };
     },
@@ -552,15 +556,17 @@ async function main() {
       if (!title) throw new Error('제목을 적어 주세요');
       const category = b.category && b.category.categoryId ? { categoryType: b.category.categoryType, categoryId: b.category.categoryId, categoryValue: b.category.categoryValue } : null;
       const tags = cleanTags(b.tags);
-      Object.assign(prep, { title, category, tags, appliedAt: Date.now() });
+      const ytTitle = String(b.ytTitle || '').replace(/\s+/g, ' ').trim().slice(0, 100) || null; // empty = automatic
+      const fileName = safeName(String(b.fileName || '').replace(/\.(mp4|mkv|mov|flv|ts)$/i, '')) || null;
+      Object.assign(prep, { title, category, tags, ytTitle, fileName, appliedAt: Date.now() });
       const results = {};
       if (chzzkOpen.loggedIn()) {
         try { await chzzkOpen.setSetting({ title, category, tags }); results.chzzk = { ok: true }; } catch (e) { results.chzzk = { ok: false, error: e.message }; }
       } else results.chzzk = { skipped: true, error: '치지직 연동 안 됨 (설정 창에서 로그인)' };
       if (youtube.enabled()) {
-        try { const r = await youtube.setTitle(title); results.youtube = { ok: true, title: r.title }; } catch (e) { results.youtube = { ok: false, error: e.message }; }
+        try { const r = await youtube.setTitle(title, ytTitle); results.youtube = { ok: true, title: r.title }; } catch (e) { results.youtube = { ok: false, error: e.message }; }
       } else results.youtube = { skipped: true, error: 'YouTube 아카이브 연동 안 됨' };
-      results.file = { ok: true, name: safeName(fillTemplate(config.drive?.nameTemplate || '{date} - {title}', { date: new Date(), title: safeName(title) })) };
+      results.file = { ok: true, name: fileName || safeName(fillTemplate(config.drive?.nameTemplate || '{date} - {title}', { date: new Date(), title: safeName(title) })) };
       prep.results = results;
       saveState('prep', prep);
       setTimeout(() => chzzk._poll().catch?.(() => {}), 1500); // show the new title soon
@@ -605,7 +611,7 @@ async function main() {
     }
   }
   function prepView() {
-    return { title: prep.title || chzzk.live?.title || '', category: prep.category, tags: prep.tags || [] };
+    return { title: prep.title || chzzk.live?.title || '', category: prep.category, tags: prep.tags || [], ytTitle: prepYt(), fileName: prepFile() };
   }
 
   // Launcher / settings: stream PC only (they expose the OBS password).

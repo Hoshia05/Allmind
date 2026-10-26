@@ -71,7 +71,8 @@ export class DriveUploader extends EventEmitter {
   }
 
   // Called when a recording has finished (markers.js 'finished').
-  add({ video, markersFile, startedAt, title }) {
+  // name: a file name typed in 방송 준비 (without extension); otherwise the template with the title
+  add({ video, markersFile, startedAt, title, name }) {
     if (!this.enabled() || !video) return;
     let size = 0;
     try { size = fs.statSync(video).size; } catch { console.log(`[drive] video not found: ${video}`); return; }
@@ -79,7 +80,7 @@ export class DriveUploader extends EventEmitter {
     const date = startedAt ? new Date(startedAt) : new Date();
     const ext = path.extname(video).toLowerCase();
     const t = safeName(title) || '녹화';
-    let base = safeName(fillTemplate(this.cfg.nameTemplate || '{date} - {title}', { date, title: t })) || safeName(path.parse(video).name);
+    let base = safeName(name || '') || safeName(fillTemplate(this.cfg.nameTemplate || '{date} - {title}', { date, title: t })) || safeName(path.parse(video).name);
     // same name already used (two recordings with the same title on one day) → " (2)"
     const taken = new Set(this.items.map((i) => i.base));
     if (taken.has(base)) { let n = 2; while (taken.has(`${base} (${n})`)) n++; base = `${base} (${n})`; }

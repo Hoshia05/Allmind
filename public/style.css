@@ -788,6 +788,10 @@ body.docking canvas, body.docking iframe { pointer-events: none; }
 .cat-list[hidden] { display: none; }
 .cat-list button { text-align: left; background: var(--panel-2); border: 0; border-bottom: 1px solid var(--line); color: var(--text); padding: 8px 10px; cursor: pointer; font: inherit; }
 .cat-list button:hover { background: color-mix(in srgb, var(--accent) 14%, var(--panel-2)); }
+.auto-row { display: flex; gap: 6px; align-items: center; }
+.auto-row input { flex: 1; min-width: 0; }
+.auto-row .ext { font-weight: 400; }
+.auto-row .btn[hidden] { display: none; }
 .prep-preview { display: flex; flex-direction: column; gap: 4px; font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 .prep-preview div { display: flex; gap: 10px; }
 .prep-preview div > .muted:first-child { flex: 0 0 64px; }

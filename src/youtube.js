@@ -22,11 +22,13 @@ export function fillTemplate(tpl, { date, title }) {
 
 export class YouTubeGuard extends EventEmitter {
   // getTitle(): the current stream title (방송 준비 panel / Chzzk), '' if unknown
-  constructor(google, config, { getTitle }) {
+  // getFullTitle(): a title typed separately for YouTube (used as is), '' if none
+  constructor(google, config, { getTitle, getFullTitle }) {
     super();
     this.g = google;
     this.config = config;
     this.getTitle = getTitle;
+    this.getFullTitle = getFullTitle || (() => '');
     this.st = loadState('youtube', {}); // { streamId, broadcastId }
     this.b = null; // last seen broadcast summary
     this.alert = null; // { level, text } shown on the dashboard while live
@@ -56,6 +58,8 @@ export class YouTubeGuard extends EventEmitter {
   _set(patch) { Object.assign(this, patch); this.emit('change'); }
 
   title() {
+    const full = (this.getFullTitle() || '').trim();
+    if (full) return full.slice(0, 100);
     const t = (this.getTitle() || '').trim() || '방송 아카이브';
     return fillTemplate(this.cfg.titleTemplate || '{date} - {title}', { date: new Date(), title: t }).slice(0, 100);
   }
@@ -167,10 +171,10 @@ export class YouTubeGuard extends EventEmitter {
   }
 
   // 방송 준비 panel: set the archive title now (ready or already live).
-  async setTitle(title) {
+  async setTitle(title, full = '') {
     if (!this.enabled()) return { skipped: true };
     let b = await this.ensureReady('title');
-    const t = fillTemplate(this.cfg.titleTemplate || '{date} - {title}', { date: new Date(), title }).slice(0, 100);
+    const t = (full || fillTemplate(this.cfg.titleTemplate || '{date} - {title}', { date: new Date(), title })).slice(0, 100);
     if (b && b.snippet?.title !== t) b = await this._retitle(b, t);
     this._set({ b: this._summary(b) });
     return { title: t };

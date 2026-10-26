@@ -269,16 +269,19 @@
   <div class="sheet-wrap" id="prepWrap" hidden>
     <div class="sheet" id="prepSheet" role="dialog" aria-label="방송 준비">
       <div class="sheet-head"><b>방송 준비</b><span class="muted small" id="prepSrc"></span><button class="btn ghost icon" id="prepClose" title="닫기">✕</button></div>
-      <label class="field">제목<input id="prepTitle" maxlength="100" autocomplete="off" placeholder="오늘 방송 제목"></label>
+      <label class="field">치지직 제목<input id="prepTitle" maxlength="100" autocomplete="off" placeholder="오늘 방송 제목"></label>
       <div class="field">카테고리
         <div class="cat-row"><span class="cat-chosen" id="prepCat">없음</span><input id="prepCatQ" placeholder="검색해서 바꾸기…" autocomplete="off"></div>
         <div class="cat-list" id="prepCats" hidden></div>
       </div>
       <label class="field">태그 <span class="hint">쉼표로 구분 · 띄어쓰기와 특수문자는 빠져요</span><input id="prepTags" autocomplete="off" placeholder="예: 아머드코어, 수다"></label>
-      <div class="prep-preview">
-        <div><span class="muted">치지직</span><span id="prevChzzk"></span></div>
-        <div><span class="muted">유튜브</span><span id="prevYt"></span></div>
-        <div><span class="muted">녹화 파일</span><span id="prevFile"></span></div>
+      <div class="field">
+        <span>유튜브 제목 <span class="hint" id="ytHint"></span></span>
+        <div class="auto-row"><input id="prepYt" maxlength="100" autocomplete="off"><button type="button" class="btn ghost small-btn" id="prepYtAuto" title="치지직 제목을 따라가게 되돌리기">↺ 자동</button></div>
+      </div>
+      <div class="field">
+        <span>녹화 파일 이름 <span class="hint" id="fileHint"></span></span>
+        <div class="auto-row"><input id="prepFile" maxlength="150" autocomplete="off"><span class="muted ext">.mp4</span><button type="button" class="btn ghost small-btn" id="prepFileAuto" title="치지직 제목을 따라가게 되돌리기">↺ 자동</button></div>
       </div>
       <div class="row-btns"><button class="btn accent" id="prepApply">적용</button><span class="muted small" id="prepNote"></span></div>
       <ul class="prep-results" id="prepResults"></ul>
