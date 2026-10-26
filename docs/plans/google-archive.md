@@ -60,6 +60,25 @@ Fix for the results screen: don't rely on the persistent "Stream now" broadcast 
   Optional speed limit. Never deletes or moves the local file.
 - Progress in the settings window and a small line on the dashboard; toast when done/failed.
 
+## Upload names (owner's request 2026-10-26)
+
+The owner names archives `[date] - [title about the content]`. Do it automatically **on the Drive
+copy only** (the local OBS file keeps its name, since we copy):
+- Template `config.drive.nameTemplate`, default `{date} - {title}`; `{date}` = recording start,
+  local time, `YYYY-MM-DD` (confirm the exact date format the owner uses before building).
+- `{title}` = the Chzzk live title (`chzzk.js` already polls it). Take the title that was shown for
+  the **longest** part of the recording (titles get edited mid-stream), remembered by `markers.js`
+  per recording. Not live while recording → fall back to the category, then `녹화`.
+- Clean it for Windows (SkyEye/editors download it): drop `\ / : * ? " < > |` and control chars,
+  collapse spaces, trim to ~150 chars. Keep the extension.
+- Same name for the markers file: `<new name>.markers.json` (+ its `recording.file` field is the
+  **Drive** name, so SkyEye matches them). Two recordings on one day with the same title →
+  ` (2)`, ` (3)`.
+- Shown in the upload list before it starts; the owner can edit the name there (until the upload
+  begins).
+- Nice to have: the YouTube archive broadcast gets the same title (one `liveBroadcasts.update`
+  once the Chzzk title is known).
+
 ## Settings
 
 `config.google = { clientId, clientSecret }`, `config.youtube = { enabled, titleTemplate }`,
