@@ -70,6 +70,11 @@ Useful mock switches (`tools/mock-obs.js`): `MOCK_CHAT_PAGE=1` (fake 위플챗 p
 `MOCK_SKIP_EVERY_MS` / `MOCK_SKIP_TRANSITION=1` / `MOCK_OBS_STRUGGLES=1` (OBS skipped
 frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording stop delay),
 `MOCK_REQS=1` (prints OBS request counts every 20 s), `MOCK_TRACK_MS`, `MOCK_SB_MS`.
+Google/CHZZK mocks (under :9333 `/g/…`, `/c/…`; fixtures point config there; logins bounce straight back):
+`MOCK_YT_NOSTART=1`, `MOCK_YT_PUBLIC=1` (turns public when live), `MOCK_YT_NOFEED=1`, `MOCK_DRIVE_FAIL=n`
+(n-th chunk fails once), `MOCK_DRIVE_DIR`, `MOCK_REC_SIZE=bytes` (size of the fake video), OBS `StartStream`/`StopStream`.
+`ALLMIND_YT_CHECK_MS=4000` speeds up the YouTube checks for tests. Log in on the mock with
+`curl -s -X POST localhost:8080/api/launcher/google-login -d '{}' -H 'content-type: application/json'` → `curl -sL <url>`.
 Updater tests: `MOCK_UPDATE=9.9.9` (fake GitHub release on :9333; `MOCK_UPDATE_BAD=size|hash|mz`,
 `MOCK_UPDATE_NODIGEST=1`), `MOCK_OFFLINE=1` (OBS not streaming — otherwise installs are refused).
 From source the install is always a dry run (downloads + verifies, doesn't start the file); set
@@ -89,6 +94,10 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/feed.js` — `FrameFeed`: paced OBS screenshots shared by all viewers; adaptive fps; `fpsCap` from the guard.
 - `src/studio.js` — scenes, mic mute/level, stream health (GetStats every 2 s only while watched).
 - `src/markers.js` — ⭐ marks + chat log for VOD Scout/SkyEye (record chapters + `<video>.markers.json`, format v2: `markers` + `chat`). Monotonic recording clock (pauses excluded, 60 s `GetRecordStatus` drift check), 15 s dirty-save, recovery after restart, `gap` items. Chat comes from `chzzk` `'live-chat'` (live CHAT/SPECIAL only, not the RECENT_RESULT replay); toggle `config.markers.saveChat` (off = v1, marks only).
+- `src/google.js` — Google OAuth (desktop client, loopback callback `/api/google/callback`, PKCE), token store `DATA_DIR/google-auth.json` (secret!), `api()` + `fetchRetry`. Plan: `docs/plans/google-archive.md`.
+- `src/youtube.js` — YouTube archive guard: own reusable stream key, always one private auto-start broadcast ready, checks every 60 s only while OBS streams (force private, not-live alarm), ends it after. `fillTemplate`/`ymd` for `{date} - {title}`.
+- `src/drive.js` — Drive upload queue (`DATA_DIR/uploads.json`): resumable 16 MB chunks, resumes after restart, never while streaming/recording, name from the longest-shown title (`markers.js` tracks it), markers file uploaded with `recording.file` = Drive name. `safeName`.
+- `src/chzzkopen.js` — official CHZZK Open API (`openapi.chzzk.naver.com`): OAuth (account-interlock, single-use refresh tokens), `lives/setting` GET/PATCH, category search. Used by the 방송 준비 sheet (`/api/prep/*`).
 - `src/remote.js` — 치지직 리모컨 dock in OBS via DevTools (■ 정지 / 넘기기 / 알림 정지).
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**.
@@ -121,7 +130,12 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   why (no source / not a Browser source / empty URL). Local-file Browser sources use `file:///`.
 - iPad Safari can't read the MJPEG stream reliably; the client falls back to long-poll
   `/api/frame` automatically.
-- Never ask for or keep `service.json` / Multi-RTMP config — they contain stream keys.
+- Never ask for or keep `service.json` / Multi-RTMP config — they contain stream keys. Same for
+  `google-auth.json` / `chzzk-auth.json` (refresh tokens). The YouTube key Allmind creates is shown
+  only in the local settings window and never stored (only the stream id).
+- Not verified against the real services yet (mock only): Google unverified-app login, auto-start of
+  a fresh broadcast on Allmind's own key, Drive upload of a multi-GB file, CHZZK app registration /
+  redirect URL (`http://localhost:<port>/api/chzzk-open/callback`), `/open/v1/users/me`, tag rules.
 
 ## The owner's machine
 

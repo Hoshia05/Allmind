@@ -17,10 +17,15 @@ import { Studio } from './studio.js';
 import { Markers } from './markers.js';
 import { writeLogBundle, redact, obsConfigDir } from './logbundle.js';
 import { Soundboard } from './soundboard.js';
+import { Google } from './google.js';
+import { YouTubeGuard, fillTemplate } from './youtube.js';
+import { DriveUploader, safeName } from './drive.js';
+import { ChzzkOpen, cleanTags } from './chzzkopen.js';
+import { loadState, saveState } from './config.js';
 import { Updater } from './update.js';
 import * as win from './win.js';
 
-const VERSION = '0.20.3';
+const VERSION = '0.21.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -147,9 +152,20 @@ async function main() {
   // footage), so it gets its own light, fixed settings instead of the 영도 quality.
   const program = new ProgramViewer(obs);
   const studio = new Studio(obs, { mic: config.sources.mic });
-  const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers'), saveChat: config.markers?.saveChat !== false });
   const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
+
+  // ---------- stream title (방송 준비), YouTube archive, Drive upload (docs/plans/google-archive.md) ----------
+  const prep = loadState('prep', { title: '', category: null, tags: [], appliedAt: 0 });
+  const prepFresh = () => (prep.title && Date.now() - prep.appliedAt < 12 * 3600000 ? prep.title : '');
+  // While live, Chzzk's own title is the truth (it may be edited there); before that, the panel's.
+  const streamTitle = () => (chzzk.live?.isLive ? chzzk.live.title : '') || prepFresh() || chzzk.live?.title || chzzk.live?.category || '';
+  const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers'), saveChat: config.markers?.saveChat !== false, getTitle: streamTitle });
+  const google = new Google(config);
+  const chzzkOpen = new ChzzkOpen(config);
+  let obsStreaming = false;
+  const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle() });
+  const drive = new DriveUploader(google, config, { busy: () => obsStreaming || markers.status().recording });
   viewer.onUrl = (url) => interact.setSourceUrl(url);
   // Clicks need the 영도 source's URL from OBS. If it hasn't arrived (asked too
   // early, or OBS has nothing to give), ask again and say what's wrong.
@@ -235,6 +251,12 @@ async function main() {
     links: links(),
     program: program.status(),
     donationActive,
+    google: google.status(),
+    youtube: youtube.status(),
+    drive: drive.status(),
+    chzzkOpen: chzzkOpen.status(),
+    prep: { title: prep.title, category: prep.category, tags: prep.tags, appliedAt: prep.appliedAt, results: prep.results || null, ytTemplate: config.youtube?.titleTemplate || '{date} - {title}', fileTemplate: config.drive?.nameTemplate || '{date} - {title}' },
+    obsStreaming,
   });
   // Top-right links: built from the connected channel. (Old configs carry
   // generic placeholder links to the Chzzk front page; those are dropped.)
@@ -267,6 +289,24 @@ async function main() {
   remote.on('change', stateChanged);
   studio.on('change', stateChanged);
   markers.on('change', stateChanged);
+  markers.on('finished', (rec) => drive.add(rec));
+  for (const x of [google, youtube, drive, chzzkOpen]) x.on('change', stateChanged);
+  for (const x of [youtube, drive]) x.on('toast', (t) => sendAll('toast', { long: true, ...t }));
+  // OBS's own stream output (the Multi-RTMP plugin's outputs aren't visible over obs-websocket)
+  const setStreaming = (active) => {
+    if (active === obsStreaming) return;
+    obsStreaming = active;
+    youtube.onStreaming(active);
+    if (!active) setTimeout(() => drive.kick(), 3000);
+    stateChanged();
+  };
+  obs.on('StreamStateChanged', (e) => {
+    const s = String(e.outputState || '');
+    if (/STARTED$/.test(s)) setStreaming(true);
+    else if (/STOPPED$/.test(s)) setStreaming(false);
+  });
+  obs.on('connected', () => obs.call('GetStreamStatus').then((st) => setStreaming(!!st.outputActive), () => {}));
+  setTimeout(() => youtube.ensureReady('start').catch(() => {}), 20000);
   soundboard.on('change', stateChanged);
   markers.on('saved', ({ count, chat, file }) => {
     const parts = [];
@@ -488,7 +528,72 @@ async function main() {
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
     'POST /api/chzzk/donations-clear': () => chzzk.clearDonations(),
     'GET /api/update': () => updater.state(),
+
+    // 방송 준비: one title for Chzzk, the YouTube archive and the Drive file name
+    'POST /api/prep/load': async () => {
+      if (chzzkOpen.loggedIn()) {
+        try { return { from: 'chzzk', ...(await chzzkOpen.getSetting()) }; } catch (e) { return { from: 'local', ...prepView(), warn: e.message }; }
+      }
+      return { from: 'local', ...prepView() };
+    },
+    'POST /api/prep/categories': async (b) => {
+      if (!chzzkOpen.configured()) throw new Error('치지직 연동을 설정하면 카테고리를 검색할 수 있어요');
+      return { items: await chzzkOpen.searchCategory(String(b.q || '').trim()) };
+    },
+    'POST /api/prep/apply': async (b) => {
+      const title = String(b.title || '').trim().slice(0, 100);
+      if (!title) throw new Error('제목을 적어 주세요');
+      const category = b.category && b.category.categoryId ? { categoryType: b.category.categoryType, categoryId: b.category.categoryId, categoryValue: b.category.categoryValue } : null;
+      const tags = cleanTags(b.tags);
+      Object.assign(prep, { title, category, tags, appliedAt: Date.now() });
+      const results = {};
+      if (chzzkOpen.loggedIn()) {
+        try { await chzzkOpen.setSetting({ title, category, tags }); results.chzzk = { ok: true }; } catch (e) { results.chzzk = { ok: false, error: e.message }; }
+      } else results.chzzk = { skipped: true, error: '치지직 연동 안 됨 (설정 창에서 로그인)' };
+      if (youtube.enabled()) {
+        try { const r = await youtube.setTitle(title); results.youtube = { ok: true, title: r.title }; } catch (e) { results.youtube = { ok: false, error: e.message }; }
+      } else results.youtube = { skipped: true, error: 'YouTube 아카이브 연동 안 됨' };
+      results.file = { ok: true, name: safeName(fillTemplate(config.drive?.nameTemplate || '{date} - {title}', { date: new Date(), title: safeName(title) })) };
+      prep.results = results;
+      saveState('prep', prep);
+      setTimeout(() => chzzk._poll().catch?.(() => {}), 1500); // show the new title soon
+      return { results };
+    },
+
+    'POST /api/drive/rename': (b) => drive.rename(b.id, b.name),
+    'POST /api/drive/retry': (b) => drive.retry(b.id),
+    'POST /api/drive/remove': (b) => drive.remove(b.id),
   };
+  const SECRET_MASK = '••••••••';
+  const chzzkRedirect = () => `http://localhost:${PORT}/api/chzzk-open/callback`;
+  function linksView() {
+    return {
+      google: { clientId: config.google?.clientId || '', clientSecret: config.google?.clientSecret ? SECRET_MASK : '', redirect: `http://127.0.0.1:${PORT}/api/google/callback`, ...google.status() },
+      chzzk: { clientId: config.chzzkOpen?.clientId || '', clientSecret: config.chzzkOpen?.clientSecret ? SECRET_MASK : '', redirect: chzzkRedirect(), ...chzzkOpen.status() },
+      youtube: { enabled: config.youtube?.enabled !== false, titleTemplate: config.youtube?.titleTemplate || '{date} - {title}', ...youtube.status() },
+      drive: { enabled: config.drive?.enabled !== false, nameTemplate: config.drive?.nameTemplate || '{date} - {title}', maxMbps: config.drive?.maxMbps || 0, ...drive.status() },
+    };
+  }
+  // The browser comes back here after the Google / CHZZK login page (this PC only).
+  async function oauthCallback(req, res, url, which) {
+    const page = (ok, msg) => {
+      res.writeHead(ok ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!doctype html><meta charset="utf-8"><title>Allmind</title><body style="font:16px sans-serif;background:#070b0c;color:#dcefec;display:grid;place-items:center;height:90vh;margin:0"><div style="text-align:center"><div style="font-size:42px">${ok ? '✅' : '⚠️'}</div><p>${msg.replace(/</g, '&lt;')}</p><p style="color:#7b9b9a">이 창은 닫아도 돼요.</p></div>`);
+    };
+    if (!isLocal(req)) return page(false, '방송 PC에서만 로그인할 수 있어요');
+    const q = Object.fromEntries(url.searchParams);
+    try {
+      if (which === 'google') await google.callback(q);
+      else await chzzkOpen.callback(q);
+      stateChanged();
+      page(true, which === 'google' ? `Google에 로그인했어요${google.auth?.account ? ` (${google.auth.account})` : ''}` : `치지직에 로그인했어요${chzzkOpen.auth?.channelName ? ` (${chzzkOpen.auth.channelName})` : ''}`);
+    } catch (e) {
+      page(false, e.message);
+    }
+  }
+  function prepView() {
+    return { title: prep.title || chzzk.live?.title || '', category: prep.category, tags: prep.tags || [] };
+  }
 
   // Launcher / settings: stream PC only (they expose the OBS password).
   const localRoutes = {
@@ -567,6 +672,46 @@ async function main() {
     'POST /api/launcher/folder-count': (b) => ({ count: countMusic(b.path) }),
     'POST /api/launcher/open-dashboard': () => openDashboardHere(),
     'POST /api/launcher/open-data': () => win.openFolder(CONFIG_DIR),
+
+    // ---------- Google / CHZZK sign-ins (secrets stay on this PC) ----------
+    'GET /api/launcher/links': () => linksView(),
+    'POST /api/launcher/links-save': (b) => {
+      const keepSecret = (v, old) => (v === SECRET_MASK ? old : String(v || '').trim());
+      const g = {
+        clientId: String(b.googleClientId || '').trim(),
+        clientSecret: keepSecret(b.googleClientSecret, config.google?.clientSecret || ''),
+      };
+      const c = {
+        clientId: String(b.chzzkClientId || '').trim(),
+        clientSecret: keepSecret(b.chzzkClientSecret, config.chzzkOpen?.clientSecret || ''),
+      };
+      const y = { enabled: !!b.youtubeEnabled, titleTemplate: String(b.titleTemplate || '{date} - {title}').trim() || '{date} - {title}' };
+      const d = { enabled: !!b.driveEnabled, nameTemplate: String(b.nameTemplate || '{date} - {title}').trim() || '{date} - {title}', maxMbps: Math.max(0, Number(b.maxMbps) || 0) };
+      saveConfig({ google: g, chzzkOpen: c, youtube: y, drive: d });
+      // apply now, no restart needed
+      config.google = { ...(config.google || {}), ...g };
+      config.chzzkOpen = { ...(config.chzzkOpen || {}), ...c };
+      config.youtube = { ...(config.youtube || {}), ...y };
+      config.drive = { ...(config.drive || {}), ...d };
+      youtube.ensureReady('settings').catch(() => {});
+      drive.kick();
+      return linksView();
+    },
+    'POST /api/launcher/google-login': () => {
+      const url = google.loginUrl(`http://127.0.0.1:${PORT}/api/google/callback`);
+      win.openInDefaultBrowser(url);
+      return { url };
+    },
+    'POST /api/launcher/google-logout': () => google.logout(),
+    'POST /api/launcher/chzzk-login': () => {
+      const url = chzzkOpen.loginUrl(chzzkRedirect());
+      win.openInDefaultBrowser(url);
+      return { url };
+    },
+    'POST /api/launcher/chzzk-logout': () => chzzkOpen.logout(),
+    'POST /api/launcher/youtube-key': () => youtube.createKey(),
+    'POST /api/launcher/youtube-showkey': () => youtube.showKey(),
+    'POST /api/launcher/youtube-forget': () => youtube.forgetKey(),
     'POST /api/launcher/logs': async () => {
       const info = [
         `Allmind ${VERSION} (${IS_EXE ? 'exe' : 'source'})`,
@@ -608,6 +753,8 @@ async function main() {
       return json(res, r.ok ? 200 : 409, r);
     }
     if (key === 'GET /api/marks') return json(res, 200, markers.status());
+    if (key === 'GET /api/google/callback') return oauthCallback(req, res, url, 'google');
+    if (key === 'GET /api/chzzk-open/callback') return oauthCallback(req, res, url, 'chzzk');
     if (key === 'GET /api/chzzk/user') return json(res, 200, { ok: true, ...chzzk.userInfo(url.searchParams.get('uid')) });
     if (key === 'GET /mark') {
       res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });

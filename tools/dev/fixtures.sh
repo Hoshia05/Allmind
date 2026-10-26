@@ -29,6 +29,8 @@ done
   "chzzk": { "apiBase": "http://127.0.0.1:9333", "gameApiBase": "http://127.0.0.1:9333", "chatServer": "ws://127.0.0.1:9333/chat", "pollSeconds": 5, "channelId": "0123456789abcdef0123456789abcdef" },
   "app": { "startObs": false },
   "update": { "apiBase": "http://127.0.0.1:9333" },
+  "google": { "clientId": "mock-google-id", "clientSecret": "mock-google-secret", "authUrl": "http://127.0.0.1:9333/g/auth", "tokenUrl": "http://127.0.0.1:9333/g/token", "revokeUrl": "http://127.0.0.1:9333/g/revoke", "apiBase": "http://127.0.0.1:9333/g", "uploadBase": "http://127.0.0.1:9333/g/upload" },
+  "chzzkOpen": { "clientId": "mock-chzzk-id", "clientSecret": "mock-chzzk-secret", "authUrl": "http://127.0.0.1:9333/c/account-interlock", "apiBase": "http://127.0.0.1:9333/c" },
   "sources": { "donation": "영도", "chat": "위플챗", "bgm": "BGM Player", "alert": "도네 알림" },
   "server": { "port": 8080 }
 }

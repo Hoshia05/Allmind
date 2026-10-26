@@ -1,5 +1,7 @@
 # Google: YouTube archive guard + automatic Drive upload
 
+**Status: built in 0.21.0** (mock-tested; real Google/CHZZK still to be checked by the owner).
+
 Owner's problems (2026-10-26):
 - He simulcasts every stream to YouTube as a **private** archive (OBS Multi-RTMP plugin, the
   "Stream now" / default stream key). Often the YouTube side never goes live because Studio still

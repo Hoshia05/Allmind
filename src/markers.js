@@ -34,9 +34,11 @@ const CHAT_MAX = 500;
 const now = () => performance.now(); // monotonic: wall-clock changes don't matter
 
 export class Markers extends EventEmitter {
-  constructor(obs, { fallbackDir, saveChat = true } = {}) {
+  // getTitle(): the stream title right now ('' if unknown), to name the Drive upload
+  constructor(obs, { fallbackDir, saveChat = true, getTitle = () => '' } = {}) {
     super();
     this.obs = obs;
+    this.getTitle = getTitle;
     this.saveChat = saveChat !== false; // 채팅 로그 저장 (SkyEye용)
     this.chatUp = false; // is the Chzzk chat connected right now
     this.timer = null;
@@ -116,10 +118,14 @@ export class Markers extends EventEmitter {
       chat: [],
       gap: null, // chat connection drop in progress: { t, at, mono }
       dirty: false,
+      titles: {}, // title -> ms it was shown during this recording
+      title: '',
+      titleAt: now(),
       done: false,
       lastObsMs: durationMs,
     };
     this.cur = r;
+    r.title = this._titleNow();
     this._startTimer();
     this.emit('change');
     if (!r.dir) {
@@ -138,6 +144,7 @@ export class Markers extends EventEmitter {
     this.timer = setInterval(() => {
       const r = this.cur && !this.cur.done ? this.cur : null;
       if (!r) return this._stopTimer();
+      this._noteTitle(r);
       if (r.dirty) this._save(r);
       if (++this.ticks % (DRIFT_EVERY_MS / SAVE_EVERY_MS) === 0) this._drift(r).catch((e) => this._log('drift', e));
     }, SAVE_EVERY_MS);
@@ -147,6 +154,25 @@ export class Markers extends EventEmitter {
   _stopTimer() {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  _titleNow() {
+    try { return String(this.getTitle() || '').trim(); } catch { return ''; }
+  }
+
+  // Titles get edited mid-stream: keep how long each one was up, the longest names the upload.
+  _noteTitle(r) {
+    const t = now();
+    if (r.title) r.titles[r.title] = (r.titles[r.title] || 0) + (t - r.titleAt);
+    r.titleAt = t;
+    r.title = this._titleNow();
+  }
+
+  bestTitle(r) {
+    let best = '';
+    let ms = -1;
+    for (const [k, v] of Object.entries(r.titles)) if (v > ms) { best = k; ms = v; }
+    return best || r.title || '';
   }
 
   // Compare our clock with OBS's own; take OBS's if we're more than a second off.
@@ -200,10 +226,11 @@ export class Markers extends EventEmitter {
     r.paused = false;
     r.done = true;
     this._stopTimer();
+    this._noteTitle(r);
     this._closeGap(r, true);
     r.outputPath = outputPath || r.outputPath || this._guessVideo(r);
     const chatCount = r.chat.filter((c) => c.type !== 'gap').length;
-    if (!r.marks.length && !chatCount) { this.emit('change'); return; }
+    if (!r.marks.length && !chatCount) { this._finished(r); this.emit('change'); return; }
     const tmp = r.dir && path.join(r.dir, r.tmpFile);
     if (r.outputPath) {
       const p = path.parse(r.outputPath);
@@ -218,7 +245,18 @@ export class Markers extends EventEmitter {
       r.file = r.savedAt; // the backup copy is still there
     }
     this.emit('saved', { count: r.marks.length, chat: chatCount, file: r.file ? path.basename(r.file) : '' });
+    this._finished(r);
     this.emit('change');
+  }
+
+  // For the Drive upload: the video, its markers file (if any) and the title to name them by.
+  _finished(r) {
+    this.emit('finished', {
+      video: r.outputPath || null,
+      markersFile: r.file && fs.existsSync(r.file) ? r.file : null,
+      startedAt: r.startedAt,
+      title: this.bestTitle(r),
+    });
   }
 
   // When the stop happened while OBS was disconnected there's no outputPath:

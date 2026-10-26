@@ -38,6 +38,7 @@ setInterval(() => { if (!donationLoud()) adSkipped = false; }, 500);
 // Optional real JPEG frames (MOCK_FRAMES=dir with v00.jpg… and idle.jpg) so
 // frame rates can be measured; otherwise SVG drawings are used.
 import fs from 'node:fs';
+import path from 'node:path';
 const FRAMES_DIR = process.env.MOCK_FRAMES;
 const frames = FRAMES_DIR ? fs.readdirSync(FRAMES_DIR).filter((f) => /^v\d+\.jpg$/.test(f)).sort().map((f) => fs.readFileSync(`${FRAMES_DIR}/${f}`)) : [];
 const idleFrame = FRAMES_DIR ? fs.readFileSync(`${FRAMES_DIR}/idle.jpg`) : null;
@@ -114,6 +115,8 @@ const sceneAdds = {};
 const reqCounts = {};
 if (process.env.MOCK_REQS) setInterval(() => { console.log('REQS/20s', JSON.stringify(reqCounts)); for (const k in reqCounts) delete reqCounts[k]; }, 20000);
 const rec = { active: false, paused: false, acc: 0, since: 0, path: '', chapters: [] };
+// OBS's stream output: live unless MOCK_OFFLINE; StartStream / StopStream switch it (and the mock YouTube)
+const stream = { active: !process.env.MOCK_OFFLINE };
 const recMs = () => rec.acc + (rec.active && !rec.paused ? Date.now() - rec.since : 0);
 const recState = (s, extra = {}) => broadcast('RecordStateChanged', { outputActive: rec.active, outputState: 'OBS_WEBSOCKET_OUTPUT_' + s, outputPath: null, ...extra }, 1 << 6);
 function recHandle(type, d) {
@@ -135,7 +138,8 @@ function recHandle(type, d) {
     case 'StopRecord': {
       if (!rec.active) throw new Error('Record is not active.');
       rec.acc = recMs(); rec.active = false; rec.paused = false;
-      fs.writeFileSync(rec.path, JSON.stringify({ mock: true, durationMs: rec.acc, chapters: rec.chapters }));
+      // MOCK_REC_SIZE=bytes: write a "video" of that size (for the Drive upload tests)
+      fs.writeFileSync(rec.path, process.env.MOCK_REC_SIZE ? crypto.randomBytes(Number(process.env.MOCK_REC_SIZE)) : JSON.stringify({ mock: true, durationMs: rec.acc, chapters: rec.chapters }));
       log('record stop', rec.path, (rec.acc / 1000).toFixed(1) + 's', rec.chapters.length, 'chapters');
       setTimeout(() => recState('STOPPING'), 10);
       setTimeout(() => recState('STOPPED', { outputPath: rec.path }), Number(process.env.MOCK_STOP_MS || 2500)); // OBS finishes the file first
@@ -183,10 +187,22 @@ function handle(type, d) {
       setTimeout(() => broadcast('InputMuteStateChanged', { inputName: d.inputName, inputMuted: i.muted }, 1 << 3), 20);
       return { inputMuted: i.muted };
     }
+    case 'StartStream':
+      if (stream.active) throw new Error('Stream is already active.');
+      stream.active = true; log('stream start');
+      setTimeout(() => broadcast('StreamStateChanged', { outputActive: true, outputState: 'OBS_WEBSOCKET_OUTPUT_STARTED' }, 1 << 6), 50);
+      mockYouTubeStreaming(true);
+      return;
+    case 'StopStream':
+      if (!stream.active) throw new Error('Stream is not active.');
+      stream.active = false; log('stream stop');
+      setTimeout(() => broadcast('StreamStateChanged', { outputActive: false, outputState: 'OBS_WEBSOCKET_OUTPUT_STOPPED' }, 1 << 6), 50);
+      mockYouTubeStreaming(false);
+      return;
     case 'GetStreamStatus': {
       const sec = (Date.now() - t0) / 1000;
       const drops = process.env.MOCK_DROPS ? Math.floor(sec * 2) : 0;
-      return { outputActive: !process.env.MOCK_OFFLINE, outputReconnecting: false, outputBytes: Math.round(sec * 6000 * 125 * (0.95 + Math.random() * 0.1)),
+      return { outputActive: stream.active, outputReconnecting: false, outputBytes: Math.round(sec * 6000 * 125 * (0.95 + Math.random() * 0.1)),
         outputTotalFrames: Math.round(sec * 60), outputSkippedFrames: drops, outputCongestion: process.env.MOCK_DROPS ? 0.4 : 0.02, outputDuration: sec * 1000 };
     }
     case 'GetVideoSettings': return { baseWidth: 1920, baseHeight: 1080, outputWidth: 1920, outputHeight: 1080 };
@@ -484,9 +500,10 @@ const chzzkHttp = http.createServer((req, res) => {
   const send = (content, code = 200) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ code, message: null, content })); };
   if (/\/service\/v3\/channels\/[0-9a-f]{32}\/live-detail/.test(req.url)) {
     viewers = Math.max(5, viewers + Math.round((Math.random() - 0.45) * 4));
-    return send({ liveTitle: '[테스트] 아머드코어 6 하면서 수다', status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
+    return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
   }
   if (req.url.startsWith('/nng_main/v1/chats/access-token')) return send({ accessToken: 'mock-token', extraToken: 'x' });
+  if (req.url.startsWith('/g/') || req.url.startsWith('/c/')) return mockApis(req, res);
   res.writeHead(404).end();
 });
 const chatWss = new WebSocketServer({ server: chzzkHttp, path: '/chat' });
@@ -526,4 +543,176 @@ function fakeProgram() {
   const t = ((Date.now() - t0) / 1000);
   const x = 200 + Math.round(Math.sin(t) * 600);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><rect width="1920" height="1080" fill="#20304a"/><text x="60" y="110" fill="#fff" font-size="72" font-family="sans-serif">방송 화면 (Main scene)</text><circle cx="${960 + x - 200}" cy="600" r="90" fill="#ffd34d"/><text x="60" y="1040" fill="#9bd" font-size="36" font-family="monospace">t=${t.toFixed(1)}s</text></svg>`;
+}
+
+
+// ---------------- fake Google (OAuth, YouTube Live, Drive) under /g/ and CHZZK Open API under /c/ ----------------
+// Point Allmind at it with google.{authUrl,tokenUrl,apiBase,uploadBase,revokeUrl} = http://127.0.0.1:9333/g/…
+// and chzzkOpen.{authUrl,apiBase} = http://127.0.0.1:9333/c/…  (tools/dev/fixtures.sh does this).
+// MOCK_YT_NOSTART=1: the broadcast never goes live.  MOCK_YT_PUBLIC=1: new broadcasts turn public when live.
+// MOCK_YT_NOFEED=1: YouTube gets no video (stream inactive).  MOCK_DRIVE_FAIL=n: the n-th chunk PUT fails once (503).
+// Uploaded files land in MOCK_DRIVE_DIR (default /tmp/mock-drive).
+const chzzkSetting = { defaultLiveTitle: '[테스트] 아머드코어 6 하면서 수다', category: { categoryType: 'GAME', categoryId: 'ARMORED_CORE_VI', categoryValue: 'ARMORED CORE VI', posterImageUrl: '' }, tags: ['아머드코어'] };
+const yt = { streams: new Map(), broadcasts: new Map(), n: 0 };
+const drv = { files: new Map(), sessions: new Map(), n: 0, puts: 0, failAt: Number(process.env.MOCK_DRIVE_FAIL || 0) };
+const DRIVE_DIR = process.env.MOCK_DRIVE_DIR || '/tmp/mock-drive';
+const codes = new Map();
+function mockYouTubeStreaming(on) {
+  for (const s of yt.streams.values()) s.status.streamStatus = on && !process.env.MOCK_YT_NOFEED ? 'active' : 'inactive';
+  for (const b of yt.broadcasts.values()) {
+    if (on && b.contentDetails.boundStreamId && ['ready', 'created'].includes(b.status.lifeCycleStatus) && b.contentDetails.enableAutoStart && !process.env.MOCK_YT_NOSTART && !process.env.MOCK_YT_NOFEED) {
+      setTimeout(() => { b.status.lifeCycleStatus = 'live'; if (process.env.MOCK_YT_PUBLIC) b.status.privacyStatus = 'public'; log('yt broadcast live', b.id, b.status.privacyStatus); }, 3000);
+    }
+    if (!on && b.status.lifeCycleStatus === 'live' && b.contentDetails.enableAutoStop) { b.status.lifeCycleStatus = 'complete'; log('yt broadcast complete', b.id); }
+  }
+}
+function readReq(req) {
+  return new Promise((resolve) => { const parts = []; req.on('data', (c) => parts.push(c)); req.on('end', () => resolve(Buffer.concat(parts))); });
+}
+async function mockApis(req, res) {
+  const u = new URL(req.url, 'http://x');
+  const raw = await readReq(req);
+  const bodyText = raw.toString('utf8');
+  const j = (() => { try { return JSON.parse(bodyText); } catch { return null; } })();
+  const out = (code, obj, headers = {}) => { res.writeHead(code, { 'Content-Type': 'application/json', ...headers }); res.end(obj === undefined ? '' : JSON.stringify(obj)); };
+  const auth = req.headers.authorization || '';
+  const p = u.pathname;
+
+  // --- Google OAuth: consent is skipped, we bounce straight back with a code ---
+  if (p === '/g/auth') {
+    const code = 'gcode' + (++yt.n);
+    codes.set(code, u.searchParams.get('code_challenge'));
+    res.writeHead(302, { Location: `${u.searchParams.get('redirect_uri')}?code=${code}&state=${u.searchParams.get('state')}&scope=x` });
+    return res.end();
+  }
+  if (p === '/g/token') {
+    const f = new URLSearchParams(bodyText);
+    if (f.get('grant_type') === 'authorization_code') {
+      if (!codes.has(f.get('code'))) return out(400, { error: 'invalid_grant' });
+      const ch = codes.get(f.get('code'));
+      const ok = crypto.createHash('sha256').update(f.get('code_verifier') || '').digest('base64url') === ch;
+      if (!ok) return out(400, { error: 'invalid_grant', error_description: 'PKCE mismatch' });
+      log('google login');
+      return out(200, { access_token: 'gat1', expires_in: 3600, refresh_token: 'grt', scope: 'youtube drive.file', token_type: 'Bearer' });
+    }
+    if (f.get('grant_type') === 'refresh_token') return f.get('refresh_token') === 'grt' ? out(200, { access_token: 'gat' + Date.now(), expires_in: 3600 }) : out(400, { error: 'invalid_grant' });
+    return out(400, { error: 'unsupported_grant_type' });
+  }
+  if (p === '/g/revoke') return out(200, {});
+  if (p.startsWith('/g/') && !p.startsWith('/g/upload/session/') && !auth.startsWith('Bearer gat')) return out(401, { error: { message: 'Invalid Credentials' } });
+
+  // --- YouTube ---
+  if (p === '/g/youtube/v3/channels') return out(200, { items: [{ id: 'UCmock', snippet: { title: 'Hoshia Archive Ch.' } }] });
+  if (p === '/g/youtube/v3/liveStreams' && req.method === 'POST') {
+    const id = 'stream' + (++yt.n);
+    const s = { id, snippet: j.snippet, cdn: { ...j.cdn, ingestionInfo: { ingestionAddress: 'rtmp://a.rtmp.youtube.com/live2', streamName: 'mock-' + id + '-key' } }, contentDetails: j.contentDetails, status: { streamStatus: stream.active && !process.env.MOCK_YT_NOFEED ? 'active' : 'inactive' } };
+    yt.streams.set(id, s);
+    log('yt stream key created', id);
+    return out(200, s);
+  }
+  if (p === '/g/youtube/v3/liveStreams') return out(200, { items: [yt.streams.get(u.searchParams.get('id'))].filter(Boolean) });
+  if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'GET') return out(200, { items: [yt.broadcasts.get(u.searchParams.get('id'))].filter(Boolean) });
+  if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'POST') {
+    const id = 'bc' + (++yt.n);
+    const b = { id, snippet: j.snippet, status: { ...j.status, lifeCycleStatus: 'created' }, contentDetails: { ...j.contentDetails } };
+    yt.broadcasts.set(id, b);
+    log('yt broadcast created', id, b.status.privacyStatus, JSON.stringify(b.snippet.title));
+    return out(200, b);
+  }
+  if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'PUT') {
+    const b = yt.broadcasts.get(j.id);
+    if (!b) return out(404, { error: { message: 'Broadcast not found' } });
+    if (j.status) Object.assign(b.status, j.status);
+    if (j.snippet) Object.assign(b.snippet, j.snippet);
+    log('yt broadcast updated', b.id, b.status.privacyStatus, JSON.stringify(b.snippet.title));
+    return out(200, b);
+  }
+  if (p === '/g/youtube/v3/liveBroadcasts/bind') {
+    const b = yt.broadcasts.get(u.searchParams.get('id'));
+    b.contentDetails.boundStreamId = u.searchParams.get('streamId');
+    b.status.lifeCycleStatus = 'ready';
+    if (stream.active) mockYouTubeStreaming(true);
+    return out(200, b);
+  }
+  if (p === '/g/youtube/v3/liveBroadcasts/transition') {
+    const b = yt.broadcasts.get(u.searchParams.get('id'));
+    b.status.lifeCycleStatus = u.searchParams.get('broadcastStatus') === 'complete' ? 'complete' : b.status.lifeCycleStatus;
+    return out(200, b);
+  }
+  // test helper: GET /g/_yt → everything
+  if (p === '/g/_yt') return out(200, { streams: [...yt.streams.values()], broadcasts: [...yt.broadcasts.values()] });
+
+  // --- Drive ---
+  if (p === '/g/drive/v3/files' && req.method === 'POST') {
+    const id = 'f' + (++drv.n);
+    drv.files.set(id, { id, ...j });
+    log('drive create', j.name);
+    return out(200, { id });
+  }
+  if (p.startsWith('/g/drive/v3/files/')) {
+    const f = drv.files.get(p.split('/').pop());
+    return f ? out(200, { id: f.id, trashed: false }) : out(404, { error: { message: 'File not found' } });
+  }
+  if (p === '/g/upload/drive/v3/files' && u.searchParams.get('uploadType') === 'resumable') {
+    const sid = 's' + (++drv.n);
+    drv.sessions.set(sid, { meta: j, size: Number(req.headers['x-upload-content-length']), got: 0, parts: [] });
+    return out(200, {}, { Location: `http://127.0.0.1:9333/g/upload/session/${sid}` });
+  }
+  if (p.startsWith('/g/upload/session/')) {
+    const s = drv.sessions.get(p.split('/').pop());
+    if (!s) return out(404, { error: { message: 'session gone' } });
+    const cr = String(req.headers['content-range'] || '');
+    const m = /bytes (\d+)-(\d+)\/(\d+)/.exec(cr);
+    if (m) {
+      drv.puts++;
+      if (drv.failAt && drv.puts === drv.failAt) { log('drive: failing a chunk on purpose'); return out(503, { error: { message: 'backend error' } }); }
+      if (Number(m[1]) !== s.got) return out(400, { error: { message: `offset ${m[1]} != ${s.got}` } });
+      s.parts.push(raw);
+      s.got += raw.length;
+    }
+    if (s.got >= s.size) {
+      const id = 'f' + (++drv.n);
+      fs.mkdirSync(DRIVE_DIR, { recursive: true });
+      fs.writeFileSync(path.join(DRIVE_DIR, s.meta.name), Buffer.concat(s.parts));
+      drv.files.set(id, { id, ...s.meta });
+      log('drive upload done', s.meta.name, s.size, 'bytes, parent', s.meta.parents?.[0]);
+      return out(200, { id });
+    }
+    return out(308, undefined, s.got ? { Range: `bytes=0-${s.got - 1}` } : {});
+  }
+
+  // --- CHZZK Open API ---
+  if (p === '/c/account-interlock') {
+    res.writeHead(302, { Location: `${u.searchParams.get('redirectUri')}?code=ccode&state=${u.searchParams.get('state')}` });
+    return res.end();
+  }
+  const cs = (content, code = 200) => out(code, code === 200 ? { code: 200, message: null, content } : { code, message: content });
+  if (p === '/c/auth/v1/token') {
+    if (j.grantType === 'authorization_code' && j.code === 'ccode') return cs({ accessToken: 'cat1', refreshToken: 'crt1', tokenType: 'Bearer', expiresIn: 86400 });
+    if (j.grantType === 'refresh_token' && /^crt/.test(j.refreshToken)) return cs({ accessToken: 'cat' + Date.now(), refreshToken: 'crt' + Date.now(), tokenType: 'Bearer', expiresIn: 86400 });
+    return cs('INVALID_TOKEN', 401);
+  }
+  if (p === '/c/auth/v1/token/revoke') return cs({});
+  if (p === '/c/open/v1/categories/search') {
+    if (req.headers['client-id'] !== 'mock-chzzk-id') return cs('INVALID_CLIENT', 401);
+    const all = [
+      { categoryType: 'GAME', categoryId: 'ARMORED_CORE_VI', categoryValue: 'ARMORED CORE VI', posterImageUrl: '' },
+      { categoryType: 'GAME', categoryId: 'ACE_COMBAT_7', categoryValue: 'ACE COMBAT 7', posterImageUrl: '' },
+      { categoryType: 'ETC', categoryId: 'talk', categoryValue: 'talk', posterImageUrl: '' },
+      { categoryType: 'GAME', categoryId: 'Trickcal', categoryValue: '트릭컬 리바이브', posterImageUrl: '' },
+    ];
+    const q = (u.searchParams.get('query') || '').toLowerCase();
+    return cs({ data: all.filter((c) => c.categoryValue.toLowerCase().includes(q)) });
+  }
+  if (!auth.startsWith('Bearer cat')) return cs('INVALID_TOKEN', 401);
+  if (p === '/c/open/v1/users/me') return cs({ channelId: '0123456789abcdef0123456789abcdef', channelName: '호시아' });
+  if (p === '/c/open/v1/lives/setting' && req.method === 'GET') return cs(chzzkSetting);
+  if (p === '/c/open/v1/lives/setting' && req.method === 'PATCH') {
+    if ('defaultLiveTitle' in j) { if (!j.defaultLiveTitle) return cs('제목은 비울 수 없어요', 400); chzzkSetting.defaultLiveTitle = j.defaultLiveTitle; }
+    if ('categoryId' in j) chzzkSetting.category = j.categoryId ? { categoryType: j.categoryType, categoryId: j.categoryId, categoryValue: j.categoryId.replace(/_/g, ' '), posterImageUrl: '' } : null;
+    if (j.tags) { if (j.tags.some((t) => /[\s!@#]/.test(t))) return cs('INVALID_TAG', 400); chzzkSetting.tags = j.tags; }
+    log('chzzk setting', JSON.stringify(chzzkSetting.defaultLiveTitle), chzzkSetting.category?.categoryId, chzzkSetting.tags.join(','));
+    return cs({});
+  }
+  return out(404, { error: { message: 'mock: unknown ' + p } });
 }

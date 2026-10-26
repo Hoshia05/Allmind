@@ -34,6 +34,7 @@
     <div class="stat"><span class="stat-label">방송 시간</span><span class="stat-val mono" id="uptime">–</span></div>
     <div class="health" id="health" hidden title=""><span class="health-dot"></span><span id="healthText"></span></div>
     <div class="stat title"><span class="stat-label" id="category"></span><span class="stat-val" id="liveTitle"></span></div>
+    <button class="btn ghost small-btn" id="prepBtn" title="방송 제목·카테고리·태그를 치지직, 유튜브 아카이브, 녹화 파일 이름에 한 번에 적용">방송 준비</button>
     <button class="btn ghost small-btn" id="remoteBtn" title="치지직 리모콘을 옆 창으로 열기">리모콘</button>
     <button class="btn ghost small-btn" id="chatToggle" title="Show / hide the chat column">채팅 숨기기</button>
     <button class="btn ghost icon small-btn" id="devBtn" title="이 기기 설정">⚙</button>
@@ -262,6 +263,30 @@
     <div class="devmenu-head">⭐ 이번 녹화의 마크 <span class="muted small" id="markMenuSub"></span></div>
     <ol class="marklist" id="markList"></ol>
     <div class="muted small">메모는 나중에 적어도 돼요. 폰·아이패드에서 누르려면 <a id="markPageLink" href="/mark" target="_blank">마크 전용 페이지</a>를 여세요.</div>
+  </div>
+
+  <!-- 방송 준비: one title for Chzzk, the YouTube archive and the Drive file name -->
+  <div class="sheet-wrap" id="prepWrap" hidden>
+    <div class="sheet" id="prepSheet" role="dialog" aria-label="방송 준비">
+      <div class="sheet-head"><b>방송 준비</b><span class="muted small" id="prepSrc"></span><button class="btn ghost icon" id="prepClose" title="닫기">✕</button></div>
+      <label class="field">제목<input id="prepTitle" maxlength="100" autocomplete="off" placeholder="오늘 방송 제목"></label>
+      <div class="field">카테고리
+        <div class="cat-row"><span class="cat-chosen" id="prepCat">없음</span><input id="prepCatQ" placeholder="검색해서 바꾸기…" autocomplete="off"></div>
+        <div class="cat-list" id="prepCats" hidden></div>
+      </div>
+      <label class="field">태그 <span class="hint">쉼표로 구분 · 띄어쓰기와 특수문자는 빠져요</span><input id="prepTags" autocomplete="off" placeholder="예: 아머드코어, 수다"></label>
+      <div class="prep-preview">
+        <div><span class="muted">치지직</span><span id="prevChzzk"></span></div>
+        <div><span class="muted">유튜브</span><span id="prevYt"></span></div>
+        <div><span class="muted">녹화 파일</span><span id="prevFile"></span></div>
+      </div>
+      <div class="row-btns"><button class="btn accent" id="prepApply">적용</button><span class="muted small" id="prepNote"></span></div>
+      <ul class="prep-results" id="prepResults"></ul>
+      <div class="sheet-sub">
+        <div class="sheet-subhead"><b>드라이브 업로드</b><a class="small" id="driveFolder" target="_blank" rel="noopener" hidden>폴더 열기 ↗</a></div>
+        <ul class="up-list" id="upList"></ul>
+      </div>
+    </div>
   </div>
 
   <!-- viewer popup (click a nickname in chat) -->

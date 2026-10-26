@@ -13,6 +13,27 @@
     "saveChat": true
   },
 
+  "google": {
+    "clientId": "",
+    "clientSecret": ""
+  },
+
+  "youtube": {
+    "enabled": true,
+    "titleTemplate": "{date} - {title}"
+  },
+
+  "drive": {
+    "enabled": true,
+    "nameTemplate": "{date} - {title}",
+    "maxMbps": 0
+  },
+
+  "chzzkOpen": {
+    "clientId": "",
+    "clientSecret": ""
+  },
+
   "update": {
     "check": true,
     "repo": "Hoshia05/Allmind",

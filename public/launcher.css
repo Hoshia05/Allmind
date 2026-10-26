@@ -77,3 +77,13 @@ form input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16
 
 /* the settings window is narrow (500 px): keep the name the dashboard hides on phones */
 .brand { font-size: 14px; gap: 8px; }
+
+/* ---------- 연동 card ---------- */
+#linksForm { margin-top: 12px; }
+#linksForm fieldset { margin-bottom: 14px; }
+#linksForm .hint { display: block; margin: -2px 0 6px; }
+#linksForm label .hint { display: inline; margin: 0; }
+.row-btns.tight { margin-top: 4px; margin-bottom: 4px; }
+.addr.small { font-size: 12.5px; font-weight: 500; padding: 6px 8px; }
+.keybox { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding: 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.tip a { color: var(--accent); }

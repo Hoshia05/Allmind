@@ -57,7 +57,7 @@ function connectEvents() {
   es.addEventListener('tracks', (e) => { TRACKS = JSON.parse(e.data); if (S) { S.bgm.tracks = TRACKS; lastTracksKey = ''; renderBgm(); } });
   es.addEventListener('health', (e) => renderHealth(JSON.parse(e.data)));
   es.addEventListener('level', (e) => renderLevel(JSON.parse(e.data)));
-  es.addEventListener('toast', (e) => { const d = JSON.parse(e.data); toast(d.text, false, d.long); });
+  es.addEventListener('toast', (e) => { const d = JSON.parse(e.data); toast(d.text, !!d.bad, d.long); });
   es.addEventListener('chat-history', (e) => chatReset(JSON.parse(e.data)));
   es.addEventListener('fps', (e) => renderFps(JSON.parse(e.data)));
   es.addEventListener('chat', (e) => chatAdd(JSON.parse(e.data)));
@@ -94,6 +94,8 @@ function render() {
   if ($('links').innerHTML !== linksHtml) $('links').innerHTML = linksHtml;
 
   renderBanners();
+  renderUploads();
+  if (!$('prepWrap').hidden) renderPrepTargets();
   renderViewerState();
   renderBgm();
   renderLive();
@@ -134,6 +136,15 @@ function renderBanners() {
     if (donation.error) out.push(`<div class="banner">${esc(donation.error)}</div>`);
   }
   if (S.chzzk.error) out.push(`<div class="banner">${esc(S.chzzk.error)}</div>`);
+  // YouTube archive guard: shown on every device (phone too) while OBS streams
+  if (S.youtube?.alert) out.push(`<div class="banner bad">📺 ${esc(S.youtube.alert.text)}${S.youtube.alert.url ? ` <a class="btn" href="${esc(S.youtube.alert.url)}" target="_blank" rel="noopener">YouTube 스튜디오</a>` : ''}</div>`);
+  if (S.google?.error) out.push(`<div class="banner bad">${esc(S.google.error)}</div>`);
+  if (S.chzzkOpen?.error) out.push(`<div class="banner">${esc(S.chzzkOpen.error)}</div>`);
+  else if (S.chzzkOpen?.expiresSoon) out.push('<div class="banner">치지직 연동이 곧 만료돼요 — 방송 PC의 설정 창에서 다시 로그인해 주세요</div>');
+  const up = S.drive?.items?.find((i) => i.status === 'uploading');
+  if (up) out.push(`<div class="banner info">☁️ 드라이브에 올리는 중 ${pct(up)}% · ${esc(up.name)}${S.drive.speed ? ` · ${S.drive.speed} Mbps` : ''}</div>`);
+  const failed = S.drive?.items?.find((i) => i.status === 'error');
+  if (failed) out.push(`<div class="banner bad">☁️ 드라이브 업로드 실패: ${esc(failed.name)} — ${esc(failed.error || '')} <button class="btn" data-act="drive-retry" data-id="${esc(failed.id.replace(/m$/, ''))}">다시 시도</button></div>`);
   if (bgm.folderError) out.push(`<div class="banner">${esc(bgm.folderError)}</div>`);
   if (interact.enabled && !interact.connected && interact.error) {
     let html = `<div class="banner">클릭 전달: ${esc(interact.error)}`;
@@ -710,6 +721,127 @@ $('resumeAfter').addEventListener('change', () => api('autopause', { resumeAfter
   meter.addEventListener('pointerup', (ev) => { if (dragging) { dragging = false; setFrom(ev, true); } });
 })();
 
+// ---------------- 방송 준비 (title for Chzzk + YouTube archive + file name) ----------------
+const pct = (i) => (i.size ? Math.floor((i.offset / i.size) * 100) : 0);
+const prepState = { category: null, loaded: false };
+const p2d = (n) => String(n).padStart(2, '0');
+const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${p2d(d.getMonth() + 1)}-${p2d(d.getDate())}`; };
+const fillTpl = (tpl, title) => String(tpl || '{date} - {title}').replace(/\{date\}/g, todayYmd()).replace(/\{title\}/g, title).replace(/\s+/g, ' ').trim();
+
+async function openPrep() {
+  $('prepWrap').hidden = false;
+  $('prepResults').innerHTML = '';
+  renderPrepTargets();
+  renderUploads();
+  if (prepState.loaded) return;
+  $('prepSrc').textContent = '불러오는 중…';
+  const r = await api('prep/load');
+  if (!r.ok) return;
+  prepState.loaded = true;
+  $('prepTitle').value = r.title || '';
+  prepState.category = r.category || null;
+  $('prepTags').value = (r.tags || []).join(', ');
+  $('prepSrc').textContent = r.from === 'chzzk' ? '· 치지직에서 불러옴' : '· 마지막으로 적용한 값';
+  if (r.warn) toast(r.warn, true);
+  renderPrepTargets();
+  $('prepTitle').focus();
+}
+function closePrep() { $('prepWrap').hidden = true; }
+
+function renderPrepTargets() {
+  if (!S) return;
+  const title = $('prepTitle').value.trim() || '(제목)';
+  const c = prepState.category;
+  $('prepCat').textContent = c ? c.categoryValue || c.categoryId : '없음';
+  const chz = S.chzzkOpen?.loggedIn;
+  const yt = S.google?.loggedIn && S.youtube?.hasKey && S.youtube?.enabled;
+  $('prevChzzk').innerHTML = chz ? esc(title) : '<span class="muted">연동 안 됨 — 방송 PC 설정 창에서 치지직 로그인</span>';
+  $('prevYt').innerHTML = yt ? esc(fillTpl(S.prep?.ytTemplate, title)) : '<span class="muted">연동 안 됨 — 방송 PC 설정 창에서 Google 로그인 + 스트림 키</span>';
+  // same clean-up as the upload (Windows can't have \\ / : * ? " < > | in names)
+  const safe = (s) => s.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  $('prevFile').textContent = `${safe(fillTpl(S.prep?.fileTemplate, safe(title)))}.mp4`;
+  $('prepCatQ').disabled = !S.chzzkOpen?.configured;
+  $('prepCatQ').placeholder = S.chzzkOpen?.configured ? '검색해서 바꾸기…' : '치지직 연동 후 검색 가능';
+}
+
+let catTimer = null;
+$('prepCatQ').addEventListener('input', () => {
+  clearTimeout(catTimer);
+  const q = $('prepCatQ').value.trim();
+  if (!q) { $('prepCats').hidden = true; return; }
+  catTimer = setTimeout(async () => {
+    const r = await api('prep/categories', { q });
+    if (!r.ok) return;
+    const items = [{ categoryType: '', categoryId: '', categoryValue: '카테고리 없음' }, ...r.items];
+    $('prepCats').innerHTML = items.map((c, i) => `<button type="button" data-i="${i}">${esc(c.categoryValue)}<span class="muted small"> ${esc(c.categoryType)}</span></button>`).join('');
+    $('prepCats').hidden = false;
+    $('prepCats').onclick = (ev) => {
+      const b = ev.target.closest('button[data-i]');
+      if (!b) return;
+      const c = items[Number(b.dataset.i)];
+      prepState.category = c.categoryId ? c : null;
+      $('prepCats').hidden = true;
+      $('prepCatQ').value = '';
+      renderPrepTargets();
+    };
+  }, 300);
+});
+$('prepTitle').addEventListener('input', renderPrepTargets);
+$('prepBtn').addEventListener('click', openPrep);
+$('prepClose').addEventListener('click', closePrep);
+$('prepWrap').addEventListener('click', (ev) => { if (ev.target === $('prepWrap')) closePrep(); });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('prepWrap').hidden) closePrep(); });
+$('prepApply').addEventListener('click', async () => {
+  const btn = $('prepApply');
+  btn.disabled = true;
+  $('prepNote').textContent = '적용 중…';
+  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value });
+  btn.disabled = false;
+  $('prepNote').textContent = '';
+  if (!r.ok) return;
+  const line = (name, x, okText) => `<li class="${x.ok ? 'ok' : x.skipped ? 'skip' : 'bad'}">${x.ok ? '✓' : x.skipped ? '–' : '✕'} <b>${name}</b> ${esc(x.ok ? okText : x.error || '')}</li>`;
+  $('prepResults').innerHTML =
+    line('치지직', r.results.chzzk, '제목·카테고리·태그 적용') +
+    line('유튜브', r.results.youtube, r.results.youtube.title || '') +
+    line('녹화 파일', r.results.file, `${r.results.file.name}.mp4 (녹화가 끝나면 이 이름으로 올려요)`);
+  if (r.results.chzzk.ok !== false && r.results.youtube.ok !== false) toast('방송 준비 적용 완료');
+});
+
+function renderUploads() {
+  if (!S?.drive || $('prepWrap').hidden) return;
+  const d = S.drive;
+  $('driveFolder').hidden = !d.folderUrl;
+  if (d.folderUrl) $('driveFolder').href = d.folderUrl;
+  const vids = (d.items || []).filter((i) => i.kind === 'video');
+  let html;
+  if (!S.google?.loggedIn) html = '<li class="muted small">Google에 로그인하면 녹화가 끝날 때마다 자동으로 올려요 (방송 PC 설정 창)</li>';
+  else if (!vids.length) html = '<li class="muted small">아직 올린 녹화가 없어요. 녹화가 끝나면 여기에 나타나요.</li>';
+  else {
+    const label = { waiting: d.paused ? '방송·녹화가 끝나면 올려요' : '대기 중', uploading: '올리는 중', done: '완료', error: '실패' };
+    html = vids.map((i) => {
+      const editable = i.status === 'waiting' && !i.offset;
+      const name = editable ? `<input class="up-name" data-id="${esc(i.id)}" value="${esc(i.name)}" title="올리기 전이라 이름을 바꿀 수 있어요">` : i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>` : `<span>${esc(i.name)}</span>`;
+      const bar = i.status === 'uploading' || (i.status === 'waiting' && i.offset) ? `<div class="up-bar"><i style="width:${pct(i)}%"></i></div>` : '';
+      const retry = i.status === 'error' ? `<button class="btn small-btn" data-up="retry" data-id="${esc(i.id)}">다시 시도</button>` : '';
+      const rm = i.status !== 'uploading' ? `<button class="btn ghost small-btn" data-up="remove" data-id="${esc(i.id)}" title="목록에서 지우기 (파일은 그대로)">✕</button>` : '';
+      const sizeGb = (i.size / 2 ** 30).toFixed(2);
+      return `<li class="up ${i.status}"><div class="up-top">${name}${retry}${rm}</div><div class="muted small">${label[i.status] || i.status}${i.status === 'uploading' || i.offset ? ` · ${pct(i)}%` : ''} · ${sizeGb} GB${i.error ? ` · ${esc(i.error)}` : ''}</div>${bar}</li>`;
+    }).join('');
+  }
+  if (document.activeElement?.classList.contains('up-name')) return; // don't rebuild while a name is being typed
+  if ($('upList').innerHTML !== html) $('upList').innerHTML = html;
+}
+$('upList').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-up]');
+  if (b) api(`drive/${b.dataset.up}`, { id: b.dataset.id });
+});
+$('upList').addEventListener('change', async (ev) => {
+  const el = ev.target.closest('.up-name');
+  if (!el) return;
+  const r = await api('drive/rename', { id: el.dataset.id, name: el.value });
+  if (r.ok) toast('업로드 이름을 바꿨어요');
+});
+
 // ---------------- banner buttons ----------------
 $('banners').addEventListener('click', async (ev) => {
   const btn = ev.target.closest('button[data-act]');
@@ -723,6 +855,7 @@ $('banners').addEventListener('click', async (ev) => {
     const r = await api('bgm/create-source');
     if (r.ok) toast(`"${S.bgm.sourceName}" 소스를 "${r.scene}" 장면에 만들었어요`);
   }
+  if (btn.dataset.act === 'drive-retry') api('drive/retry', { id: btn.dataset.id });
   if (btn.dataset.act === 'pick-target') {
     // Use the URL's host+path as the match, so query strings (tokens) can change freely.
     let match = btn.dataset.url;

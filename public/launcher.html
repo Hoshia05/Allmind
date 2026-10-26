@@ -48,6 +48,86 @@
       <div class="tip" id="updHint" hidden>방송 중이거나 녹화 중에는 설치할 수 없어요. 설치하면 Allmind가 잠시 꺼졌다가 새 버전으로 다시 켜져요. 설정은 그대로예요.</div>
     </section>
 
+    <!-- Google (YouTube archive + Drive) and CHZZK sign-ins -->
+    <section class="card" id="linksCard">
+      <h2>연동 — 유튜브 아카이브 · 드라이브 · 치지직</h2>
+      <ul class="status">
+        <li><span class="sdot" id="dGoogle"></span><span class="lbl">Google</span><span class="val" id="vGoogle">…</span></li>
+        <li><span class="sdot" id="dYt"></span><span class="lbl">유튜브</span><span class="val" id="vYt">…</span></li>
+        <li><span class="sdot" id="dDrive"></span><span class="lbl">드라이브</span><span class="val" id="vDrive">…</span></li>
+        <li><span class="sdot" id="dChzzkOpen"></span><span class="lbl">치지직 연동</span><span class="val" id="vChzzkOpen">…</span></li>
+      </ul>
+
+      <form id="linksForm" autocomplete="off">
+        <fieldset>
+          <legend>GOOGLE (유튜브 아카이브 · 드라이브 업로드)</legend>
+          <label>클라이언트 ID<input type="text" name="googleClientId" placeholder="….apps.googleusercontent.com"></label>
+          <label>클라이언트 보안 비밀번호<input type="password" name="googleClientSecret"></label>
+          <div class="row-btns tight">
+            <button class="btn accent" type="button" id="googleLogin">Google 로그인</button>
+            <button class="btn ghost" type="button" id="googleLogout" hidden>로그아웃</button>
+          </div>
+          <details class="tip">
+            <summary>처음 한 번: Google 클라우드 프로젝트 만들기 (10분)</summary>
+            <ol>
+              <li><a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud 콘솔</a>에서 새 프로젝트를 만들어요 (이름은 아무거나, 예: Allmind).</li>
+              <li><b>API 및 서비스 → 라이브러리</b>에서 <b>YouTube Data API v3</b>와 <b>Google Drive API</b>를 각각 <b>사용</b>으로.</li>
+              <li><b>OAuth 동의 화면</b>: 사용자 유형 <b>외부</b>, 앱 이름·이메일만 채우고 저장. <b>테스트 사용자</b>에 내 구글 계정을 추가.</li>
+              <li>같은 화면에서 <b>앱 게시(프로덕션으로 푸시)</b>를 눌러요. <i>테스트 상태로 두면 7일마다 다시 로그인해야 해요.</i> 검증은 안 받아도 돼요.</li>
+              <li><b>사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID</b>, 유형 <b>데스크톱 앱</b>. 나온 클라이언트 ID와 보안 비밀번호를 위에 붙여 넣어요.</li>
+              <li><b>Google 로그인</b>을 누르면 브라우저가 열려요. "Google에서 확인하지 않은 앱" 화면이 나오면 <b>고급 → (앱 이름)(으)로 이동</b>을 누르고, 유튜브·드라이브 권한을 허용해요. 방송하는 유튜브 채널의 계정으로 로그인하세요.</li>
+            </ol>
+          </details>
+        </fieldset>
+
+        <fieldset>
+          <legend>유튜브 아카이브</legend>
+          <label class="check"><input type="checkbox" name="youtubeEnabled"> 방송마다 <b>비공개</b> 아카이브를 미리 준비하고, 방송 중에 지키기</label>
+          <span class="hint">공개로 바뀌면 바로 비공개로 되돌리고, 방송을 켰는데 유튜브가 시작되지 않으면 대시보드에 알려요.</span>
+          <label>유튜브 제목 형식 <span class="hint">{date} = 2026-10-26, {title} = 방송 제목</span><input type="text" name="titleTemplate" placeholder="{date} - {title}"></label>
+          <div class="row-btns tight">
+            <button class="btn" type="button" id="ytKey">스트림 키 만들기</button>
+            <button class="btn ghost" type="button" id="ytShowKey" hidden>키 보기</button>
+          </div>
+          <div class="keybox" id="keyBox" hidden>
+            <div class="muted small">OBS의 <b>Multi-RTMP</b> 유튜브 대상에 이 서버 주소와 키를 넣어 주세요 (한 번만). 키는 비밀번호처럼 다른 사람에게 보여 주지 마세요.</div>
+            <div class="addr-row"><code class="addr small" id="keyAddr"></code><button class="btn" type="button" data-copy="keyAddr">복사</button></div>
+            <div class="addr-row"><code class="addr small" id="keyVal"></code><button class="btn" type="button" data-copy="keyVal">복사</button></div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>드라이브 자동 업로드</legend>
+          <label class="check"><input type="checkbox" name="driveEnabled"> 녹화가 끝나면 영상과 ….markers.json을 드라이브에 올리기</label>
+          <span class="hint">방송·녹화 중에는 올리지 않아요. 원본 파일은 그대로 두고, 드라이브의 <b>Allmind 녹화</b> 폴더에 올려요 (폴더는 드라이브에서 원하는 곳으로 옮겨도 돼요).</span>
+          <label>파일 이름 형식 <span class="hint">{date}, {title} — 제목은 그 녹화에서 가장 오래 걸려 있던 치지직 제목</span><input type="text" name="nameTemplate" placeholder="{date} - {title}"></label>
+          <label>업로드 속도 제한 (Mbps) <span class="hint">0 = 제한 없음</span><input type="number" name="maxMbps" min="0" max="1000"></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>치지직 연동 (방송 준비: 제목·카테고리·태그)</legend>
+          <label>Client ID<input type="text" name="chzzkClientId"></label>
+          <label>Client Secret<input type="password" name="chzzkClientSecret"></label>
+          <label>로그인 리디렉션 URL <span class="hint">앱 등록할 때 이 주소를 그대로 넣어요</span>
+            <span class="addr-row"><code class="addr small" id="chzzkRedirect"></code><button class="btn" type="button" data-copy="chzzkRedirect">복사</button></span></label>
+          <div class="row-btns tight">
+            <button class="btn accent" type="button" id="chzzkLogin">치지직 로그인</button>
+            <button class="btn ghost" type="button" id="chzzkLogout" hidden>로그아웃</button>
+          </div>
+          <details class="tip">
+            <summary>처음 한 번: 치지직 개발자 앱 등록</summary>
+            <ol>
+              <li><a href="https://developers.chzzk.naver.com/" target="_blank" rel="noopener">CHZZK Developers</a>에 방송하는 네이버 계정으로 로그인해 애플리케이션을 등록해요.</li>
+              <li>로그인 리디렉션 URL에 위 주소를 넣고, 권한(scope)은 <b>방송 설정 조회</b>, <b>방송 설정 변경</b>, <b>유저 정보 조회</b>를 골라요.</li>
+              <li>받은 Client ID와 Client Secret을 위에 붙여 넣고 <b>치지직 로그인</b>.</li>
+              <li>로그인은 30일 동안 쓰지 않으면 만료돼요. 방송할 때마다 쓰면 계속 이어져요.</li>
+            </ol>
+          </details>
+        </fieldset>
+        <div class="row-btns"><button class="btn accent" type="submit">연동 설정 저장</button></div>
+      </form>
+    </section>
+
     <!-- main PC -->
     <section class="card">
       <h2>메인 PC에서 열기</h2>

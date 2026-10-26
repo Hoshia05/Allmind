@@ -318,3 +318,121 @@ $('updInstall').addEventListener('click', async () => {
 
 refreshUpdate();
 setInterval(refreshUpdate, 60 * 1000);
+
+// ---------- 연동: Google (YouTube archive + Drive) and CHZZK ----------
+const lf = $('linksForm');
+let linksFilled = false;
+let links = null;
+
+function fillLinks(r) {
+  linksFilled = true;
+  const v = {
+    googleClientId: r.google.clientId, googleClientSecret: r.google.clientSecret,
+    chzzkClientId: r.chzzk.clientId, chzzkClientSecret: r.chzzk.clientSecret,
+    youtubeEnabled: r.youtube.enabled, titleTemplate: r.youtube.titleTemplate,
+    driveEnabled: r.drive.enabled, nameTemplate: r.drive.nameTemplate, maxMbps: r.drive.maxMbps,
+  };
+  for (const [k, x] of Object.entries(v)) {
+    const el = lf.elements[k];
+    if (el.type === 'checkbox') el.checked = !!x; else el.value = x ?? '';
+  }
+}
+
+function renderLinks(r) {
+  links = r;
+  $('chzzkRedirect').textContent = r.chzzk.redirect;
+  const g = r.google;
+  setDot('dGoogle', g.loggedIn ? 'ok' : g.error ? 'bad' : '');
+  $('vGoogle').textContent = g.loggedIn ? `로그인됨${g.account ? ` · ${g.account}` : ''}` : g.error || (g.configured ? '로그인 필요' : '설정 필요 (아래 안내)');
+  $('googleLogout').hidden = !g.loggedIn;
+  $('googleLogin').textContent = g.loggedIn ? '다시 로그인' : 'Google 로그인';
+
+  const y = r.youtube;
+  const b = y.broadcast;
+  let yt = '꺼짐';
+  let ytDot = '';
+  if (y.enabled && !g.loggedIn) yt = 'Google 로그인 필요';
+  else if (y.enabled && !y.hasKey) { yt = '스트림 키 필요 (아래 버튼)'; ytDot = 'warn'; }
+  else if (y.enabled && y.error) { yt = y.error; ytDot = 'bad'; }
+  else if (y.enabled && b) {
+    const life = { created: '준비 중', ready: '대기 중 (방송 시작하면 자동 시작)', live: '방송 중', liveStarting: '시작하는 중', complete: '끝남', testing: '테스트 중' }[b.life] || b.life;
+    yt = `${b.privacy === 'private' ? '🔒 비공개' : b.privacy} · ${life} · ${b.title}`;
+    ytDot = y.alert ? 'bad' : b.privacy === 'private' ? 'ok' : 'warn';
+  } else if (y.enabled) yt = '준비 중…';
+  setDot('dYt', ytDot);
+  $('vYt').textContent = yt;
+  $('vYt').title = yt;
+  $('ytKey').textContent = y.hasKey ? '키 다시 만들기' : '스트림 키 만들기';
+  $('ytShowKey').hidden = !y.hasKey;
+  $('ytKey').disabled = $('ytShowKey').disabled = !g.loggedIn;
+
+  const d = r.drive;
+  const up = d.items.find((i) => i.status === 'uploading');
+  const waiting = d.items.filter((i) => i.status === 'waiting' && i.kind === 'video').length;
+  const err = d.items.find((i) => i.status === 'error');
+  let dv = !d.enabled ? '꺼짐' : !g.loggedIn ? 'Google 로그인 필요' : err ? `실패: ${err.name}` : up ? `올리는 중 ${Math.floor((up.offset / up.size) * 100)}% · ${up.name}` : waiting ? `대기 ${waiting}개${d.paused ? ' (방송·녹화 끝나면)' : ''}` : '녹화가 끝나면 자동으로 올려요';
+  setDot('dDrive', !d.enabled || !g.loggedIn ? '' : err ? 'bad' : 'ok');
+  $('vDrive').textContent = dv;
+
+  const c = r.chzzk;
+  setDot('dChzzkOpen', c.loggedIn ? (c.expiresSoon ? 'warn' : 'ok') : c.error ? 'bad' : '');
+  $('vChzzkOpen').textContent = c.loggedIn ? `로그인됨${c.account ? ` · ${c.account}` : ''}${c.expiresSoon ? ' · 곧 만료' : ''}` : c.error || (c.configured ? '로그인 필요' : '설정 필요 (아래 안내)');
+  $('chzzkLogout').hidden = !c.loggedIn;
+  $('chzzkLogin').textContent = c.loggedIn ? '다시 로그인' : '치지직 로그인';
+
+  if (!linksFilled) fillLinks(r);
+}
+
+async function refreshLinks() {
+  const r = await call('/links');
+  if (r.ok) renderLinks(r);
+}
+
+function linksValues() {
+  const o = {};
+  for (const el of lf.elements) if (el.name) o[el.name] = el.type === 'checkbox' ? el.checked : el.value.trim();
+  return o;
+}
+async function saveLinks(quiet) {
+  const r = await call('/links-save', linksValues());
+  if (r.ok) { renderLinks(r); if (!quiet) toast('연동 설정을 저장했어요'); }
+  return r.ok;
+}
+lf.addEventListener('submit', (ev) => { ev.preventDefault(); saveLinks(); });
+
+$('googleLogin').addEventListener('click', async () => {
+  if (!(await saveLinks(true))) return;
+  const r = await call('/google-login', {});
+  if (r.ok) toast('브라우저에서 Google 로그인을 마쳐 주세요');
+});
+$('googleLogout').addEventListener('click', async () => { await call('/google-logout', {}); refreshLinks(); });
+$('chzzkLogin').addEventListener('click', async () => {
+  if (!(await saveLinks(true))) return;
+  const r = await call('/chzzk-login', {});
+  if (r.ok) toast('브라우저에서 치지직 로그인을 마쳐 주세요');
+});
+$('chzzkLogout').addEventListener('click', async () => { await call('/chzzk-logout', {}); refreshLinks(); });
+
+function showKey(r) {
+  $('keyAddr').textContent = r.address;
+  $('keyVal').textContent = r.key;
+  $('keyBox').hidden = false;
+}
+$('ytKey').addEventListener('click', async () => {
+  if (links?.youtube.hasKey && !confirm('새 스트림 키를 만들면 OBS의 유튜브 키도 새 것으로 바꿔야 해요. 계속할까요?')) return;
+  const r = await call('/youtube-key', {});
+  if (r.ok) { showKey(r); refreshLinks(); }
+});
+$('ytShowKey').addEventListener('click', async () => {
+  if (!$('keyBox').hidden) { $('keyBox').hidden = true; return; }
+  const r = await call('/youtube-showkey', {});
+  if (r.ok) showKey(r);
+});
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-copy]');
+  if (!b) return;
+  try { await navigator.clipboard.writeText($(b.dataset.copy).textContent); toast('복사했어요'); } catch { toast('복사하지 못했어요', true); }
+});
+
+refreshLinks();
+setInterval(refreshLinks, 5000);
