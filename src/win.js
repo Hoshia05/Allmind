@@ -283,7 +283,9 @@ function stampAppWindows() {
 
 export function openInDefaultBrowser(url) {
   if (!isWin) return console.log(`[browser] would open ${url}`);
-  spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  // Not `cmd /c start`: cmd treats every & in the address as "next command", so a login URL such as
+  // …?clientId=…&redirectUri=…&state=… arrived cut off after the first parameter (치지직: "state 존재하지 않습니다").
+  spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
 // The real Desktop folder (it can be moved into OneDrive, so ask Windows).
