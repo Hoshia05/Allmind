@@ -27,7 +27,7 @@ import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.24.1';
+const VERSION = '0.24.2';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -694,9 +694,10 @@ async function main() {
         clientId: String(b.googleClientId || '').trim(),
         clientSecret: keepSecret(b.googleClientSecret, config.google?.clientSecret || ''),
       };
+      const clean = (v) => String(v || '').replace(/[\s\u200b-\u200d\ufeff"'`]/g, ''); // pasted values: no spaces, quotes or hidden characters
       const c = {
-        clientId: String(b.chzzkClientId || '').trim(),
-        clientSecret: keepSecret(b.chzzkClientSecret, config.chzzkOpen?.clientSecret || ''),
+        clientId: clean(b.chzzkClientId),
+        clientSecret: b.chzzkClientSecret === SECRET_MASK ? (config.chzzkOpen?.clientSecret || '') : clean(b.chzzkClientSecret),
       };
       const y = { enabled: !!b.youtubeEnabled, titleTemplate: String(b.titleTemplate || '{date} - {title}').trim() || '{date} - {title}' };
       const d = { enabled: !!b.driveEnabled, nameTemplate: String(b.nameTemplate || '{date} - {title}').trim() || '{date} - {title}', maxMbps: Math.max(0, Number(b.maxMbps) || 0) };
@@ -716,7 +717,8 @@ async function main() {
       return { url };
     },
     'POST /api/launcher/google-logout': () => google.logout(),
-    'POST /api/launcher/chzzk-login': () => {
+    'POST /api/launcher/chzzk-login': async () => {
+      if ((await chzzkOpen.checkClient()) === false) throw new Error(`치지직 ${chzzkOpen.clientHint()}`);
       const url = chzzkOpen.loginUrl(chzzkRedirect());
       win.openInDefaultBrowser(url);
       return { url };

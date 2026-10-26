@@ -688,6 +688,7 @@ async function mockApis(req, res) {
   }
   const cs = (content, code = 200) => out(code, code === 200 ? { code: 200, message: null, content } : { code, message: content });
   if (p === '/c/auth/v1/token') {
+    if (j.clientId !== 'mock-chzzk-id') return cs('INVALID_CLIENT', 401);
     if (j.grantType === 'authorization_code' && j.code === 'ccode') return cs({ accessToken: 'cat1', refreshToken: 'crt1', tokenType: 'Bearer', expiresIn: 86400 });
     if (j.grantType === 'refresh_token' && /^crt/.test(j.refreshToken)) return cs({ accessToken: 'cat' + Date.now(), refreshToken: 'crt' + Date.now(), tokenType: 'Bearer', expiresIn: 86400 });
     return cs('INVALID_TOKEN', 401);

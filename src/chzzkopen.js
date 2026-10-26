@@ -39,6 +39,25 @@ export class ChzzkOpen extends EventEmitter {
     };
   }
 
+  // What we hold, without revealing it. CHZZK's ID is a 36-character UUID, the secret about 43 characters.
+  clientHint() {
+    const id = String(this.cfg.clientId || '');
+    const sec = String(this.cfg.clientSecret || '');
+    return `Client ID/Secret이 치지직 개발자센터에 있는 값과 달라요. 지금 저장된 값: ID ${id.length}자(보통 36자), Secret ${sec.length}자(보통 43자). 설정 창에서 다시 복사해 붙여 넣고, ID와 Secret이 바뀌지 않았는지 확인해 주세요`;
+  }
+
+  // Cheap check of the ID/secret pair before opening the login page: the category search is
+  // authenticated with them alone. Only a clear INVALID_CLIENT counts as "wrong"; anything else
+  // (network, an endpoint that changed) is treated as "unknown" so it never blocks a working login.
+  async checkClient() {
+    try {
+      await this.api('GET', '/open/v1/categories/search', undefined, { user: false, query: { query: 'a', size: 1 } });
+      return true;
+    } catch (e) {
+      return /INVALID_CLIENT/i.test(e.message) ? false : null;
+    }
+  }
+
   loginUrl(redirect) {
     if (!this.configured()) throw new Error('먼저 치지직 클라이언트 ID와 시크릿을 넣어 주세요');
     const state = crypto.randomBytes(16).toString('hex');
@@ -73,7 +92,7 @@ export class ChzzkOpen extends EventEmitter {
     try {
       await this._token({ grantType: 'authorization_code', code, state });
     } catch (e) {
-      throw new Error(`치지직 로그인 실패: ${e.message}`);
+      throw new Error(/INVALID_CLIENT/i.test(e.message) ? `치지직 로그인 실패: ${e.message} — ${this.clientHint()}` : `치지직 로그인 실패: ${e.message}`);
     }
     this.error = null;
     try {
