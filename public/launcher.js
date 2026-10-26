@@ -227,6 +227,13 @@ $('copyRc').addEventListener('click', async () => {
 });
 $('openDash').addEventListener('click', () => call('/open-dashboard', {}));
 $('openData').addEventListener('click', () => call('/open-data', {}));
+$('logsBtn').addEventListener('click', async () => {
+  const btn = $('logsBtn');
+  btn.disabled = true;
+  const r = await call('/logs', {});
+  btn.disabled = false;
+  if (r.ok) toast(`바탕화면에 ${r.name} 를 만들었어요 — 이 파일을 보내 주세요`);
+});
 $('copyAddr').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText($('addr').textContent); toast('주소를 복사했어요'); }
   catch { getSelection().selectAllChildren($('addr')); toast('주소를 선택했어요 — Ctrl+C로 복사하세요'); }

@@ -235,6 +235,20 @@ export function openInDefaultBrowser(url) {
   spawn('cmd.exe', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
+// The real Desktop folder (it can be moved into OneDrive, so ask Windows).
+export async function desktopDir() {
+  if (isWin) {
+    const r = await powershell("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::Out.Write([Environment]::GetFolderPath('Desktop'))");
+    const d = r.stdout.trim();
+    if (d && fs.existsSync(d)) return d;
+  }
+  return path.join(os.homedir(), 'Desktop');
+}
+export function showInFolder(file) {
+  if (isWin) spawn('explorer.exe', [`/select,${file}`], { detached: true, stdio: 'ignore' }).unref();
+  else console.log(`[window] would show ${file}`);
+}
+
 export function openFolder(dir) {
   if (isWin) spawn('explorer.exe', [dir], { detached: true, stdio: 'ignore' }).unref();
 }

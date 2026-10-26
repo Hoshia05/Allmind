@@ -15,11 +15,12 @@ import { FrameFeed } from './feed.js';
 import { ChzzkRemote } from './remote.js';
 import { Studio } from './studio.js';
 import { Markers } from './markers.js';
+import { writeLogBundle, redact, obsConfigDir } from './logbundle.js';
 import { Soundboard } from './soundboard.js';
 import { Updater } from './update.js';
 import * as win from './win.js';
 
-const VERSION = '0.20.2';
+const VERSION = '0.20.3';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -566,6 +567,30 @@ async function main() {
     'POST /api/launcher/folder-count': (b) => ({ count: countMusic(b.path) }),
     'POST /api/launcher/open-dashboard': () => openDashboardHere(),
     'POST /api/launcher/open-data': () => win.openFolder(CONFIG_DIR),
+    'POST /api/launcher/logs': async () => {
+      const info = [
+        `Allmind ${VERSION} (${IS_EXE ? 'exe' : 'source'})`,
+        `만든 시각: ${new Date().toString()}`,
+        `OS: ${os.type()} ${os.release()} ${os.arch()} · RAM ${Math.round(os.totalmem() / 2 ** 30)} GB · 켜진 지 ${Math.round(process.uptime() / 60)}분`,
+        `OBS: ${obs.connected ? '연결됨' : `연결 안 됨 (${obs.lastError || '-'})`}`,
+        `치지직: 채널 ${chzzk.channelId || '-'} · 채팅 ${chzzk.chatState || '-'}${chzzk.chatError ? ` (${chzzk.chatError})` : ''}`,
+        `녹화/마크: ${JSON.stringify({ ...markers.status(), marks: undefined })}`,
+        '',
+        '설정 (비밀번호·토큰은 숨김):',
+        JSON.stringify(redact(config), null, 2),
+      ].join('\n');
+      let outDir = await win.desktopDir();
+      let r;
+      try {
+        r = writeLogBundle({ dataDir: DATA_DIR, outDir, info, obsDir: obsConfigDir() });
+      } catch {
+        outDir = DATA_DIR; // Desktop not writable: keep it in the settings folder
+        r = writeLogBundle({ dataDir: DATA_DIR, outDir, info, obsDir: obsConfigDir() });
+      }
+      console.log(`[app] log bundle: ${r.file} (${r.count} files)`);
+      win.showInFolder(r.file);
+      return { file: r.file, name: path.basename(r.file) };
+    },
     'POST /api/launcher/quit': () => quit(),
     'POST /api/update/check': () => updater.check(),
     'POST /api/update/install': () => updater.install(),

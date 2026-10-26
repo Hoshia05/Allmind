@@ -74,3 +74,6 @@ form input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16
 .upd-bar { height: 8px; margin-top: 10px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
 .upd-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s linear; }
 #updNotesText { margin: 8px 0 0; padding: 8px 10px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 12.5px/1.6 inherit; background: var(--panel-2); border-radius: 8px; color: var(--text); }
+
+/* the settings window is narrow (500 px): keep the name the dashboard hides on phones */
+.brand { font-size: 14px; gap: 8px; }
