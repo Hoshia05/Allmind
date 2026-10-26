@@ -866,7 +866,8 @@ $('banners').addEventListener('click', async (ev) => {
 
 // ---------------- keyboard shortcuts ----------------
 document.addEventListener('keydown', (ev) => {
-  if (ev.target.matches('input[type=search], input[type=text], textarea')) return;
+  // never while typing: any text field (even one without type="text"), select, editable element, or an IME composition
+  if (ev.isComposing || ev.target.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=range]), textarea, select, [contenteditable]')) return;
   if (ev.code === 'Space') { ev.preventDefault(); api('bgm/toggle'); }
   if (ev.key === 'n' || ev.key === 'N') api('bgm/next');
   if (ev.key === 's' || ev.key === 'S') $('skipBtn').click();

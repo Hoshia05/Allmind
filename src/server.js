@@ -27,7 +27,7 @@ import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.24.3';
+const VERSION = '0.24.4';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
