@@ -4,3 +4,6 @@ data/
 dist/
 .build-tools/
 .dev/
+
+# settings-import safety copies (dev runs keep config next to the code)
+가져오기 전 백업*/

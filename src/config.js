@@ -171,7 +171,14 @@ export function loadState(name, fallback) {
   }
 }
 const saveTimers = {};
+let frozen = false;
+// After a settings import: stop writing state so nothing running overwrites the imported files before the restart.
+export function freezeState() {
+  frozen = true;
+  for (const t of Object.values(saveTimers)) clearTimeout(t);
+}
 export function saveState(name, value) {
+  if (frozen) return;
   clearTimeout(saveTimers[name]);
   saveTimers[name] = setTimeout(() => {
     fs.mkdirSync(DATA_DIR, { recursive: true });

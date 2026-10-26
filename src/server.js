@@ -21,13 +21,14 @@ import { Google } from './google.js';
 import { YouTubeGuard, fillTemplate } from './youtube.js';
 import { DriveUploader, safeName } from './drive.js';
 import { ChzzkOpen, cleanTags } from './chzzkopen.js';
-import { loadState, saveState } from './config.js';
+import { loadState, saveState, freezeState, configPath as cfgPath } from './config.js';
+import * as backup from './backup.js';
 import { Updater } from './update.js';
 import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.27.0';
+const VERSION = '0.28.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -688,6 +689,28 @@ async function main() {
       saveConfig({ deck: { token } });
       config.deck = { ...(config.deck || {}), token };
       return { addresses: lanAddresses(), token: deck.token, ...deck.catalog() };
+    },
+    // ---------- settings export / import (passphrase-encrypted, see src/backup.js) ----------
+    'POST /api/launcher/export': async (b) => {
+      backup.checkPassphrase(b.passphrase);
+      const text = backup.encrypt(backup.collect({ configPath: cfgPath(), dataDir: DATA_DIR, version: VERSION }), b.passphrase);
+      const d = new Date();
+      const name = `Allmind 설정 ${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.allmind`;
+      let dir = await win.desktopDir();
+      try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, name), text); } catch { dir = CONFIG_DIR; fs.writeFileSync(path.join(dir, name), text); }
+      const file = path.join(dir, name);
+      console.log(`[backup] exported settings to ${file}`);
+      win.showInFolder(file);
+      return { name, file };
+    },
+    'POST /api/launcher/import': async (b) => {
+      const payload = backup.decrypt(b.text, b.passphrase);
+      if (!b.apply) return { summary: backup.summary(payload) };
+      freezeState();
+      const r = backup.apply(payload, { configPath: cfgPath(), dataDir: DATA_DIR, configDir: CONFIG_DIR });
+      console.log(`[backup] imported settings from ${payload.from?.host || '?'} (${payload.from?.created || '?'}); previous ones kept in ${r.aside}`);
+      setTimeout(restart, 300);
+      return { restarting: true, aside: r.aside };
     },
     'POST /api/launcher/start-obs': () => startObs(),
     'POST /api/launcher/firewall': async () => {

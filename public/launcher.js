@@ -492,3 +492,54 @@ $('deckTokenSave').addEventListener('click', async () => {
   toast(r.hasToken ? '비밀 키를 저장했어요 — 키에 붙인 주소는 다시 복사해서 바꿔 주세요' : '비밀 키를 껐어요');
 });
 loadDeck(); // token + addresses (the URL list itself is only shown when the details are opened)
+
+
+// ---------------- settings export / import ----------------
+$('expBtn').addEventListener('click', async () => {
+  const p = $('expPass').value;
+  if (p.length < 8) return toast('비밀번호는 8자 이상으로 해 주세요', true);
+  if (p !== $('expPass2').value) return toast('비밀번호 확인이 달라요', true);
+  $('expBtn').disabled = true;
+  const r = await call('/export', { passphrase: p });
+  $('expBtn').disabled = false;
+  if (r.ok) { toast(`바탕화면에 ${r.name} 을(를) 만들었어요`); $('expPass').value = $('expPass2').value = ''; }
+});
+let impText = null;
+async function readImp() {
+  const f = $('impFile').files[0];
+  if (!f) { toast('설정 파일을 골라 주세요', true); return null; }
+  if (f.size > 20 * 1024 * 1024) { toast('설정 파일이 너무 커요', true); return null; }
+  return f.text();
+}
+$('impFile').addEventListener('change', () => { $('impSummary').hidden = true; impText = null; });
+$('impCheck').addEventListener('click', async () => {
+  impText = await readImp();
+  if (!impText) return;
+  $('impCheck').disabled = true;
+  const r = await call('/import', { text: impText, passphrase: $('impPass').value, apply: false });
+  $('impCheck').disabled = false;
+  if (!r.ok) return;
+  const s = r.summary;
+  const yes = (b) => (b ? '✓' : '–');
+  const when = s.from.created ? new Date(s.from.created).toLocaleString() : '?';
+  $('impSummary').innerHTML = `
+    <b>${escapeAttr(s.from.host || '?')}</b>에서 ${escapeAttr(when)}에 만든 파일 (Allmind ${escapeAttr(s.from.version || '?')})
+    <ul>
+      <li>OBS 비밀번호 ${yes(s.obs)} · 치지직 채널 ${yes(s.channel)}</li>
+      <li>Google 로그인 ${yes(s.google)} · 유튜브 스트림 키 ${yes(s.youtubeKey)} · 치지직 연동 로그인 ${yes(s.chzzkLogin)}</li>
+      <li>BGM 폴더: ${escapeAttr(s.bgmFolder || '없음')}</li>
+      <li>사운드보드 폴더: ${escapeAttr(s.sbFolder || '없음')}</li>
+    </ul>
+    <div class="muted small">적용하면 이 PC의 설정이 이 파일 내용으로 바뀌고 Allmind가 다시 시작돼요. 지금 설정은 설정 폴더의 "가져오기 전 백업"에 남겨 둬요.
+    폴더 위치가 이 PC와 다르면 적용 후 설정에서 고쳐 주세요. 치지직 연동 로그인은 한 번 쓰면 바뀌는 방식이라, 두 PC에서 번갈아 쓰면 한쪽은 다시 로그인해야 할 수 있어요.
+    대시보드 패널 배치는 브라우저마다 따로라서 옮겨지지 않아요.</div>
+    <div class="row-btns tight"><button class="btn accent" type="button" id="impApply">이 PC에 적용하고 다시 시작</button></div>`;
+  $('impSummary').hidden = false;
+  $('impApply').addEventListener('click', async () => {
+    if (!confirm('지금 설정을 이 파일 내용으로 바꾸고 Allmind를 다시 시작할까요?')) return;
+    $('impApply').disabled = true;
+    const a = await call('/import', { text: impText, passphrase: $('impPass').value, apply: true });
+    if (a.ok) { toast('가져왔어요 — 다시 시작하는 중…'); setTimeout(() => location.reload(), 4000); }
+    else $('impApply').disabled = false;
+  });
+});

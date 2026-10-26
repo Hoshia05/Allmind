@@ -196,6 +196,27 @@
       </details>
     </section>
 
+    <!-- settings export / import -->
+    <section class="card">
+      <details id="moveBox">
+        <summary><h2>설정 옮기기 (다른 PC로)</h2><span class="muted small">내보내기 · 가져오기</span></summary>
+        <p class="muted small">설정·로그인·셋리스트 순서·랭킹 등을 파일 하나로 만들어요. 파일은 <b>내가 정한 비밀번호</b>로 암호화돼서, 비밀번호 없이는 아무도 (Allmind도) 열 수 없어요. 비밀번호를 잊으면 복구할 수 없어요.</p>
+        <fieldset class="move">
+          <legend>내보내기</legend>
+          <label>비밀번호 (8자 이상)<input type="password" id="expPass" autocomplete="new-password"></label>
+          <label>비밀번호 확인<input type="password" id="expPass2" autocomplete="new-password"></label>
+          <div class="row-btns tight"><button class="btn accent" type="button" id="expBtn">바탕화면에 내보내기</button></div>
+        </fieldset>
+        <fieldset class="move">
+          <legend>가져오기 (지금 설정을 바꿔요)</legend>
+          <label>설정 파일 (.allmind)<input type="file" id="impFile" accept=".allmind"></label>
+          <label>비밀번호<input type="password" id="impPass" autocomplete="off"></label>
+          <div class="row-btns tight"><button class="btn" type="button" id="impCheck">열어 보기</button></div>
+          <div id="impSummary" class="imp-summary" hidden></div>
+        </fieldset>
+      </details>
+    </section>
+
     <!-- settings -->
     <section class="card">
       <details id="settingsBox">
