@@ -384,6 +384,12 @@ function renderLinks(r) {
   $('chzzkLogout').hidden = !c.loggedIn;
   $('chzzkLogin').textContent = c.loggedIn ? '다시 로그인' : '치지직 로그인';
 
+  // one-line state for the collapsed card
+  const bad = [g.error, y.error, c.error].some(Boolean) || y.alert || err || (gAny && !g.loggedIn) || c.expiresSoon;
+  const todo = !g.loggedIn || !c.loggedIn;
+  $('linksHint').textContent = bad ? '확인이 필요해요' : todo ? `Google ${g.loggedIn ? '✓' : '설정 필요'} · 치지직 ${c.loggedIn ? '✓' : '설정 필요'}` : 'Google ✓ · 치지직 ✓';
+  $('linksHint').classList.toggle('warn', !!(bad || todo));
+
   if (!linksFilled) fillLinks(r);
 }
 

@@ -37,11 +37,13 @@ body.launcher { overflow: auto; display: block; }
 .tip ol { padding-left: 18px; margin: 8px 0; line-height: 1.7; }
 .tip p { margin: 0; }
 
-#settingsBox > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
-#settingsBox > summary::-webkit-details-marker { display: none; }
-#settingsBox > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
-#settingsBox[open] > summary::before { transform: rotate(90deg); }
-#settingsBox > summary h2 { margin: 0; }
+#settingsBox > summary, #linksBox > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; }
+#settingsBox > summary::-webkit-details-marker, #linksBox > summary::-webkit-details-marker { display: none; }
+#settingsBox > summary::before, #linksBox > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+#settingsBox[open] > summary::before, #linksBox[open] > summary::before { transform: rotate(90deg); }
+#settingsBox > summary h2, #linksBox > summary h2 { margin: 0; }
+#linksBox[open] > summary { margin-bottom: 12px; }
+#linksHint.warn { color: var(--accent-2); }
 #firstRunHint { color: var(--accent-2); }
 
 form fieldset { border: 0; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; }
