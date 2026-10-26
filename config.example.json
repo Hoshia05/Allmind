@@ -15,7 +15,7 @@
 
   "update": {
     "check": true,
-    "repo": "Hoshia05/ArkBird",
+    "repo": "Hoshia05/Allmind",
     "apiBase": "https://api.github.com"
   },
 
