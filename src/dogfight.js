@@ -1,6 +1,6 @@
 // 공중전 (dogfight) overlay — the server half.
 // The game itself runs in the OBS browser source (public/dogfight.html).
-// This only relays chat commands (!출격, !미사일 …) and donations to it, and
+// This only relays chat commands (!출격, !미사일 …) to it, and
 // keeps the pilot scoreboard (wins/kills) across streams in DATA_DIR/dogfight.json.
 // Costs nothing while no overlay is connected.
 import { loadState, saveState } from './config.js';
@@ -18,9 +18,7 @@ export class Dogfight {
         if (m.hidden) continue;
         if (m.kind === 'chat' && /^\s*!/.test(m.text || '')) {
           this.send('cmd', { uid: m.uid, nick: m.nick, role: m.role, text: m.text.trim().slice(0, 40) });
-        } else if (m.kind === 'donation' && m.uid) {
-          this.send('donation', { uid: m.uid, nick: m.nick, amount: m.amount || 0 });
-        }
+        } // donations change nothing in the game (owner: no pay-to-win)
       }
     });
   }

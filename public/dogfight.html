@@ -7,7 +7,7 @@
   공중전 (dogfight) — OBS browser source overlay, 1920×1080, transparent.
   Chat: !출격 join · !미사일 fire a missile · !플레어 flares · !회피 cobra (missiles overshoot)
         !특수 special weapon (random: QAAM, 4AAM, HPAA, ADMM, EML, TLS) · !귀환 leave
-        !시작 (streamer/manager) start now. A donation repairs your jet and reloads (or joins you).
+        !시작 (streamer/manager) start now. Donations do nothing here — no pay-to-win.
   URL options: ?lobby=25 (seconds before a round) · ?fighters=4 (bots fill up to this)
                ?board=0 (hide ranking) · ?help=0 (hide the command list) · ?demo=1 (fake viewers)
 -->
@@ -173,12 +173,6 @@ function onCmd(c) {
     if (j.spCd <= 0) { if (fireSpecial(j)) j.spCd = SP_CD; }
     else floatText(j, `특수무기 ${Math.ceil(j.spCd)}`, '#9fb8b6');
   }
-}
-function onDonation(d) {
-  const p = { uid: d.uid, nick: d.nick || '익명' };
-  const j = phase === 'fight' && jetOf(p.uid);
-  if (j && j.alive) { j.hp = 100; j.manualMsslCd = 0; j.spCd = 0; j.cobraCd = 0; floatText(j, '보급 완료! HP 100 · 전 무장 재장전', '#5be37d'); say(`${p.nick} 긴급 보급!`, '#5be37d'); }
-  else join(p);
 }
 
 // ---------- weapons ----------
@@ -503,7 +497,7 @@ function drawHud() {
     text('채팅에  !출격  을 입력해서 참전하세요', x + 28, y + 78, 24, '#ffd34d', 'left', 800);
     if (SHOW_HELP) {
       cmdRow(x + 28, y + 124, [['!미사일', '미사일'], ['!플레어', '플레어'], ['!회피', '코브라 기동'], ['!특수', '특수무기']]);
-      cmdRow(x + 28, y + 162, [['!귀환', '나가기'], ['후원', '긴급 보급 + 전 무장 재장전']]);
+      cmdRow(x + 28, y + 162, [['!귀환', '나가기'], ['!시작', '바로 시작 (방송인·매니저)']]);
     }
   } else if (phase === 'fight') {
     const alive = jets.filter((j) => j.alive).length;
@@ -514,7 +508,7 @@ function drawHud() {
     if (SHOW_HELP) {
       const cw = 980;
       panel(W / 2 - cw / 2, 96, cw, 48);
-      cmdRow(W / 2 - cw / 2 + 24, 120, [['!미사일', '미사일 7초'], ['!플레어', '플레어'], ['!회피', '코브라'], ['!특수', `특수무기 ${SP_CD}초`], ['후원', '보급']], 20);
+      cmdRow(W / 2 - cw / 2 + 24, 120, [['!미사일', '미사일 7초'], ['!플레어', '플레어'], ['!회피', '코브라'], ['!특수', `특수무기 ${SP_CD}초`]], 20);
     }
   } else if (phase === 'result' && winner) {
     const a = clamp(phaseT * 2, 0, 1);
@@ -566,7 +560,6 @@ requestAnimationFrame(frame);
 if (!DEMO || Q.get('live') === '1') {
   const es = new EventSource('/api/dogfight/events');
   es.addEventListener('cmd', (e) => { try { onCmd(JSON.parse(e.data)); } catch {} });
-  es.addEventListener('donation', (e) => { try { onDonation(JSON.parse(e.data)); } catch {} });
   es.addEventListener('board', (e) => { try { board = JSON.parse(e.data) || []; } catch {} });
 }
 if (DEMO) {
