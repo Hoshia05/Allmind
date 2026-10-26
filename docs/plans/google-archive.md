@@ -65,7 +65,7 @@ Fix for the results screen: don't rely on the persistent "Stream now" broadcast 
 The owner names archives `[date] - [title about the content]`. Do it automatically **on the Drive
 copy only** (the local OBS file keeps its name, since we copy):
 - Template `config.drive.nameTemplate`, default `{date} - {title}`; `{date}` = recording start,
-  local time, `YYYY-MM-DD` (confirm the exact date format the owner uses before building).
+  local time, `YYYY-MM-DD` (owner confirmed: `2026-10-26`).
 - `{title}` = the Chzzk live title (`chzzk.js` already polls it). Take the title that was shown for
   the **longest** part of the recording (titles get edited mid-stream), remembered by `markers.js`
   per recording. Not live while recording → fall back to the category, then `녹화`.
@@ -78,6 +78,27 @@ copy only** (the local OBS file keeps its name, since we copy):
   begins).
 - Nice to have: the YouTube archive broadcast gets the same title (one `liveBroadcasts.update`
   once the Chzzk title is known).
+
+## "방송 준비" panel — one place for the stream title (owner's request 2026-10-26)
+
+Today he sets the title in three places: Chzzk dashboard, YouTube, and the file name. One panel on
+the **dashboard** (so it works from the main PC/phone, like scenes) with:
+- **제목** (one field), **카테고리** (search box), **태그**; loads the current Chzzk values on open.
+- **적용** → Chzzk title/category/tags via the **official CHZZK Open API**
+  (`PATCH /open/v1/lives/setting`, scope "방송 설정 변경"; `GET` same path to read, scope
+  "방송 설정 조회"; body `defaultLiveTitle`, `categoryType` GAME|SPORTS|ETC, `categoryId`, `tags`;
+  tags can't contain spaces/special chars; title can't be empty) — docs:
+  https://chzzk.gitbook.io/chzzk/chzzk-api/live . Needs an app registered at CHZZK Developers
+  (client id/secret, redirect to Allmind's loopback callback) and one Naver login — a second
+  sign-in next to Google, same token-store design (`DATA_DIR/chzzk-auth.json`, secret). Check
+  whether app registration needs approval and how long tokens last (refresh) before building.
+- Same apply also sets the **YouTube archive broadcast title** (`{date} - {title}`, template) and
+  becomes the **Drive upload name** default (the "longest-shown title" rule still covers mid-stream
+  edits made on Chzzk directly).
+- Shows a check per target (✓ 치지직 · ✓ 유튜브 · 파일 이름) and the error if one failed.
+- Category search: Open API has a category search endpoint — confirm path when building.
+- Without the Chzzk login the panel still works for YouTube + file name (Chzzk read-only from the
+  existing unofficial polling).
 
 ## Settings
 
