@@ -79,6 +79,10 @@
     "token": ""
   },
 
+  "dashboard": {
+    "shortcuts": false
+  },
+
   "autoPause": {
     "enabled": true,
     "mode": "pause",

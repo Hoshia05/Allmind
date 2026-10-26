@@ -866,6 +866,7 @@ $('banners').addEventListener('click', async (ev) => {
 
 // ---------------- keyboard shortcuts ----------------
 document.addEventListener('keydown', (ev) => {
+  if (!S?.shortcuts) return; // off unless turned on in the settings window
   // never while typing: any text field (even one without type="text"), select, editable element, or an IME composition
   if (ev.isComposing || ev.target.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=range]), textarea, select, [contenteditable]')) return;
   if (ev.code === 'Space') { ev.preventDefault(); api('bgm/toggle'); }

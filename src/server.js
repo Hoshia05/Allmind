@@ -27,7 +27,7 @@ import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.24.5';
+const VERSION = '0.24.6';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -259,6 +259,7 @@ async function main() {
     chzzkOpen: chzzkOpen.status(),
     prep: { title: prep.title, category: prep.category, tags: prep.tags, appliedAt: prep.appliedAt, results: prep.results || null, ytTemplate: config.youtube?.titleTemplate || '{date} - {title}', fileTemplate: config.drive?.nameTemplate || '{date} - {title}' },
     obsStreaming,
+    shortcuts: config.dashboard?.shortcuts === true,
   });
   // Top-right links: built from the connected channel. (Old configs carry
   // generic placeholder links to the Chzzk front page; those are dropped.)
@@ -638,6 +639,7 @@ async function main() {
           obsPath: config.obs.path || info.exe || '',
           startObs: config.app.startObs,
           saveChat: config.markers?.saveChat !== false,
+          shortcuts: config.dashboard?.shortcuts === true,
           donation: config.sources.donation,
           chat: config.sources.chat,
           alert: config.sources.alert,
@@ -658,6 +660,7 @@ async function main() {
       saveConfig({
         app: { startObs: !!s.startObs },
         markers: { saveChat: s.saveChat !== false },
+        dashboard: { shortcuts: !!s.shortcuts },
         obs: { password: s.obsPassword ?? '', url: `ws://127.0.0.1:${Number(s.obsPort) || 4455}`, path: s.obsPath || '' },
         sources: { donation: s.donation, chat: s.chat, alert: s.alert || '', mic: s.mic || '', bgm: s.bgmSource },
         bgm: { folder: s.folder || '' },
