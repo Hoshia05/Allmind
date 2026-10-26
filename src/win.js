@@ -7,6 +7,7 @@ import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { cmpVersion } from './update.js';
 
 export const isWin = process.platform === 'win32';
@@ -155,6 +156,56 @@ export function ensureStableLauncher(version) {
   } catch (e) {
     console.log(`[window] couldn't keep a launcher copy: ${e.message}`);
   }
+}
+
+// The exe the owner double-clicks (a download, a desktop shortcut…) is a self-contained snapshot of ONE
+// version, so after an in-app update it would still start the old one — and ask for the update again.
+// The launcher passes on which file the chain started from (ALLMIND_ORIGIN, kept across updates) and
+// which exe started this process (ALLMIND_LAUNCHER). When those differ — we were started by an update —
+// the original file is overwritten with the new launcher, in place and under the same name, so
+// shortcuts to it keep working. Never replaces a file that is newer than ours (mtime), never fails loudly.
+export function replaceLauncher(origin, from, log = console.log) {
+  try {
+    if (!origin || !from) return 'none';
+    const o = path.resolve(origin);
+    const f = path.resolve(from);
+    if (o.toLowerCase() === f.toLowerCase()) return 'same';
+    if (!fs.existsSync(o) || !fs.existsSync(f)) return 'missing';
+    const so = fs.statSync(o);
+    const sf = fs.statSync(f);
+    if (so.size === sf.size) {
+      const h = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      if (h(o) === h(f)) return 'synced';
+    }
+    if (so.mtimeMs > sf.mtimeMs) return 'newer'; // someone put a newer exe there
+    const tmp = `${o}.new`;
+    fs.copyFileSync(f, tmp);
+    try { fs.utimesSync(tmp, sf.atime, sf.mtime); } catch {} // keep "same as the source" for the check above
+    try {
+      fs.renameSync(tmp, o); // replaces the old file when nothing holds it open
+    } catch {
+      // held open (virus scanner, still running): a running exe can be renamed, just not replaced
+      const old = `${o}.old`;
+      try {
+        fs.rmSync(old, { force: true });
+        fs.renameSync(o, old);
+        fs.renameSync(tmp, o);
+        try { fs.rmSync(old, { force: true }); } catch {}
+      } catch (e) {
+        try { fs.rmSync(tmp, { force: true }); } catch {}
+        try { if (!fs.existsSync(o) && fs.existsSync(old)) fs.renameSync(old, o); } catch {}
+        throw e;
+      }
+    }
+    log(`[update] replaced ${o} with the new version`);
+    return 'replaced';
+  } catch (e) {
+    log(`[update] couldn't update ${origin}: ${e.message}`);
+    return 'failed';
+  }
+}
+export function syncOriginLauncher() {
+  return isWin ? replaceLauncher(process.env.ALLMIND_ORIGIN, process.env.ALLMIND_LAUNCHER) : 'none';
 }
 
 const STAMP_SCRIPT = `

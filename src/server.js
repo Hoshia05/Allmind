@@ -27,7 +27,7 @@ import { Dogfight } from './dogfight.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.23.0';
+const VERSION = '0.24.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -921,6 +921,7 @@ async function main() {
   firewall().then((st) => console.log(`[firewall] inbound rule for ${PORT}: ${st.ok ? 'present' : 'MISSING'}`));
   if (config._importedFrom) console.log(`[config] imported settings from ${config._importedFrom}`);
   win.ensureStableLauncher(VERSION); // fixed-path launcher copy for the taskbar pin
+  win.syncOriginLauncher(); // after an update: also replace the exe the owner started from
   // If "start with Windows" is on, point it at this copy of the exe (the old one may be gone).
   if (IS_EXE && win.runAtLoginEnabled()) win.setRunAtLogin(true, process.execPath).catch(() => {});
   if (config.app.startObs && !args.has('--restart') && !config._firstRun) {

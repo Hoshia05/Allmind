@@ -132,6 +132,15 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
 
   // Tell the app which exe started it (it keeps a copy at %LOCALAPPDATA%\Allmind\Allmind.exe
   // for the taskbar pin / "relaunch" command, which must survive updates).
+  // ALLMIND_ORIGIN = the exe the whole chain started from. An update starts the downloaded exe from
+  // the running app, which still has the previous values: keep the first origin so the app can bring
+  // that file up to date too (win.js syncOriginLauncher).
+  {
+    wchar_t prev[MAX_PATH];
+    DWORD got = GetEnvironmentVariableW(L"ALLMIND_ORIGIN", prev, MAX_PATH);
+    if (got == 0 || got >= MAX_PATH) got = GetEnvironmentVariableW(L"ALLMIND_LAUNCHER", prev, MAX_PATH);
+    SetEnvironmentVariableW(L"ALLMIND_ORIGIN", (got > 0 && got < MAX_PATH) ? prev : self);
+  }
   SetEnvironmentVariableW(L"ALLMIND_LAUNCHER", self);
 
   // Run it with the same arguments we got.
