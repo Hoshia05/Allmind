@@ -65,9 +65,5 @@ jobs:
             NOTES=release-notes.tmp.md
             DRAFT="--draft"
           fi
-          # Arkbird 0.17-0.19 (the old name) only look for an asset called Arkbird-X.Y.Z.exe. Attach the
-          # same file under that name too, so those copies can still update to the first Allmind release.
-          # Can be dropped once nobody runs an Arkbird build any more.
-          cp "dist/Allmind-$V.exe" "dist/Arkbird-$V.exe"
-          gh release create "v$V" "dist/Allmind-$V.exe" "dist/Arkbird-$V.exe" THIRD_PARTY_NOTICES.txt \
+          gh release create "v$V" "dist/Allmind-$V.exe" THIRD_PARTY_NOTICES.txt \
             --title "Allmind $V" --notes-file "$NOTES" --target "$GITHUB_SHA" $DRAFT

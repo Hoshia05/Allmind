@@ -31,71 +31,6 @@ export const CONFIG_DIR = process.env.ALLMIND_HOME
 const CONFIG_PATH = process.env.ALLMIND_CONFIG || path.join(CONFIG_DIR, 'config.json');
 export const DATA_DIR = process.env.ALLMIND_DATA || path.join(CONFIG_DIR, 'data');
 
-// ---------- carry settings over from an older version ----------
-// Old versions kept config.json (and data\) next to the exe, e.g.
-//   Downloads\StreamDesk-0.3.3\StreamDesk\config.json   (the program was called Stream Desk, then Arkbird, before Allmind)
-// On first start, take the newest one found next to this copy.
-function looksLikeOurConfig(file) {
-  try {
-    const j = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return j && typeof j === 'object' && (j.obs || j.sources || j.bgm);
-  } catch {
-    return false;
-  }
-}
-function findOlderInstall() {
-  const seen = new Set();
-  const found = [];
-  const consider = (dir) => {
-    const file = path.join(dir, 'config.json');
-    const key = path.resolve(file).toLowerCase();
-    if (seen.has(key) || path.resolve(file) === path.resolve(CONFIG_PATH)) return;
-    seen.add(key);
-    try {
-      if (fs.statSync(file).isFile() && looksLikeOurConfig(file)) found.push({ dir, mtime: fs.statSync(file).mtimeMs });
-    } catch {}
-  };
-  consider(ROOT); // config.json right next to this exe
-  // Before the renames the exe kept its settings in %APPDATA%\Arkbird (0.17–0.19) or %APPDATA%\StreamDesk (older);
-  // the newest of them wins. The old folders are left alone.
-  if (process.env.APPDATA) for (const old of ['Arkbird', 'StreamDesk']) consider(path.join(process.env.APPDATA, old));
-  // Sibling folders: ..\* and ..\..\*\Allmind (each zip unzips to its own folder)
-  for (const base of [path.resolve(ROOT, '..'), path.resolve(ROOT, '..', '..')]) {
-    let entries = [];
-    try { entries = fs.readdirSync(base, { withFileTypes: true }).slice(0, 500); } catch { continue; }
-    for (const e of entries) {
-      if (!e.isDirectory() || !/(allmind|arkbird|stream.?desk)/i.test(e.name)) continue;
-      const d = path.join(base, e.name);
-      consider(d);
-      for (const sub of ['Allmind', 'allmind', 'Arkbird', 'arkbird', 'StreamDesk', 'stream-desk']) consider(path.join(d, sub));
-    }
-  }
-  found.sort((a, b) => b.mtime - a.mtime);
-  return found[0]?.dir || null;
-}
-function copyDir(from, to) {
-  fs.mkdirSync(to, { recursive: true });
-  for (const e of fs.readdirSync(from, { withFileTypes: true })) {
-    if (e.isFile() && e.name.endsWith('.json')) fs.copyFileSync(path.join(from, e.name), path.join(to, e.name));
-  }
-}
-export let IMPORTED_FROM = null;
-export function migrateFromOlderVersion() {
-  if (fs.existsSync(CONFIG_PATH) || process.env.ALLMIND_CONFIG) return null;
-  const dir = findOlderInstall();
-  if (!dir) return null;
-  try {
-    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-    fs.copyFileSync(path.join(dir, 'config.json'), CONFIG_PATH);
-    if (fs.existsSync(path.join(dir, 'data'))) copyDir(path.join(dir, 'data'), DATA_DIR);
-    IMPORTED_FROM = dir;
-    return dir;
-  } catch (e) {
-    console.error(`[config] couldn't import settings from ${dir}: ${e.message}`);
-    return null;
-  }
-}
-
 // Files that ship with the app (web page, example config).
 export function readAsset(rel) {
   if (IS_EXE) {
@@ -129,7 +64,6 @@ export function configPath() {
 }
 
 export function loadConfig() {
-  migrateFromOlderVersion();
   const base = defaults();
   let user = {};
   if (fs.existsSync(CONFIG_PATH)) {
@@ -139,12 +73,8 @@ export function loadConfig() {
       console.error(`[config] Could not read ${CONFIG_PATH}: ${err.message} — using defaults`);
     }
   }
-  // Early versions copied every default into config.json; drop the old
-  // defaults that later versions changed, so the new ones apply.
-  if (!user.configVersion && user.viewer?.fps === 10) delete user.viewer.fps;
   const cfg = merge(base, user);
   cfg._firstRun = !fs.existsSync(CONFIG_PATH);
-  cfg._importedFrom = IMPORTED_FROM;
   return cfg;
 }
 
@@ -154,7 +84,6 @@ export function saveConfig(patch) {
   try {
     current = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
   } catch {}
-  if (!current.configVersion && current.viewer?.fps === 10) delete current.viewer.fps;
   const next = merge(current, { ...patch, configVersion: 3 });
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH + '.tmp', JSON.stringify(next, null, 2));

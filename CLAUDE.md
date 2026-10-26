@@ -1,6 +1,6 @@
 # Allmind — notes for Claude
 
-(Names so far: Stream Desk → Arkbird (0.17.0) → **Allmind (0.20.0)**. The code still imports settings from `%APPDATA%\Arkbird` and `%APPDATA%\StreamDesk`, honours the old "Arkbird"/"Stream Desk" firewall rules and startup shortcuts, and deletes the old `%LOCALAPPDATA%\Arkbird` folder. The release workflow attaches every exe **twice** (`Allmind-X.Y.Z.exe` + identical `Arkbird-X.Y.Z.exe`) because Arkbird 0.17–0.19's updater only matches the old asset name — drop that once nobody runs Arkbird. The GitHub repo is `Hoshia05/Allmind` (renamed CentralStreamingHQ → ArkBird → Allmind; old URLs redirect, so older builds whose saved config still says `Hoshia05/ArkBird` keep updating).)
+(Names so far: Stream Desk → Arkbird (0.17.0) → **Allmind (0.20.0)**. The old-name compatibility code (settings import from `%APPDATA%\Arkbird`/`StreamDesk`, old startup shortcuts, the duplicate `Arkbird-X.Y.Z.exe` release asset, `%LOCALAPPDATA%\Arkbird` cleanup) was removed in the 0.30.1 audit; only the old firewall rule names are still honoured (`FW_NAMES_OLD`), because the owner's PC may still have an "Arkbird" rule. The GitHub repo is `Hoshia05/Allmind` (renamed CentralStreamingHQ → ArkBird → Allmind; old URLs redirect).)
 
 Allmind is a one-exe dashboard for a two-PC Chzzk (치지직) VTuber stream (호시아).
 It runs on the **stream PC** next to OBS (Ryzen 3600X + RTX 2070, meant to run only
@@ -106,7 +106,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**. After an update the exe the owner originally started is overwritten in place (launcher env `ALLMIND_ORIGIN`/`ALLMIND_LAUNCHER`, `win.syncOriginLauncher`) — Windows-only, untested on a real PC.
 - `src/config.js` — config/state paths (`%APPDATA%\Allmind` in the exe), defaults from
-  `config.example.json`, import from older versions. `src/win.js` — Windows bits (tray, firewall, pickers).
+  `config.example.json`. `src/win.js` — Windows bits (tray, firewall, pickers).
 - `public/index.html`, `app.js`, `style.css` — dashboard. `dock.js` — free panel layout
   (columns, slots, tabs; saved per browser in `localStorage['sd.dock']`; only on wide
   landscape screens). `launcher.*` — settings window on the stream PC. `mark.html` — /mark page.

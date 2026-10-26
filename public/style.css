@@ -792,10 +792,6 @@ body.docking canvas, body.docking iframe { pointer-events: none; }
 .auto-row input { flex: 1; min-width: 0; }
 .auto-row .ext { font-weight: 400; }
 .auto-row .btn[hidden] { display: none; }
-.prep-preview { display: flex; flex-direction: column; gap: 4px; font-size: 13px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-.prep-preview div { display: flex; gap: 10px; }
-.prep-preview div > .muted:first-child { flex: 0 0 64px; }
-.prep-preview span:last-child { word-break: break-all; }
 .prep-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .prep-results:empty { display: none; }
 .prep-results li.ok { color: var(--ok); }

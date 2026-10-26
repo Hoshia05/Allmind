@@ -376,14 +376,12 @@ function startupDir() {
 function startupShortcut() {
   return path.join(startupDir(), 'Allmind.lnk');
 }
-const startupShortcutsOld = () => ['Arkbird.lnk', 'Stream Desk.lnk'].map((n) => path.join(startupDir(), n)); // before the renames
 export function runAtLoginEnabled() {
-  return isWin && [startupShortcut(), ...startupShortcutsOld()].some((f) => fs.existsSync(f));
+  return isWin && fs.existsSync(startupShortcut());
 }
 export async function setRunAtLogin(on, exe) {
   if (!isWin) return;
   const lnk = startupShortcut();
-  for (const old of startupShortcutsOld()) { try { fs.unlinkSync(old); } catch {} }
   if (!on) {
     try { fs.unlinkSync(lnk); } catch {}
     return;

@@ -106,7 +106,6 @@ function escapeAttr(s) { return String(s).replace(/[&"<>]/g, (c) => ({ '&': '&am
 
 function fillForm(r) {
   formFilled = true;
-  if (r.importedFrom) toast(`이전 버전의 설정을 가져왔어요 (${r.importedFrom})`);
   const s = r.settings;
   for (const [k, v] of Object.entries(s)) {
     const el = form.elements[k];

@@ -192,15 +192,5 @@ export class Updater {
         } catch {}
       }
     }
-    // The folder of the old name (Arkbird 0.17–0.19: its unpacked app and downloaded installers) is
-    // not needed any more. The old process may still be shutting down, so try again once later.
-    if (this.isExe && process.env.LOCALAPPDATA) {
-      const old = path.join(process.env.LOCALAPPDATA, 'Arkbird');
-      if (!path.resolve(process.execPath).toLowerCase().startsWith(old.toLowerCase() + path.sep)) {
-        const tryRm = () => { try { fs.rmSync(old, { recursive: true, force: true }); } catch {} };
-        tryRm();
-        setTimeout(tryRm, 60 * 1000).unref();
-      }
-    }
   }
 }

@@ -30,7 +30,7 @@ import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.30.0';
+const VERSION = '0.30.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -67,7 +67,7 @@ async function otherInstanceRunning() {
   try {
     const r = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { signal: AbortSignal.timeout(1500) });
     const app = (await r.json()).app;
-    return app === 'allmind' || app === 'arkbird'; // the old name: an Arkbird 0.17–0.19 still on the port
+    return app === 'allmind';
   } catch {
     return false;
   }
@@ -518,8 +518,6 @@ async function main() {
 
   // ---------- API ----------
   const routes = {
-    'POST /api/bgm/play': () => bgm.play(),
-    'POST /api/bgm/pause': () => bgm.pause(),
     'POST /api/bgm/toggle': () => bgm.toggle(),
     'POST /api/bgm/next': () => bgm.next(),
     'POST /api/bgm/prev': () => bgm.prev(),
@@ -549,12 +547,10 @@ async function main() {
     'POST /api/sb/play': (b) => soundboard.play(String(b.id || '')),
     'POST /api/sb/stop': () => soundboard.stop(),
     'POST /api/sb/volume': (b) => soundboard.setVolume(b.db),
-    'POST /api/sb/rescan': () => soundboard.rescan(),
     'POST /api/sb/create-source': async () => ({ scenes: await soundboard.createSource() }),
     'POST /api/mic/toggle': async () => ({ muted: await studio.toggleMic() }),
     'POST /api/chzzk/donation-read': (b) => chzzk.markRead(b.key, b.read !== false),
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
-    'POST /api/chzzk/donations-clear': () => chzzk.clearDonations(),
     'GET /api/update': () => updater.state(),
 
     // 방송 준비: one title for Chzzk, the YouTube archive and the Drive file name
@@ -656,7 +652,6 @@ async function main() {
         version: VERSION,
         isExe: IS_EXE,
         firstRun: config._firstRun,
-        importedFrom: config._importedFrom,
         configPath: configPath(),
         addresses: lanAddresses(),
         obs: { ...info, connected: obs.connected, error: obs.connected ? null : obs.lastError },
@@ -793,7 +788,6 @@ async function main() {
     'POST /api/launcher/chzzk-logout': () => chzzkOpen.logout(),
     'POST /api/launcher/youtube-key': () => youtube.createKey(),
     'POST /api/launcher/youtube-showkey': () => youtube.showKey(),
-    'POST /api/launcher/youtube-forget': () => youtube.forgetKey(),
     'POST /api/launcher/logs': async () => {
       const info = [
         `Allmind ${VERSION} (${IS_EXE ? 'exe' : 'source'})`,
@@ -857,7 +851,6 @@ async function main() {
     if (key === 'GET /api/roulette/events') return roulette.attach(req, res);
     if (key === 'POST /api/roulette/shown') { roulette.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
     if (key === 'GET /api/dogfight/events') return dogfight.attach(req, res);
-    if (key === 'GET /api/dogfight/board') return json(res, 200, dogfight.board());
     if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
     if (key === 'POST /api/dogfight/cmd') { dogfight.inject(await readBody(req)); return json(res, 200, { ok: true }); }
 
@@ -1001,7 +994,6 @@ async function main() {
     });
   }
   firewall().then((st) => console.log(`[firewall] inbound rule for ${PORT}: ${st.ok ? 'present' : 'MISSING'}`));
-  if (config._importedFrom) console.log(`[config] imported settings from ${config._importedFrom}`);
   // If "start with Windows" is on, point it at this copy of the exe (the old one may be gone).
   if (IS_EXE && win.runAtLoginEnabled()) win.setRunAtLogin(true, process.execPath).catch(() => {});
   if (config.app.startObs && !args.has('--restart') && !config._firstRun) {
