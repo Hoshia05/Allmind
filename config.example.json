@@ -75,6 +75,10 @@
     "volumeDb": -10
   },
 
+  "deck": {
+    "token": ""
+  },
+
   "autoPause": {
     "enabled": true,
     "mode": "pause",

@@ -152,6 +152,29 @@
       </details>
     </section>
 
+    <!-- Stream Deck -->
+    <section class="card" id="deckCard">
+      <h2>스트림덱 (BGM · 사운드보드)</h2>
+      <p class="muted small">스트림덱 키 하나에 주소 하나를 붙여 넣으면 돼요. 메인 PC의 스트림덱도, 이 PC의 스트림덱도 같은 Allmind를 써요.</p>
+      <div class="deck-row">
+        <label class="small" for="deckWhere">스트림덱이 있는 곳</label>
+        <select id="deckWhere"></select>
+      </div>
+      <div class="deck-row">
+        <label class="small" for="deckToken">비밀 키 (선택)</label>
+        <input id="deckToken" type="text" autocomplete="off" spellcheck="false" placeholder="비워 두면 누구나 실행할 수 있어요">
+        <button class="btn" id="deckTokenSave">저장</button>
+      </div>
+      <details class="tip" id="deckTip">
+        <summary>키에 붙일 주소 목록</summary>
+        <ol>
+          <li>스트림덱 앱에서 <b>시스템 → 웹사이트(Website)</b> 동작을 키에 끌어다 놓아요.</li>
+          <li>아래에서 <b>복사</b>를 눌러 주소를 붙여 넣고, <b>백그라운드에서 접근(Access in background)</b>을 체크하세요. 그래야 브라우저가 열리지 않아요.</li>
+        </ol>
+        <div id="deckList"><span class="muted small">불러오는 중…</span></div>
+      </details>
+    </section>
+
     <!-- 치지직 리모컨 -->
     <section class="card">
       <h2>치지직 리모컨 (넘기기 · 알림 정지)</h2>

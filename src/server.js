@@ -24,9 +24,10 @@ import { ChzzkOpen, cleanTags } from './chzzkopen.js';
 import { loadState, saveState } from './config.js';
 import { Updater } from './update.js';
 import { Dogfight } from './dogfight.js';
+import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.22.0';
+const VERSION = '0.23.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -319,6 +320,8 @@ async function main() {
   chzzk.on('live-chat', (list) => { for (const m of list) markers.addChat(m); });
   // 공중전 overlay: relays !commands to the OBS browser source, keeps the scoreboard
   const dogfight = new Dogfight(chzzk);
+  // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
+  const deck = new Deck({ config, bgm, soundboard, markers });
   let chatWasUp = null;
   chzzk.on('change', () => {
     const up = chzzk.chatState === 'connected';
@@ -664,6 +667,13 @@ async function main() {
       setTimeout(restart, 300);
       return { restarting: true, newUrl: portChanged ? `http://127.0.0.1:${Number(s.port)}/launcher` : null };
     },
+    'GET /api/launcher/deck': () => ({ addresses: lanAddresses(), token: deck.token, ...deck.catalog() }),
+    'POST /api/launcher/deck-save': (b) => {
+      const token = String(b.token || '').replace(/[^\w-]/g, '').slice(0, 64);
+      saveConfig({ deck: { token } });
+      config.deck = { ...(config.deck || {}), token };
+      return { addresses: lanAddresses(), token: deck.token, ...deck.catalog() };
+    },
     'POST /api/launcher/start-obs': () => startObs(),
     'POST /api/launcher/firewall': async () => {
       await win.allowFirewall(PORT);
@@ -773,6 +783,13 @@ async function main() {
     if (key === 'GET /api/dogfight/board') return json(res, 200, dogfight.board());
     if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
     if (key === 'POST /api/dogfight/cmd') { dogfight.inject(await readBody(req)); return json(res, 200, { ok: true }); }
+
+    // Stream Deck: GET (or POST) /deck/<action>[?name=…&key=…]
+    if (url.pathname.startsWith('/deck/') && (req.method === 'GET' || req.method === 'POST')) {
+      const r = await deck.run(decodeURIComponent(url.pathname.slice(6)), url.searchParams);
+      if (r.status === 200) stateChanged();
+      return json(res, r.status, r.body);
+    }
 
     if (key === 'GET /api/ping') return json(res, 200, { app: 'allmind', version: VERSION });
 

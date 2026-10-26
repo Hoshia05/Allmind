@@ -436,3 +436,49 @@ document.addEventListener('click', async (ev) => {
 
 refreshLinks();
 setInterval(refreshLinks, 5000);
+
+
+// ---------------- Stream Deck URLs ----------------
+const deck = { data: null };
+const deckBase = () => $('deckWhere').value || location.origin;
+function renderDeck() {
+  const d = deck.data;
+  if (!d) return;
+  const cur = $('deckWhere').value;
+  const opts = [
+    ...d.addresses.map((a, i) => ({ v: a, t: `메인 PC 등 다른 PC에서 (${a})${i ? ' — 안 되면 이 주소' : ''}` })),
+    { v: location.origin, t: '이 PC(방송 PC)에서' },
+  ];
+  $('deckWhere').innerHTML = opts.map((o) => `<option value="${escapeAttr(o.v)}">${escapeAttr(o.t)}</option>`).join('');
+  if (cur && opts.some((o) => o.v === cur)) $('deckWhere').value = cur;
+  if (document.activeElement !== $('deckToken')) $('deckToken').value = d.token || '';
+  $('deckList').innerHTML = d.groups.map((g) => {
+    const rows = g.items.map((it) => `<div class="deck-item"><span>${escapeAttr(it.label)}</span><button class="btn small-btn" data-path="${escapeAttr(it.path)}">복사</button></div>`).join('');
+    const empty = g.title === '사운드보드' && !d.groups.find((x) => x.title === g.title).items.some((it) => it.label.startsWith('▶'))
+      ? '<div class="muted small">사운드보드 폴더에 파일이 있으면 하나씩 여기 나타나요.</div>' : '';
+    return `<h3 class="deck-h">${escapeAttr(g.title)}</h3>${rows}${empty}`;
+  }).join('');
+}
+async function loadDeck() {
+  const r = await call('/deck');
+  if (!r.ok) return;
+  deck.data = r;
+  renderDeck();
+}
+$('deckTip').addEventListener('toggle', () => { if ($('deckTip').open) loadDeck(); });
+$('deckWhere').addEventListener('change', renderDeck);
+$('deckList').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-path]');
+  if (!b) return;
+  const url = deckBase() + b.dataset.path;
+  try { await navigator.clipboard.writeText(url); toast('주소를 복사했어요'); }
+  catch { prompt('주소를 복사하세요 (Ctrl+C)', url); }
+});
+$('deckTokenSave').addEventListener('click', async () => {
+  const r = await call('/deck-save', { token: $('deckToken').value.trim() });
+  if (!r.ok) return;
+  deck.data = r;
+  renderDeck();
+  toast(r.hasToken ? '비밀 키를 저장했어요 — 키에 붙인 주소는 다시 복사해서 바꿔 주세요' : '비밀 키를 껐어요');
+});
+loadDeck(); // token + addresses (the URL list itself is only shown when the details are opened)
