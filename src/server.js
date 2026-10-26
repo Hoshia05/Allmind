@@ -23,6 +23,7 @@ import { DriveUploader, safeName } from './drive.js';
 import { ChzzkOpen, cleanTags } from './chzzkopen.js';
 import { loadState, saveState } from './config.js';
 import { Updater } from './update.js';
+import { Dogfight } from './dogfight.js';
 import * as win from './win.js';
 
 const VERSION = '0.21.0';
@@ -316,6 +317,8 @@ async function main() {
   });
   // chat log for SkyEye: only live messages (not the history replayed on reconnect)
   chzzk.on('live-chat', (list) => { for (const m of list) markers.addChat(m); });
+  // 공중전 overlay: relays !commands to the OBS browser source, keeps the scoreboard
+  const dogfight = new Dogfight(chzzk);
   let chatWasUp = null;
   chzzk.on('change', () => {
     const up = chzzk.chatState === 'connected';
@@ -760,6 +763,16 @@ async function main() {
       res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
       return res.end(readAsset('public/mark.html'));
     }
+
+    // 공중전 overlay (OBS browser source: http://localhost:<port>/dogfight)
+    if (key === 'GET /dogfight') {
+      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+      return res.end(readAsset('public/dogfight.html'));
+    }
+    if (key === 'GET /api/dogfight/events') return dogfight.attach(req, res);
+    if (key === 'GET /api/dogfight/board') return json(res, 200, dogfight.board());
+    if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
+    if (key === 'POST /api/dogfight/cmd') { dogfight.inject(await readBody(req)); return json(res, 200, { ok: true }); }
 
     if (key === 'GET /api/ping') return json(res, 200, { app: 'allmind', version: VERSION });
 

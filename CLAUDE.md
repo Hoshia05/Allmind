@@ -99,6 +99,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/drive.js` — Drive upload queue (`DATA_DIR/uploads.json`): resumable 16 MB chunks, resumes after restart, never while streaming/recording, name from the longest-shown title (`markers.js` tracks it), markers file uploaded with `recording.file` = Drive name. `safeName`.
 - `src/chzzkopen.js` — official CHZZK Open API (`openapi.chzzk.naver.com`): OAuth (account-interlock, single-use refresh tokens), `lives/setting` GET/PATCH, category search. Used by the 방송 준비 sheet (`/api/prep/*`).
 - `src/remote.js` — 치지직 리모컨 dock in OBS via DevTools (■ 정지 / 넘기기 / 알림 정지).
+- `src/dogfight.js` + `public/dogfight.html` — 공중전 overlay (OBS browser source `/dogfight`, 1920×1080, transparent). Server relays `!` chat commands + donations over `/api/dogfight/events` (only while an overlay is connected) and keeps the wins/kills board in `DATA_DIR/dogfight.json`; the game runs entirely in the page. Test without chat: `POST /api/dogfight/cmd {nick,text}` or `/dogfight?demo=1`.
 - `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**.
 - `src/config.js` — config/state paths (`%APPDATA%\Allmind` in the exe), defaults from

@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>공중전 · Allmind</title>
+<!--
+  공중전 (dogfight) — OBS browser source overlay, 1920×1080, transparent.
+  Chat: !출격 join · !미사일 fire a missile · !플레어 flares · !귀환 leave
+        !시작 (streamer/manager) start now. A donation repairs your jet (or joins you).
+  URL options: ?lobby=25 (seconds before a round) · ?fighters=4 (bots fill up to this)
+               ?board=0 (hide ranking) · ?demo=1 (fake viewers, for testing)
+-->
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+'use strict';
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const Q = new URLSearchParams(location.search);
+const LOBBY_S = Math.max(5, Number(Q.get('lobby')) || 25);
+const FIGHTERS = Math.max(2, Math.min(12, Number(Q.get('fighters')) || 4));
+const SHOW_BOARD = Q.get('board') !== '0';
+const DEMO = Q.get('demo') === '1';
+const ROUND_LIMIT = 80;      // seconds; then the healthiest jet wins
+const RESULT_S = 8;
+const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif';
+const ACCENT = '#2fd8c8';
+
+// ---------- helpers ----------
+const rnd = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const wrapA = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function hueOf(s) { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; }
+const BOT_NAMES = ['BOGEY', 'BANDIT', 'SKULL', 'VIPER', 'RAVEN', 'COBRA', 'JESTER', 'HOUND', 'WRAITH', 'GHOST', 'ONYX'];
+
+// ---------- state ----------
+const roster = new Map();   // uid → {uid, nick, human:true, role}
+let jets = [];              // fighters this round (or lobby flyers)
+let bullets = [], missiles = [], flares = [], parts = [], floats = [], feed = [];
+let board = [];
+let phase = 'lobby';        // lobby | fight | result
+let phaseT = 0;             // seconds into phase
+let lobbyLeft = LOBBY_S;
+let roundT = 0;
+let winner = null;
+let botSeq = 0;
+
+function makeJet(p, i, n, fight) {
+  const ang = (i / Math.max(1, n)) * Math.PI * 2;
+  const j = {
+    uid: p.uid, nick: p.nick, human: !!p.human,
+    hue: p.human ? hueOf(p.uid) : 0,
+    x: W / 2 + Math.cos(ang) * (fight ? 420 : rnd(150, 420)),
+    y: H / 2 + Math.sin(ang) * (fight ? 330 : rnd(100, 300)),
+    a: ang + Math.PI / 2 + (fight ? 0.3 : 0), spd: 300,
+    hp: 100, alive: true, kills: 0,
+    gunCd: rnd(0.5, 1.5), msslCd: p.human ? rnd(6, 10) : rnd(5, 9), manualMsslCd: 0,
+    flareCd: 0, autoMsslAt: p.human ? rnd(14, 20) : rnd(8, 13),
+    target: null, retarget: 0, jink: 0, jinkDir: 1, wp: null, trail: [], trailT: 0, flash: 0,
+  };
+  return j;
+}
+function jetOf(uid) { return jets.find((j) => j.uid === uid); }
+
+// ---------- lobby ----------
+function rebuildLobbyJets() {
+  const keep = new Map(jets.filter((j) => j.human).map((j) => [j.uid, j]));
+  const list = [...roster.values()];
+  jets = list.map((p, i) => {
+    const old = keep.get(p.uid);
+    if (old) { old.alive = true; old.hp = 100; old.nick = p.nick; return old; }
+    const j = makeJet(p, i, list.length, false);
+    j.x = rnd(-60, 0) < -30 ? -40 : W + 40; j.y = rnd(200, H - 200); j.a = j.x < 0 ? 0 : Math.PI;
+    return j;
+  });
+}
+function join(p) {
+  if (roster.has(p.uid)) { const r = roster.get(p.uid); r.nick = p.nick; return; }
+  if (roster.size >= 24) return;
+  roster.set(p.uid, { uid: p.uid, nick: p.nick || '???', human: true, role: p.role });
+  if (phase === 'lobby') {
+    rebuildLobbyJets();
+    if (lobbyLeft < 3) lobbyLeft = 3; // a last-second joiner gets a moment, but nobody can stall the lobby
+    say(`${p.nick} 출격 준비 완료`, ACCENT);
+  } else {
+    say(`${p.nick} 다음 라운드 대기`, '#9fb8b6');
+  }
+}
+function leave(uid) {
+  const r = roster.get(uid); if (!r) return;
+  roster.delete(uid);
+  if (phase === 'lobby') { jets = jets.filter((j) => j.uid !== uid); }
+  say(`${r.nick} 귀환`, '#9fb8b6');
+}
+
+function startFight() {
+  const humans = [...roster.values()];
+  const list = humans.slice();
+  const nBots = Math.max(0, FIGHTERS - humans.length);
+  const names = BOT_NAMES.slice().sort(() => Math.random() - 0.5);
+  for (let i = 0; i < nBots; i++) list.push({ uid: `bot:${++botSeq}`, nick: names[i % names.length], human: false });
+  list.sort(() => Math.random() - 0.5);
+  jets = list.map((p, i) => makeJet(p, i, list.length, true));
+  bullets = []; missiles = []; flares = [];
+  phase = 'fight'; phaseT = 0; roundT = 0; winner = null;
+  say('교전 개시 — ENGAGE!', '#ffd34d', true);
+}
+
+function endFight() {
+  const alive = jets.filter((j) => j.alive);
+  const pool = alive.length ? alive : jets;
+  winner = pool.slice().sort((a, b) => b.hp - a.hp || b.kills - a.kills)[0] || null;
+  phase = 'result'; phaseT = 0;
+  const humans = jets.filter((j) => j.human);
+  if (humans.length) {
+    fetch('/api/dogfight/result', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ winner: winner && winner.human ? winner.uid : null, pilots: humans.map((j) => ({ uid: j.uid, nick: j.nick, kills: j.kills })) }),
+    }).then((r) => r.json()).then((r) => { if (r.board) board = r.board; }).catch(() => {});
+  }
+}
+
+function backToLobby() {
+  phase = 'lobby'; phaseT = 0; lobbyLeft = LOBBY_S;
+  bullets = []; missiles = []; flares = [];
+  jets = jets.filter((j) => j.human && roster.has(j.uid));
+  rebuildLobbyJets();
+}
+
+// ---------- commands ----------
+function onCmd(c) {
+  const t = (c.text || '').trim().split(/\s+/)[0].toLowerCase();
+  const p = { uid: c.uid || `nick:${c.nick}`, nick: c.nick || '???', role: c.role };
+  if (['!출격', '!참전', '!sortie', '!join'].includes(t)) return join(p);
+  if (['!귀환', '!leave'].includes(t)) return leave(p.uid);
+  if (['!시작', '!start'].includes(t) && (c.role === 'streamer' || c.role === 'manager')) {
+    if (phase === 'lobby' && roster.size) lobbyLeft = 0;
+    return;
+  }
+  if (phase !== 'fight') {
+    // firing before the round counts as joining: less to explain
+    if (['!미사일', '!fox2', '!missile', '!발사', '!플레어', '!flare', '!회피'].includes(t)) join(p);
+    return;
+  }
+  const j = jetOf(p.uid);
+  if (!j || !j.alive) return;
+  if (['!미사일', '!fox2', '!missile', '!발사'].includes(t)) {
+    if (j.manualMsslCd <= 0) { if (fireMissile(j)) j.manualMsslCd = 7; }
+    else floatText(j, `재장전 ${Math.ceil(j.manualMsslCd)}`, '#9fb8b6');
+  } else if (['!플레어', '!flare', '!회피'].includes(t)) {
+    if (j.flareCd <= 0) dropFlares(j, true); else floatText(j, `플레어 ${Math.ceil(j.flareCd)}`, '#9fb8b6');
+  }
+}
+function onDonation(d) {
+  const p = { uid: d.uid, nick: d.nick || '익명' };
+  const j = phase === 'fight' && jetOf(p.uid);
+  if (j && j.alive) { j.hp = 100; j.manualMsslCd = 0; floatText(j, '보급 완료! HP 100', '#5be37d'); say(`${p.nick} 긴급 보급!`, '#5be37d'); }
+  else join(p);
+}
+
+// ---------- weapons ----------
+function fireMissile(j) {
+  const t = j.target && j.target.alive ? j.target : nearestEnemy(j);
+  if (!t) return false;
+  missiles.push({ x: j.x + Math.cos(j.a) * 20, y: j.y + Math.sin(j.a) * 20, a: j.a, spd: 480, life: 3.6, owner: j, target: t, trail: [], decoyed: false });
+  floatText(j, 'FOX 2!', '#ffd34d');
+  return true;
+}
+function dropFlares(j, manual) {
+  j.flareCd = manual ? 9 : 12;
+  for (let i = 0; i < 6; i++) flares.push({ x: j.x, y: j.y, vx: -Math.cos(j.a) * rnd(60, 160) + rnd(-90, 90), vy: -Math.sin(j.a) * rnd(60, 160) + rnd(-90, 90), life: rnd(1.2, 1.8) });
+  for (const m of missiles) if (m.target === j && dist(m, j) < 520 && Math.random() < (manual ? 0.95 : 0.6)) m.decoyed = true;
+  floatText(j, 'FLARE', '#ff9f43');
+}
+function nearestEnemy(j) {
+  let best = null, bd = 1e9;
+  for (const o of jets) if (o !== j && o.alive) { const d = dist(j, o); if (d < bd) { bd = d; best = o; } }
+  return best;
+}
+
+// ---------- effects ----------
+function explode(x, y, big) {
+  const n = big ? 46 : 10;
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, Math.PI * 2), s = rnd(40, big ? 380 : 160);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rnd(0.4, big ? 1.4 : 0.5), max: 1.4, kind: Math.random() < 0.35 ? 'smoke' : 'fire', r: rnd(2, big ? 7 : 3) });
+  }
+  if (big) parts.push({ x, y, vx: 0, vy: 0, life: 0.5, max: 0.5, kind: 'ring', r: 10 });
+}
+function floatText(j, text, color) { floats.push({ x: j.x, y: j.y - 34, text, color, life: 1.3 }); }
+function say(text, color, big) { feed.push({ text, color: color || '#e8f6f4', life: big ? 5 : 7 }); if (feed.length > 6) feed.shift(); }
+function kill(victim, killer, how) {
+  victim.alive = false; victim.hp = 0;
+  explode(victim.x, victim.y, true);
+  if (killer && killer !== victim) { killer.kills++; say(`${killer.nick} ▸ ${victim.nick} 격추 (${how})`, killer.human ? `hsl(${killer.hue} 85% 68%)` : '#ff8a8a'); floatText(killer, 'SPLASH!', '#ffd34d'); }
+}
+function damage(v, amount, from, how) {
+  if (!v.alive) return;
+  v.hp -= amount; v.flash = 0.12;
+  if (v.hp <= 0) kill(v, from, how);
+}
+
+// ---------- AI / flight ----------
+function steer(j, want, dt, rate) {
+  const d = wrapA(want - j.a);
+  const turn = clamp(d, -rate * dt, rate * dt);
+  j.a = wrapA(j.a + turn);
+  return Math.abs(d);
+}
+function edgeAvoid(j, want) {
+  const M = 170;
+  let ax = 0, ay = 0;
+  if (j.x < M) ax = 1; else if (j.x > W - M) ax = -1;
+  if (j.y < M) ay = 1; else if (j.y > H - M) ay = -1;
+  if (!ax && !ay) return want;
+  const toC = Math.atan2(H / 2 - j.y, W / 2 - j.x);
+  const k = clamp(Math.max(ax ? (j.x < M ? (M - j.x) : (j.x - (W - M))) : 0, ay ? (j.y < M ? (M - j.y) : (j.y - (H - M))) : 0) / M, 0, 1);
+  return want + wrapA(toC - want) * k;
+}
+
+function flyLobby(j, dt) {
+  if (!j.wp || dist(j, j.wp) < 90) j.wp = { x: rnd(260, W - 260), y: rnd(200, H - 260) };
+  steer(j, edgeAvoid(j, Math.atan2(j.wp.y - j.y, j.wp.x - j.x)), dt, 1.3);
+  j.spd += (230 - j.spd) * dt;
+}
+
+function flyFight(j, dt) {
+  j.gunCd -= dt; j.msslCd -= dt; j.manualMsslCd -= dt; j.flareCd -= dt; j.retarget -= dt; j.jink -= dt;
+  if (!j.target || !j.target.alive || j.retarget <= 0) { j.target = nearestEnemy(j); j.retarget = rnd(2.5, 4.5); }
+  const t = j.target;
+  // incoming missile?
+  const threat = missiles.find((m) => m.target === j && !m.decoyed && dist(m, j) < 420);
+  if (threat) {
+    if (j.flareCd <= 0 && Math.random() < (j.human ? 0.5 : 0.65) * dt * 3) dropFlares(j, false);
+    if (j.jink <= 0) { j.jink = rnd(0.5, 0.9); j.jinkDir = Math.random() < 0.5 ? -1 : 1; }
+  }
+  let want = j.a, rate = 2.5;
+  if (j.jink > 0 && threat) { want = j.a + j.jinkDir * 1.5; rate = 3.4; }
+  else if (t) {
+    const d = dist(j, t);
+    const lead = d / 1100;
+    const px = t.x + Math.cos(t.a) * t.spd * lead, py = t.y + Math.sin(t.a) * t.spd * lead;
+    want = Math.atan2(py - j.y, px - j.x);
+    if (d < 110) want += Math.PI * 0.6; // don't ram: overshoot and come round
+  }
+  const off = steer(j, edgeAvoid(j, want), dt, rate);
+  j.spd += ((off > 0.8 ? 260 : 330) - j.spd) * dt * 1.5;
+  if (t) {
+    const d = dist(j, t);
+    const ang = Math.abs(wrapA(Math.atan2(t.y - j.y, t.x - j.x) - j.a));
+    if (d < 560 && ang < 0.2 && j.gunCd <= 0) {
+      j.gunCd = 0.09;
+      const a = j.a + rnd(-0.045, 0.045);
+      bullets.push({ x: j.x + Math.cos(j.a) * 22, y: j.y + Math.sin(j.a) * 22, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100, life: 0.6, owner: j });
+    }
+    if (roundT > 3 && j.msslCd <= 0 && roundT >= j.autoMsslAt && d < 950) {
+      if (fireMissile(j)) { j.msslCd = j.human ? rnd(15, 22) : rnd(9, 14); j.autoMsslAt = roundT + j.msslCd; }
+    }
+  }
+}
+
+function moveJet(j, dt) {
+  j.x += Math.cos(j.a) * j.spd * dt;
+  j.y += Math.sin(j.a) * j.spd * dt;
+  j.trailT -= dt; j.flash -= dt;
+  if (j.trailT <= 0) { j.trailT = 0.03; j.trail.push({ x: j.x - Math.cos(j.a) * 14, y: j.y - Math.sin(j.a) * 14 }); if (j.trail.length > 22) j.trail.shift(); }
+}
+
+// ---------- update ----------
+function update(dt) {
+  phaseT += dt;
+  if (phase === 'lobby') {
+    if (roster.size) { lobbyLeft -= dt; if (lobbyLeft <= 0) startFight(); }
+    else lobbyLeft = LOBBY_S;
+    for (const j of jets) { flyLobby(j, dt); moveJet(j, dt); }
+  } else if (phase === 'fight') {
+    roundT += dt;
+    for (const j of jets) if (j.alive) { flyFight(j, dt); moveJet(j, dt); }
+    for (const b of bullets) {
+      b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      for (const j of jets) if (j.alive && j !== b.owner && Math.hypot(j.x - b.x, j.y - b.y) < 18) { damage(j, 6, b.owner, '기관포'); b.life = 0; parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.15, max: 0.15, kind: 'fire', r: 4 }); break; }
+    }
+    for (const m of missiles) {
+      m.life -= dt; m.spd = Math.min(780, m.spd + 420 * dt);
+      let tx, ty;
+      if (m.decoyed) { const f = flares[flares.length - 1]; tx = f ? f.x : m.x + Math.cos(m.a) * 100; ty = f ? f.y : m.y + Math.sin(m.a) * 100; }
+      else if (m.target.alive) { tx = m.target.x; ty = m.target.y; }
+      else { tx = m.x + Math.cos(m.a) * 100; ty = m.y + Math.sin(m.a) * 100; }
+      const d = wrapA(Math.atan2(ty - m.y, tx - m.x) - m.a);
+      m.a = wrapA(m.a + clamp(d, -2.3 * dt, 2.3 * dt));
+      m.x += Math.cos(m.a) * m.spd * dt; m.y += Math.sin(m.a) * m.spd * dt;
+      m.trail.push({ x: m.x, y: m.y }); if (m.trail.length > 26) m.trail.shift();
+      if (!m.decoyed && m.target.alive && dist(m, m.target) < 26) { damage(m.target, 45, m.owner, '미사일'); explode(m.x, m.y, false); m.life = 0; }
+      if (m.life <= 0 && !(m.target.alive && dist(m, m.target) < 26)) explode(m.x, m.y, false);
+    }
+    bullets = bullets.filter((b) => b.life > 0);
+    missiles = missiles.filter((m) => m.life > 0 && m.x > -200 && m.x < W + 200 && m.y > -200 && m.y < H + 200);
+    const alive = jets.filter((j) => j.alive).length;
+    if (alive <= 1 || roundT > ROUND_LIMIT) endFight();
+  } else if (phase === 'result') {
+    if (winner && winner.alive) { flyLobby(winner, dt); moveJet(winner, dt); }
+    if (phaseT > RESULT_S) backToLobby();
+  }
+  for (const f of flares) { f.x += f.vx * dt; f.y += f.vy * dt + 40 * dt; f.vx *= 0.97; f.vy *= 0.97; f.life -= dt; }
+  flares = flares.filter((f) => f.life > 0);
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy = p.vy * 0.96 + (p.kind === 'smoke' ? -20 : 60) * dt; p.life -= dt; if (p.kind === 'ring') p.r += 420 * dt; }
+  parts = parts.filter((p) => p.life > 0);
+  for (const f of floats) { f.y -= 26 * dt; f.life -= dt; }
+  floats = floats.filter((f) => f.life > 0);
+  for (const f of feed) f.life -= dt;
+  feed = feed.filter((f) => f.life > 0);
+}
+
+// ---------- drawing ----------
+const SHAPE = [[22,0],[6,-4],[-3,-17],[-9,-17],[-6,-5],[-14,-8],[-17,-8],[-14,0],[-17,8],[-14,8],[-6,5],[-9,17],[-3,17],[6,4]];
+function text(s, x, y, size, color, align = 'left', weight = 700) {
+  g.font = `${weight} ${size}px ${FONT}`; g.textAlign = align; g.textBaseline = 'middle';
+  g.lineJoin = 'round'; g.lineWidth = Math.max(3, size / 5); g.strokeStyle = 'rgba(3,10,12,.85)';
+  g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+}
+function panel(x, y, w, h) {
+  g.fillStyle = 'rgba(7,14,16,.72)'; g.strokeStyle = 'rgba(47,216,200,.45)'; g.lineWidth = 2;
+  g.beginPath(); g.roundRect(x, y, w, h, 14); g.fill(); g.stroke();
+}
+function jetColor(j, l = 62) { return j.human ? `hsl(${j.hue} 80% ${l}%)` : `hsl(0 10% ${l - 8}%)`; }
+
+function drawJet(j, now) {
+  // trail
+  if (j.trail.length > 1) {
+    g.lineCap = 'round';
+    for (let i = 1; i < j.trail.length; i++) {
+      g.strokeStyle = `rgba(255,255,255,${(i / j.trail.length) * 0.35})`; g.lineWidth = (i / j.trail.length) * 3;
+      g.beginPath(); g.moveTo(j.trail[i - 1].x, j.trail[i - 1].y); g.lineTo(j.trail[i].x, j.trail[i].y); g.stroke();
+    }
+  }
+  g.save(); g.translate(j.x, j.y); g.rotate(j.a);
+  // afterburner
+  const fl = 10 + Math.sin(now * 40 + j.x) * 4;
+  g.fillStyle = 'rgba(255,170,60,.9)';
+  g.beginPath(); g.moveTo(-14, -3); g.lineTo(-14 - fl, 0); g.lineTo(-14, 3); g.fill();
+  g.beginPath();
+  SHAPE.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+  g.closePath();
+  g.fillStyle = j.flash > 0 ? '#fff' : jetColor(j);
+  g.strokeStyle = 'rgba(3,10,12,.9)'; g.lineWidth = 2.5;
+  g.fill(); g.stroke();
+  g.fillStyle = 'rgba(10,30,40,.85)'; g.beginPath(); g.ellipse(7, 0, 5, 2.2, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+  // label + hp
+  text(j.nick, j.x, j.y - 36, 22, j.human ? jetColor(j, 74) : '#d9b3b3', 'center');
+  if (phase === 'fight') {
+    g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(j.x - 24, j.y + 26, 48, 6);
+    g.fillStyle = j.hp > 50 ? '#5be37d' : j.hp > 25 ? '#ffc93c' : '#ff5f5f'; g.fillRect(j.x - 24, j.y + 26, 48 * clamp(j.hp / 100, 0, 1), 6);
+  }
+}
+
+function draw(now) {
+  g.clearRect(0, 0, W, H);
+  for (const f of flares) { g.fillStyle = `rgba(255,${150 + Math.random() * 80},60,${clamp(f.life, 0, 1)})`; g.beginPath(); g.arc(f.x, f.y, 4 + Math.random() * 2, 0, Math.PI * 2); g.fill(); }
+  for (const m of missiles) {
+    for (let i = 1; i < m.trail.length; i++) { g.strokeStyle = `rgba(220,220,220,${(i / m.trail.length) * 0.5})`; g.lineWidth = 3; g.beginPath(); g.moveTo(m.trail[i - 1].x, m.trail[i - 1].y); g.lineTo(m.trail[i].x, m.trail[i].y); g.stroke(); }
+    g.save(); g.translate(m.x, m.y); g.rotate(m.a); g.fillStyle = '#f2f2f2'; g.fillRect(-7, -2, 14, 4); g.fillStyle = '#ffb347'; g.fillRect(-11, -1.5, 4, 3); g.restore();
+  }
+  g.fillStyle = '#ffe9a0';
+  for (const b of bullets) { g.save(); g.translate(b.x, b.y); g.rotate(Math.atan2(b.vy, b.vx)); g.fillRect(-6, -1.2, 12, 2.4); g.restore(); }
+  for (const j of jets) if (j.alive) drawJet(j, now);
+  for (const p of parts) {
+    const k = clamp(p.life / p.max, 0, 1);
+    if (p.kind === 'ring') { g.strokeStyle = `rgba(255,220,150,${k})`; g.lineWidth = 3; g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.stroke(); continue; }
+    g.fillStyle = p.kind === 'smoke' ? `rgba(70,70,70,${k * 0.6})` : `rgba(255,${120 + k * 120},40,${k})`;
+    g.beginPath(); g.arc(p.x, p.y, p.r * (p.kind === 'smoke' ? 2 - k : 1), 0, Math.PI * 2); g.fill();
+  }
+  for (const f of floats) text(f.text, f.x, f.y, 20, f.color, 'center', 800);
+  drawHud();
+}
+
+function drawHud() {
+  // radio feed, bottom left
+  feed.forEach((f, i) => { g.globalAlpha = clamp(f.life, 0, 1); text(f.text, 40, H - 60 - (feed.length - 1 - i) * 36, 24, f.color); });
+  g.globalAlpha = 1;
+  if (phase === 'lobby') {
+    const n = roster.size;
+    const w = 760, x = (W - w) / 2, y = H - 150;
+    panel(x, y, w, 110);
+    text('공중전', x + 28, y + 34, 30, ACCENT, 'left', 900);
+    text(n ? `출격까지 ${Math.ceil(lobbyLeft)}초  ·  조종사 ${n}명` : '조종사 대기 중', x + w - 28, y + 34, 24, '#e8f6f4', 'right');
+    text('채팅에  !출격  을 입력해서 참전하세요', x + 28, y + 78, 24, '#ffd34d', 'left', 800);
+  } else if (phase === 'fight') {
+    const alive = jets.filter((j) => j.alive).length;
+    const left = Math.max(0, ROUND_LIMIT - roundT);
+    panel(W / 2 - 260, 24, 520, 60);
+    text(`생존 ${alive} / ${jets.length}`, W / 2 - 236, 54, 26, '#e8f6f4', 'left', 800);
+    text(`${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`, W / 2 + 236, 54, 26, left < 10 ? '#ff5f5f' : ACCENT, 'right', 800);
+    text('!미사일   !플레어', W / 2, 108, 20, '#9fb8b6', 'center', 700);
+  } else if (phase === 'result' && winner) {
+    const a = clamp(phaseT * 2, 0, 1);
+    g.globalAlpha = a;
+    panel(W / 2 - 440, H / 2 - 120, 880, 220);
+    text('MISSION ACCOMPLISHED', W / 2, H / 2 - 60, 34, ACCENT, 'center', 900);
+    text(winner.nick, W / 2, H / 2 + 4, 64, winner.human ? jetColor(winner, 72) : '#ffb0b0', 'center', 900);
+    text(`최후의 생존자  ·  격추 ${winner.kills}`, W / 2, H / 2 + 66, 26, '#e8f6f4', 'center');
+    g.globalAlpha = 1;
+  }
+  if (SHOW_BOARD && board.length) {
+    const x = W - 360, y = 24, h = 58 + board.length * 38;
+    panel(x, y, 336, h);
+    text('에이스 랭킹', x + 22, y + 30, 22, ACCENT, 'left', 900);
+    text('승 · 격추', x + 314, y + 30, 16, '#9fb8b6', 'right');
+    board.forEach((p, i) => {
+      const yy = y + 70 + i * 38;
+      text(`${i + 1}`, x + 26, yy, 22, i === 0 ? '#ffd34d' : '#9fb8b6', 'left', 900);
+      text(p.nick.length > 10 ? p.nick.slice(0, 10) + '…' : p.nick, x + 56, yy, 22, '#e8f6f4', 'left');
+      text(`${p.wins} · ${p.kills}`, x + 314, yy, 22, '#e8f6f4', 'right');
+    });
+  }
+}
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  draw(now / 1000);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------- chat link ----------
+if (!DEMO || Q.get('live') === '1') {
+  const es = new EventSource('/api/dogfight/events');
+  es.addEventListener('cmd', (e) => { try { onCmd(JSON.parse(e.data)); } catch {} });
+  es.addEventListener('donation', (e) => { try { onDonation(JSON.parse(e.data)); } catch {} });
+  es.addEventListener('board', (e) => { try { board = JSON.parse(e.data) || []; } catch {} });
+}
+if (DEMO) {
+  const fake = ['호시아', '별빛조종사', 'Cipher', '라면왕', '야간비행', '구름위'];
+  let k = 0;
+  setInterval(() => {
+    if (phase === 'lobby' && k < fake.length && Math.random() < 0.6) { const n = fake[k++]; onCmd({ uid: `demo:${n}`, nick: n, text: '!출격' }); }
+    if (phase === 'fight') {
+      const humans = [...roster.values()];
+      const p = humans[Math.floor(Math.random() * humans.length)];
+      if (p) onCmd({ uid: p.uid, nick: p.nick, text: Math.random() < 0.7 ? '!미사일' : '!플레어' });
+    }
+  }, 1500);
+}
+</script>
+</body>
+</html>
