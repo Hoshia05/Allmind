@@ -400,7 +400,7 @@ $s.Save()
 // ---------------- tray icon ----------------
 // A tiny PowerShell process owns the tray icon and prints the menu choice
 // on stdout. It exits on its own if Allmind goes away.
-export function startTray({ exe, onOpen, onDashboard, onQuit, labels }) {
+export function startTray({ exe, onOpen, onDashboard, onXylem, onQuit, labels }) {
   if (!isWin) return null;
   const script = `
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -411,6 +411,7 @@ $menu = New-Object System.Windows.Forms.ContextMenuStrip
 function Say($w) { [Console]::Out.WriteLine($w); [Console]::Out.Flush() }
 $a = $menu.Items.Add($env:SD_L_OPEN); $a.add_Click({ Say 'open' })
 $b = $menu.Items.Add($env:SD_L_DASH); $b.add_Click({ Say 'dashboard' })
+if ($env:SD_L_XYLEM) { $x = $menu.Items.Add($env:SD_L_XYLEM); $x.add_Click({ Say 'xylem' }) }
 [void]$menu.Items.Add('-')
 $c = $menu.Items.Add($env:SD_L_QUIT); $c.add_Click({ Say 'quit'; $ni.Visible = $false; [System.Windows.Forms.Application]::Exit() })
 $ni.ContextMenuStrip = $menu
@@ -425,7 +426,7 @@ $t.Start()
   const child = spawn('powershell.exe', psArgs(script, true), {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'ignore'],
-    env: { ...process.env, SD_EXE: exe, SD_PID: String(process.pid), SD_L_OPEN: labels.open, SD_L_DASH: labels.dashboard, SD_L_QUIT: labels.quit },
+    env: { ...process.env, SD_EXE: exe, SD_PID: String(process.pid), SD_L_OPEN: labels.open, SD_L_DASH: labels.dashboard, SD_L_XYLEM: labels.xylem || '', SD_L_QUIT: labels.quit },
   });
   child.on('error', () => {});
   let buf = '';
@@ -437,6 +438,7 @@ $t.Start()
       buf = buf.slice(i + 1);
       if (cmd === 'open') onOpen();
       if (cmd === 'dashboard') onDashboard();
+      if (cmd === 'xylem') onXylem?.();
       if (cmd === 'quit') onQuit();
     }
   });

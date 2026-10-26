@@ -38,7 +38,15 @@ await esbuild.build({
 
 // 2. SEA blob with the web page as assets
 const assets = { 'config.example.json': path.join(ROOT, 'config.example.json') };
-for (const f of fs.readdirSync(path.join(ROOT, 'public'))) assets[`public/${f}`] = path.join(ROOT, 'public', f);
+// every file under public/, subfolders included (public/xylem/ = the built-in Xylem pack)
+const walk = (rel) => {
+  for (const e of fs.readdirSync(path.join(ROOT, rel), { withFileTypes: true })) {
+    const r = `${rel}/${e.name}`;
+    if (e.isDirectory()) walk(r);
+    else assets[r] = path.join(ROOT, r);
+  }
+};
+walk('public');
 const seaConfig = {
   main: path.join(DIST, 'allmind.cjs'),
   output: path.join(DIST, 'sea-prep.blob'),

@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "minAllmind": "0.29.0",
+  "notes": "첫 Xylem 팩: 치즈 룰렛, 공중전",
+  "modules": [
+    {
+      "id": "roulette",
+      "name": "치즈 룰렛",
+      "icon": "🎡",
+      "overlay": "/roulette",
+      "panel": "roulette.panel.js"
+    },
+    {
+      "id": "dogfight",
+      "name": "공중전",
+      "icon": "✈️",
+      "overlay": "/dogfight",
+      "panel": "dogfight.panel.js"
+    }
+  ],
+  "files": {
+    "dogfight.html": "9963ecd0c0ab5ba617a27fb283658387581b823ac249c8529c4e6676ba5672fc",
+    "dogfight.panel.js": "6de99a859a4219eacb11dcebec3ef6ffd9882f882b2cc0f67127f59f141c93ef",
+    "index.html": "4d25a0d686b47dee0cf5996a3c7c9677ba5d6b6d925c731ef71a1efaf6aaa0d5",
+    "roulette.html": "e394a31880d8308e0d0f449e12428093ea4434349981f8b7c6cbc4e050c2acfd",
+    "roulette.panel.js": "28cb3c278ac446ab9958ecae4e2d85b3ec196db60392b7593a7fa1f90db2ac0b",
+    "xylem.css": "9beca687e02cd7166da271da373c22572c27410e54f457e95a96a13256c644fe",
+    "xylem.js": "48d4501d3f6153799e05e50a670e111c8cfe44b38527c8ba63fd6739f644c6c5"
+  }
+}

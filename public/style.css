@@ -815,3 +815,6 @@ body.docking canvas, body.docking iframe { pointer-events: none; }
 .sheet .up-name { font-size: 13px; padding: 5px 8px; }
 .up-bar { height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
 .up-bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; color: var(--text); }
+#xylemBtn { margin-left: auto; flex-shrink: 0; }
+#xylemBtn + .links { margin-left: 0; }

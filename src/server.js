@@ -25,10 +25,12 @@ import { loadState, saveState, freezeState, configPath as cfgPath } from './conf
 import * as backup from './backup.js';
 import { Updater } from './update.js';
 import { Dogfight } from './dogfight.js';
+import { XylemPack } from './xylem.js';
+import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.28.0';
+const VERSION = '0.29.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -82,7 +84,7 @@ function listen(server) {
 }
 
 // ---------- HTTP plumbing ----------
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json', '.json': 'application/json; charset=utf-8' };
 
 function readBody(req) {
   return new Promise((resolve) => {
@@ -325,7 +327,21 @@ async function main() {
   // chat log for SkyEye: only live messages (not the history replayed on reconnect)
   chzzk.on('live-chat', (list) => { for (const m of list) markers.addChat(m); });
   // 공중전 overlay: relays !commands to the OBS browser source, keeps the scoreboard
-  const dogfight = new Dogfight(chzzk);
+  // Xylem: viewer-interaction overlays + their settings pages, hot-swappable mid-stream (docs/plans/xylem.md)
+  const xylem = new XylemPack(config, VERSION);
+  const xylemPage = xylem.channel(); // open /xylem pages: told to reload on a pack switch
+  const dogfight = new Dogfight(chzzk, xylem);
+  const roulette = new Roulette(chzzk, xylem);
+  // while a Xylem page is open, look for a newer pack every 3 min (one small GitHub request)
+  setInterval(() => { if (xylemPage.size) xylem.check().catch(() => {}); }, 3 * 60000).unref();
+  const xylemState = () => ({
+    allmind: VERSION,
+    pack: xylem.status(),
+    chat: chzzk.chatState,
+    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size },
+    roulette: roulette.status(),
+    board: dogfight.board(),
+  });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
   const deck = new Deck({ config, bgm, soundboard, markers });
   let chatWasUp = null;
@@ -577,6 +593,17 @@ async function main() {
     'POST /api/drive/rename': (b) => drive.rename(b.id, b.name),
     'POST /api/drive/retry': (b) => drive.retry(b.id),
     'POST /api/drive/remove': (b) => drive.remove(b.id),
+
+    // ---------- Xylem (page /xylem) ----------
+    'POST /api/xylem/check': async () => ({ pack: await xylem.check() }),
+    'POST /api/xylem/apply': async () => ({ pack: await xylem.apply() }),
+    'POST /api/xylem/use': (b) => ({ pack: xylem.use(b.version || null) }),
+    'POST /api/roulette/settings': (b) => ({ settings: roulette.setSettings(b.settings) }),
+    'POST /api/roulette/test': (b) => ({ spins: roulette.test(b.spins) }),
+    'POST /api/roulette/done': (b) => roulette.setDone(String(b.id), b.done),
+    'POST /api/roulette/skip': () => roulette.skipAll(),
+    'POST /api/roulette/clear-log': () => roulette.clearLog(),
+    'POST /api/dogfight/reset': () => dogfight.reset(),
   };
   const SECRET_MASK = '••••••••';
   const chzzkRedirect = () => `http://localhost:${PORT}/api/chzzk-open/callback`;
@@ -815,10 +842,18 @@ async function main() {
     }
 
     // 공중전 overlay (OBS browser source: http://localhost:<port>/dogfight)
-    if (key === 'GET /dogfight') {
-      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
-      return res.end(readAsset('public/dogfight.html'));
+    // Xylem pack files: the page, overlays (OBS browser sources) and panel scripts — from the active pack
+    if (req.method === 'GET' && (url.pathname === '/xylem' || url.pathname.startsWith('/xylem/') || url.pathname === '/dogfight' || url.pathname === '/roulette')) {
+      const name = url.pathname === '/xylem' || url.pathname === '/xylem/' ? 'index.html' : url.pathname.startsWith('/xylem/') ? decodeURIComponent(url.pathname.slice(7)) : `${url.pathname.slice(1)}.html`;
+      const body = xylem.file(name);
+      if (!body) return json(res, 404, { error: 'Not found' });
+      res.writeHead(200, { 'Content-Type': MIME[path.extname(name)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+      return res.end(body);
     }
+    if (key === 'GET /api/xylem/state') return json(res, 200, { ok: true, ...xylemState() }); // polled by the Xylem page; no dashboard broadcast
+    if (key === 'GET /api/xylem/events') return xylemPage.attach(req, res);
+    if (key === 'GET /api/roulette/events') return roulette.attach(req, res);
+    if (key === 'POST /api/roulette/shown') { roulette.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
     if (key === 'GET /api/dogfight/events') return dogfight.attach(req, res);
     if (key === 'GET /api/dogfight/board') return json(res, 200, dogfight.board());
     if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
@@ -952,7 +987,8 @@ async function main() {
   if (win.isWin) {
     win.startTray({
       exe: process.execPath,
-      labels: { open: 'Allmind 열기', dashboard: '대시보드 열기 (이 PC)', quit: '종료' },
+      labels: { open: 'Allmind 열기', dashboard: '대시보드 열기 (이 PC)', xylem: 'Xylem 열기 (룰렛·게임)', quit: '종료' },
+      onXylem: () => win.openAppWindow(`http://127.0.0.1:${PORT}/xylem`, { width: 1200, height: 900 }),
       onOpen: openLauncher,
       onDashboard: openDashboardHere,
       onQuit: quit,

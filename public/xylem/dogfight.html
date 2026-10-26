@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>공중전 · Allmind</title>
+<title>공중전 · Xylem</title>
 <!--
   공중전 (dogfight) — OBS browser source overlay, 1920×1080, transparent.
   Chat: !출격 join · !미사일 fire a missile · !플레어 flares · !회피 cobra (missiles overshoot)
@@ -797,6 +797,10 @@ requestAnimationFrame(frame);
 // ---------- chat link ----------
 if (!DEMO || Q.get('live') === '1') {
   const es = new EventSource('/api/dogfight/events');
+  // Xylem pack switched (patched mid-stream) → load the new page
+  let packV = null;
+  es.addEventListener('hello', (e) => { try { const v = JSON.parse(e.data).pack; if (packV && v !== packV) location.reload(); packV = v; } catch {} });
+  es.addEventListener('reload', () => location.reload());
   es.addEventListener('cmd', (e) => { try { onCmd(JSON.parse(e.data)); } catch {} });
   es.addEventListener('board', (e) => { try { board = JSON.parse(e.data) || []; } catch {} });
 }

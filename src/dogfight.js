@@ -1,5 +1,5 @@
 // 공중전 (dogfight) overlay — the server half.
-// The game itself runs in the OBS browser source (public/dogfight.html).
+// The game itself runs in the OBS browser source (public/xylem/dogfight.html, part of the Xylem pack).
 // This only relays chat commands (!출격, !미사일 …) to it, and
 // keeps the pilot scoreboard (wins/kills) across streams in DATA_DIR/dogfight.json.
 // Costs nothing while no overlay is connected.
@@ -8,12 +8,12 @@ import { loadState, saveState } from './config.js';
 const MAX_PILOTS = 2000;
 
 export class Dogfight {
-  constructor(chzzk) {
-    this.clients = new Set();
+  constructor(chzzk, pack) {
     const saved = loadState('dogfight', {});
     this.pilots = saved.pilots && typeof saved.pilots === 'object' ? saved.pilots : {};
+    this.ch = pack.channel(() => [['board', this.board()]]);
     chzzk.on('live-chat', (list) => {
-      if (!this.clients.size) return;
+      if (!this.ch.size) return;
       for (const m of list) {
         if (m.hidden) continue;
         if (m.kind === 'chat' && /^\s*!/.test(m.text || '')) {
@@ -23,19 +23,10 @@ export class Dogfight {
     });
   }
 
-  send(event, data) {
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const res of this.clients) res.write(payload);
-  }
-
+  get overlays() { return this.ch.size; }
+  send(event, data) { this.ch.send(event, data); }
   // GET /api/dogfight/events
-  attach(req, res) {
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-    res.write(`event: board\ndata: ${JSON.stringify(this.board())}\n\n`);
-    this.clients.add(res);
-    const ping = setInterval(() => res.write(': ping\n\n'), 15000);
-    req.on('close', () => { clearInterval(ping); this.clients.delete(res); });
-  }
+  attach(req, res) { this.ch.attach(req, res); }
 
   // Test / manual input: POST /api/dogfight/cmd {nick, text}
   inject({ nick, text, uid, role }) {

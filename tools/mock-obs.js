@@ -503,7 +503,7 @@ const chzzkHttp = http.createServer((req, res) => {
     return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
   }
   if (req.url.startsWith('/nng_main/v1/chats/access-token')) return send({ accessToken: 'mock-token', extraToken: 'x' });
-  if (req.url.startsWith('/g/') || req.url.startsWith('/c/')) return mockApis(req, res);
+  if (req.url.startsWith('/g/') || req.url.startsWith('/c/') || req.url.startsWith('/xylem-pack/')) return mockApis(req, res);
   res.writeHead(404).end();
 });
 const chatWss = new WebSocketServer({ server: chzzkHttp, path: '/chat' });
@@ -684,6 +684,13 @@ async function mockApis(req, res) {
     return out(308, undefined, s.got ? { Range: `bytes=0-${s.got - 1}` } : {});
   }
 
+  // --- Xylem pack server (pack updates): MOCK_PACK_DIR=<folder> → GET /xylem-pack/<file> ---
+  if (p.startsWith('/xylem-pack/') && process.env.MOCK_PACK_DIR) {
+    const f = path.join(process.env.MOCK_PACK_DIR, path.basename(decodeURIComponent(p.slice(12))));
+    if (!fs.existsSync(f)) return out(404, { error: 'not found' });
+    res.writeHead(200, { 'Content-Type': f.endsWith('.json') ? 'application/json' : 'text/plain' });
+    return res.end(fs.readFileSync(f));
+  }
   // --- CHZZK Open API ---
   if (p === '/c/account-interlock') {
     res.writeHead(302, { Location: `${u.searchParams.get('redirectUri')}?code=ccode&state=${u.searchParams.get('state')}` });
