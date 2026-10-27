@@ -1045,6 +1045,7 @@ function setChatTab(tab) {
   pref.set('chatTab', tab);
   for (const b of $('chatTabs').children) b.classList.toggle('on', b.dataset.tab === tab);
   $('chatText').hidden = tab !== 'text';
+  $('chatSend').hidden = tab !== 'text';
   $('chatDonations').hidden = tab !== 'donations';
   $('chatMirror').hidden = tab !== 'mirror';
 
@@ -1055,8 +1056,34 @@ function setChatTab(tab) {
 }
 $('chatTabs').addEventListener('click', (ev) => { if (ev.target.dataset?.tab) setChatTab(ev.target.dataset.tab); });
 
+// ---------- sending chat (official CHZZK API, as the logged-in streamer account) ----------
+let chatSending = false, chatLastSent = 0;
+function renderChatSend() {
+  const ok = !!S?.chzzkOpen?.loggedIn;
+  $('chatInput').disabled = !ok;
+  $('chatSendBtn').disabled = !ok || chatSending;
+  $('chatInput').placeholder = ok ? '채팅 보내기 (Enter)' : '채팅을 보내려면 설정 창에서 치지직 연동 로그인';
+}
+$('chatInput').addEventListener('input', () => {
+  const n = [...$('chatInput').value].length;
+  $('chatCount').textContent = n > 80 ? `${n}/100` : '';
+});
+$('chatSend').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const text = $('chatInput').value.trim();
+  if (!text || chatSending) return;
+  if (Date.now() - chatLastSent < 1000) return toast('조금 천천히 보내 주세요', true);
+  chatSending = true; renderChatSend();
+  const r = await api('chat/send', { message: text });
+  chatSending = false; chatLastSent = Date.now();
+  if (r.ok) { $('chatInput').value = ''; $('chatCount').textContent = ''; }
+  renderChatSend();
+  $('chatInput').focus();
+});
+
 function renderChatState() {
   if (!S) return;
+  renderChatSend();
   const { channelId, chat } = S.chzzk;
   $('channelForm').hidden = !!channelId || chatTab === 'mirror';
   if (!channelId && chatTab === 'donations') $('donList').innerHTML = '<li class="don-empty">치지직 채널을 연결하면 후원이 여기에 모여요</li>';

@@ -814,3 +814,12 @@ body.docking canvas, body.docking iframe { pointer-events: none; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; color: var(--text); }
 #xylemBtn { margin-left: auto; flex-shrink: 0; }
 #xylemBtn + .links { margin-left: 0; }
+
+/* sending chat */
+.chat-send { display: flex; gap: 6px; align-items: center; padding-top: 6px; border-top: 1px solid var(--line); margin-top: 4px; position: relative; }
+.chat-send[hidden] { display: none; }
+.chat-send input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; color: var(--text); font: inherit; font-size: 13px; outline: none; }
+.chat-send input:focus { border-color: var(--accent); }
+.chat-send input:disabled { opacity: .6; }
+.chat-send .btn { padding: 6px 12px; }
+.chat-count { position: absolute; right: 86px; font-size: 10.5px; color: var(--muted); pointer-events: none; }

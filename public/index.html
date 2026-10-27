@@ -115,6 +115,11 @@
         <ol class="chat-list" id="chatList"></ol>
         <button class="btn accent new-msgs" id="newMsgs" hidden>새 메시지 ↓</button>
       </div>
+      <form class="chat-send" id="chatSend" autocomplete="off">
+        <input type="text" id="chatInput" maxlength="100" placeholder="채팅 보내기" enterkeyhint="send">
+        <span class="chat-count" id="chatCount"></span>
+        <button class="btn accent" type="submit" id="chatSendBtn">보내기</button>
+      </form>
       <div class="chat-body donations" id="chatDonations" hidden>
         <div class="don-summary">
           <span><b id="donCount">0</b>건</span>

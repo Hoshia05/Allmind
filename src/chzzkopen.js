@@ -170,6 +170,20 @@ export class ChzzkOpen extends EventEmitter {
     await this.api('PATCH', '/open/v1/lives/setting', body);
   }
 
+  // Chat as the logged-in account (the streamer). Needs the app scope "채팅 메시지 쓰기"; max 100 chars.
+  async sendChat(message) {
+    const text = String(message || '').replace(/\s+/g, ' ').trim();
+    if (!text) throw new Error('보낼 내용이 없어요');
+    if ([...text].length > 100) throw new Error('채팅은 100자까지예요');
+    try {
+      const c = await this.api('POST', '/open/v1/chats/send', { message: text });
+      return { messageId: c.messageId || null };
+    } catch (e) {
+      if (/scope|권한|forbidden|403|INSUFFICIENT/i.test(e.message)) throw new Error('채팅을 보낼 권한이 없어요 — CHZZK Developers의 내 앱에 "채팅 메시지 쓰기" 권한을 추가하고, 설정 창에서 치지직 로그인을 다시 해 주세요');
+      throw e;
+    }
+  }
+
   async searchCategory(q) {
     const c = await this.api('GET', '/open/v1/categories/search', undefined, { user: false, query: { query: q, size: 20 } });
     return (c.data || []).map((x) => ({ categoryType: x.categoryType, categoryId: x.categoryId, categoryValue: x.categoryValue, posterImageUrl: x.posterImageUrl }));

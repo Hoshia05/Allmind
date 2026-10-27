@@ -32,7 +32,7 @@ import { VTS } from './vts.js';
 import { VTSThrow } from './vtsthrow.js';
 import * as win from './win.js';
 
-const VERSION = '0.33.0';
+const VERSION = '0.34.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -608,6 +608,10 @@ async function main() {
     'POST /api/roulette/skip': () => roulette.skipAll(),
     'POST /api/roulette/clear-log': () => roulette.clearLog(),
     'POST /api/dogfight/reset': () => dogfight.reset(),
+    'POST /api/chat/send': async (b) => {
+      if (!chzzkOpen.status().loggedIn) throw new Error('채팅을 보내려면 방송 PC 설정 창에서 치지직 연동 로그인을 해 주세요');
+      return chzzkOpen.sendChat(b.message);
+    },
     'POST /api/dogfight/mode': (b) => ({ mode: dogfight.setMode(b) }),
     // ---------- VTube Studio ----------
     'POST /api/vts/connect': (b) => {

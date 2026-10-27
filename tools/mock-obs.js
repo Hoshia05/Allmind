@@ -431,6 +431,8 @@ const lines = ['ㅋㅋㅋㅋㅋ', '안녕하세요!', '오늘 방송 몇시까�
 const EMOJIS = { d_33: 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="#ffd34d"/><circle cx="7.5" cy="9" r="1.6"/><circle cx="14.5" cy="9" r="1.6"/><path d="M6 13q5 5 10 0" stroke="#000" fill="none" stroke-width="1.6"/></svg>').toString('base64'),
   d_2: 'data:image/svg+xml;base64,' + Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22"><path d="M11 19 3 11a4.5 4.5 0 0 1 8-5 4.5 4.5 0 0 1 8 5z" fill="#ff5c8a"/></svg>').toString('base64') };
 const recent = [];
+const chatPushers = new Set(); // connected chat sockets: chats sent through the Open API show up here
+const sentChats = [];
 let viewers = 37;
 const openDate = new Date(Date.now() - 83 * 60000 + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
 
@@ -511,6 +513,7 @@ chatWss.on('connection', (ws) => {
   log('chat client connected');
   const timers = [];
   const push = (cmd, bdy) => ws.readyState === 1 && ws.send(JSON.stringify({ ver: '2', cmd, svcid: 'game', cid: CHAT_CID, bdy }));
+  chatPushers.add(push); ws.on('close', () => chatPushers.delete(push));
   ws.on('message', (raw) => {
     const m = JSON.parse(raw);
     if (m.cmd === 100) {
@@ -723,6 +726,14 @@ async function mockApis(req, res) {
     return cs({ data: all.filter((c) => c.categoryValue.toLowerCase().includes(q)) });
   }
   if (!auth.startsWith('Bearer cat')) return cs('INVALID_TOKEN', 401);
+  if (p === '/c/open/v1/chats/send' && req.method === 'POST') {
+    const m = j?.message || '';
+    if (process.env.MOCK_CHZZK_NOCHAT) return cs('INSUFFICIENT_SCOPE', 403);
+    log('chat send:', m); sentChats.push(m);
+    const x = { uid: 'u_hoshia', msgTime: Date.now(), profile: JSON.stringify({ nickname: '호시아', userRoleCode: 'streamer', activityBadges: [] }), msgTypeCode: 1, msg: m, extras: JSON.stringify({ emojis: {} }) };
+    recent.push(x); for (const push of chatPushers) push(93101, [x]);
+    return cs({ messageId: 'mock-' + Date.now() });
+  }
   if (p === '/c/open/v1/users/me') return cs({ channelId: '0123456789abcdef0123456789abcdef', channelName: '호시아' });
   if (p === '/c/open/v1/lives/setting' && req.method === 'GET') return cs(chzzkSetting);
   if (p === '/c/open/v1/lives/setting' && req.method === 'PATCH') {
