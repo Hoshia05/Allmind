@@ -7,6 +7,9 @@
   치즈 룰렛 overlay — OBS browser source http://localhost:8080/roulette (suggested 800×900, transparent).
   Allmind decides every result and queues it; this page only animates the wheel onto that result and
   reports back when it has been shown, so a reload mid-spin replays the same spin.
+  Rarity (from Allmind, per result): 일반 · 희귀 (slower stop, gold glow, sparkles) · 전설 (long crawl,
+  flash, confetti, banner). A donation worth `fastFrom`+ spins plays fast, then shows a summary card.
+  무료 룰렛 (wheels the streamer spins) use the same overlay with their own title and items.
   Options: ?sound=0 (no tick/chime) · ?demo=1 (spins on its own, for positioning in OBS)
 -->
 <style>
@@ -28,26 +31,41 @@ let W = 0, H = 0, DPR = 1;
 function resize() { DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR; g.setTransform(DPR, 0, 0, DPR, 0, 0); }
 addEventListener('resize', resize); resize();
 
-let cfg = { title: '치즈 룰렛', items: [], spinSec: 6, holdSec: 5 };
+let cfg = { title: '치즈 룰렛', items: [], spinSec: 6, holdSec: 5, fastFrom: 3, wheels: [] };
 let queue = [];
-let cur = null;      // { row, items, start, from, to, phase: 'in'|'spin'|'hold'|'out', t0 }
+let cur = null;      // { row, sl, from, to, phase: 'in'|'spin'|'hold'|'next'|'summary'|'out', t0, fast, spinSec, holdSec }
 let rot = 0;         // current wheel rotation (rad)
 let alpha = 0;       // overall visibility
 const done = new Set(); // ids shown by this page (until the server confirms)
+const groups = new Map(); // group id → results shown so far (for the summary card)
+let fx = [];         // particles: sparkles + confetti
+let flash = 0;       // white flash (전설)
+
+const TIER = {
+  normal: { label: '', extra: 0, color: null },
+  rare: { label: '✦ 희귀', extra: 1.2, color: '#ffd34d' },
+  legend: { label: '★ 전설 ★', extra: 2.6, color: '#ff7ad9' },
+};
+const tierOf = (row) => (TIER[row.tier] ? row.tier : 'normal');
 
 // ---------- sound (WebAudio; OBS captures browser-source audio) ----------
 let ac = null;
-function beep(freq, dur, vol = 0.12, type = 'triangle') {
+function beep(freq, dur, vol = 0.12, type = 'triangle', delay = 0) {
   if (!SOUND) return;
   try {
     ac ||= new AudioContext();
+    const t = ac.currentTime + delay;
     const o = ac.createOscillator(), gn = ac.createGain();
     o.type = type; o.frequency.value = freq;
-    gn.gain.setValueAtTime(vol, ac.currentTime); gn.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
-    o.connect(gn).connect(ac.destination); o.start(); o.stop(ac.currentTime + dur);
+    gn.gain.setValueAtTime(vol, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(gn).connect(ac.destination); o.start(t); o.stop(t + dur);
   } catch {}
 }
-const chime = () => { [660, 880, 1320].forEach((f, i) => setTimeout(() => beep(f, 0.35, 0.14, 'sine'), i * 110)); };
+function landSound(tier) {
+  if (tier === 'legend') { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => beep(f, 0.5, 0.15, 'sine', i * 0.09)); beep(2093, 1.2, 0.1, 'sine', 0.6); }
+  else if (tier === 'rare') { [784, 988, 1175, 1568].forEach((f, i) => beep(f, 0.4, 0.14, 'sine', i * 0.09)); }
+  else [660, 880, 1320].forEach((f, i) => beep(f, 0.35, 0.14, 'sine', i * 0.11));
+}
 
 // ---------- wheel geometry ----------
 function slices(items) {
@@ -55,13 +73,19 @@ function slices(items) {
   let a = 0;
   return items.filter((it) => it.weight > 0).map((it) => { const span = (it.weight / total) * Math.PI * 2; const s = { ...it, a0: a, a1: a + span }; a += span; return s; });
 }
-const easeOut = (t) => 1 - Math.pow(1 - t, 4);
+const easeOut = (t, p = 4) => 1 - Math.pow(1 - t, p);
+const wheelOf = (row) => (row.wheel ? cfg.wheels.find((w) => w.id === row.wheel) : null);
+const isFast = (row) => cfg.fastFrom > 0 && row.of >= cfg.fastFrom;
 
 function startNext() {
   const row = queue.find((r) => !done.has(r.id));
   if (!row) return;
-  let items = cfg.items.slice();
-  if (!items.some((it) => it.id === row.itemId)) items.push({ id: row.itemId, name: row.result, weight: (items.reduce((a, b) => a + b.weight, 0) || 1) * 0.08, color: row.color || '#888' });
+  const wheel = wheelOf(row);
+  // the result must be on the wheel even if the settings changed since it was decided (removed, or weight 0)
+  const src = wheel ? wheel.items : cfg.items;
+  const small = (src.reduce((a, b) => a + Math.max(0, b.weight), 0) || 1) * 0.08;
+  let items = src.map((it) => (it.id === row.itemId && !(it.weight > 0) ? { ...it, weight: small } : it));
+  if (!items.some((it) => it.id === row.itemId)) items.push({ id: row.itemId, name: row.result, weight: small, color: row.color || '#888' });
   const sl = slices(items);
   const hit = sl.find((s) => s.id === row.itemId);
   const span = hit.a1 - hit.a0;
@@ -69,14 +93,36 @@ function startNext() {
   // the pointer is at the top (-90°): rotation r puts angle `at` there when at + r ≡ -π/2
   const base = -Math.PI / 2 - at;
   const from = rot % (Math.PI * 2);
+  const fast = isFast(row);
+  const tier = tierOf(row);
+  const turns = fast ? 2 : tier === 'legend' ? 7 : 5;
   let to = base;
-  while (to < from + Math.PI * 2 * 5) to += Math.PI * 2; // at least 5 full turns
-  cur = { row, sl, from, to, phase: 'in', t0: performance.now(), lastSlice: -1 };
+  while (to < from + Math.PI * 2 * turns) to += Math.PI * 2;
+  const T = TIER[tier];
+  const spinSec = fast ? 1.3 + T.extra * 0.5 : cfg.spinSec + T.extra;
+  const holdSec = fast ? (tier === 'normal' ? 0.7 : 1.8) : cfg.holdSec + (tier === 'legend' ? 1.5 : 0);
+  cur = { row, wheel, sl, from, to, phase: alpha >= 1 ? 'spin' : 'in', t0: performance.now(), lastSlice: -1, fast, tier, spinSec, holdSec };
 }
 
 function ack(id) {
   done.add(id);
+  if (DEMO) { queue = queue.filter((r) => r.id !== id); return; }
   fetch('/api/roulette/shown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }).catch(() => {});
+}
+
+function land() {
+  const { row, tier } = cur;
+  landSound(tier);
+  if (!groups.has(row.group)) groups.set(row.group, []);
+  groups.get(row.group).push({ result: row.result, color: row.color, tier });
+  const R = radius(), cx = W / 2, cy = H * 0.46;
+  if (tier === 'rare' || tier === 'legend') {
+    for (let i = 0; i < (tier === 'legend' ? 70 : 36); i++) { const a = Math.random() * Math.PI * 2; fx.push({ kind: 'spark', x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R, vx: Math.cos(a) * (40 + Math.random() * 160), vy: Math.sin(a) * (40 + Math.random() * 160), life: 0.9 + Math.random() * 0.6, max: 1.5, c: tier === 'legend' ? `hsl(${Math.random() * 360} 90% 70%)` : '#ffe27a' }); }
+  }
+  if (tier === 'legend') {
+    flash = 1;
+    for (let i = 0; i < 160; i++) fx.push({ kind: 'confetti', x: Math.random() * W, y: -20 - Math.random() * H * 0.5, vx: (Math.random() - 0.5) * 60, vy: 120 + Math.random() * 160, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 10, life: 4 + Math.random() * 2, max: 6, c: `hsl(${Math.random() * 360} 90% 62%)`, w: 6 + Math.random() * 6 });
+  }
 }
 
 function tick(now) {
@@ -85,18 +131,30 @@ function tick(now) {
     const t = (now - cur.t0) / 1000;
     if (cur.phase === 'in') { alpha = Math.min(1, t / 0.35); if (t >= 0.35) { cur.phase = 'spin'; cur.t0 = now; } }
     else if (cur.phase === 'spin') {
-      const k = Math.min(1, t / cfg.spinSec);
-      rot = cur.from + (cur.to - cur.from) * easeOut(k);
+      const k = Math.min(1, t / cur.spinSec);
+      rot = cur.from + (cur.to - cur.from) * easeOut(k, cur.tier === 'legend' ? 5.5 : cur.tier === 'rare' ? 4.8 : 4);
       // tick on every slice boundary passing the pointer
       const at = ((-Math.PI / 2 - rot) % (Math.PI * 2) + Math.PI * 4) % (Math.PI * 2);
       const idx = cur.sl.findIndex((s) => at >= s.a0 && at < s.a1);
-      if (idx !== cur.lastSlice) { if (cur.lastSlice !== -1) beep(1200, 0.04, 0.06, 'square'); cur.lastSlice = idx; }
-      if (k >= 1) { cur.phase = 'hold'; cur.t0 = now; chime(); }
+      if (idx !== cur.lastSlice) { if (cur.lastSlice !== -1) beep(1200, 0.04, cur.fast ? 0.04 : 0.06, 'square'); cur.lastSlice = idx; }
+      if (k >= 1) { cur.phase = 'hold'; cur.t0 = now; land(); }
     } else if (cur.phase === 'hold') {
-      if (t >= cfg.holdSec) { ack(cur.row.id); const more = queue.some((r) => !done.has(r.id)); cur.phase = more ? 'next' : 'out'; cur.t0 = now; }
+      if (t >= cur.holdSec) {
+        ack(cur.row.id);
+        const last = cur.row.idx >= cur.row.of;
+        const more = queue.some((r) => !done.has(r.id));
+        if (cur.fast && last) { cur.phase = 'summary'; cur.t0 = now; beep(990, 0.3, 0.1, 'sine'); }
+        else { cur.phase = more ? 'next' : 'out'; cur.t0 = now; }
+      }
+    } else if (cur.phase === 'summary') {
+      if (t >= Math.max(3.5, cfg.holdSec)) { groups.delete(cur.row.group); const more = queue.some((r) => !done.has(r.id)); cur.phase = more ? 'next' : 'out'; cur.t0 = now; }
     } else if (cur.phase === 'next') { cur = null; }
     else if (cur.phase === 'out') { alpha = Math.max(0, 1 - t / 0.5); if (t >= 0.5) cur = null; }
   }
+  const dt = Math.min(0.05, (now - (tick.last || now)) / 1000); tick.last = now;
+  for (const p of fx) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; if (p.kind === 'confetti') { p.rot += p.vr * dt; p.vx += Math.sin(now / 300 + p.y / 50) * 20 * dt; } else { p.vx *= 0.95; p.vy *= 0.95; } }
+  fx = fx.filter((p) => p.life > 0 && p.y < H + 30);
+  flash = Math.max(0, flash - dt * 1.6);
   draw(now);
   requestAnimationFrame(tick);
 }
@@ -108,24 +166,52 @@ function text(s, x, y, size, color, weight = 800, align = 'center') {
   g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
 }
 function fit(s, max, size) { g.font = `800 ${size}px ${FONT}`; while (size > 10 && g.measureText(s).width > max) { size -= 1; g.font = `800 ${size}px ${FONT}`; } return size; }
+const radius = () => Math.min(W, H * 0.78) * 0.42;
 
 function draw(now) {
   g.clearRect(0, 0, W, H);
-  if (!cur || alpha <= 0) return;
-  g.globalAlpha = alpha;
-  const R = Math.min(W, H * 0.78) * 0.42;
+  if (cur && alpha > 0) {
+    g.globalAlpha = alpha;
+    if (cur.phase === 'summary') drawSummary(now); else drawWheel(now);
+    g.globalAlpha = 1;
+  }
+  // particles + flash over everything
+  for (const p of fx) {
+    const k = Math.max(0, Math.min(1, p.life / p.max * 1.5));
+    if (p.kind === 'spark') { g.fillStyle = p.c; g.globalAlpha = k; g.beginPath(); g.arc(p.x, p.y, 2.5 + k * 2.5, 0, Math.PI * 2); g.fill(); }
+    else { g.save(); g.translate(p.x, p.y); g.rotate(p.rot); g.globalAlpha = Math.min(1, p.life); g.fillStyle = p.c; g.fillRect(-p.w / 2, -p.w / 4, p.w, p.w / 2); g.restore(); }
+  }
+  g.globalAlpha = 1;
+  if (flash > 0) { g.fillStyle = `rgba(255,255,255,${flash * 0.55})`; g.fillRect(0, 0, W, H); }
+}
+
+function drawWheel(now) {
+  const R = radius();
   const cx = W / 2, cy = H * 0.46;
-  // title
   const row = cur.row;
-  const head = `${row.nick}${row.of > 1 ? `  ·  ${row.idx}/${row.of}` : ''}`;
-  text(cfg.title, cx, cy - R - 64, Math.max(18, R * 0.12), '#ffd34d', 900);
-  text(head, cx, cy - R - 26, fit(head, W * 0.9, Math.max(16, R * 0.11)), '#ffffff', 800);
-  // wheel
+  const title = cur.wheel ? cur.wheel.title : row.wheelTitle || cfg.title;
+  const head = row.wheel ? (row.of > 1 ? `${row.idx} / ${row.of}` : '') : `${row.nick}${row.of > 1 ? `  ·  ${row.idx}/${row.of}` : ''}`;
+  text(title, cx, cy - R - 64, Math.max(18, R * 0.12), '#ffd34d', 900);
+  if (head) text(head, cx, cy - R - 26, fit(head, W * 0.9, Math.max(16, R * 0.11)), '#ffffff', 800);
+  const landed = cur.phase === 'hold' || cur.phase === 'out' || cur.phase === 'next';
+  // rarity glow behind the wheel once it has landed
+  if (landed && cur.tier !== 'normal') {
+    const k = Math.min(1, (now - cur.t0) / 300);
+    const gr = g.createRadialGradient(cx, cy, R * 0.8, cx, cy, R * 1.35);
+    const c = cur.tier === 'legend' ? `hsla(${(now / 8) % 360},95%,65%,` : 'rgba(255,211,77,';
+    gr.addColorStop(0, `${c}${0.55 * k})`); gr.addColorStop(1, `${c}0)`);
+    g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, R * 1.35, 0, Math.PI * 2); g.fill();
+  }
   g.save(); g.translate(cx, cy); g.rotate(rot);
   for (const s of cur.sl) {
     g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R, s.a0, s.a1); g.closePath();
     g.fillStyle = s.color; g.fill();
     g.strokeStyle = 'rgba(5,10,12,.55)'; g.lineWidth = 2; g.stroke();
+    // rare / legendary slices carry a thin shimmering edge so viewers can see what's at stake
+    if (s.tierEff === 'rare' || s.tierEff === 'legend') {
+      g.beginPath(); g.arc(0, 0, R - 5, s.a0 + 0.01, s.a1 - 0.01);
+      g.strokeStyle = s.tierEff === 'legend' ? `hsl(${(now / 6) % 360} 95% 70%)` : `rgba(255,226,122,${0.6 + 0.4 * Math.sin(now / 200)})`; g.lineWidth = 5; g.stroke();
+    }
     // label along the slice's middle
     const mid = (s.a0 + s.a1) / 2, span = s.a1 - s.a0;
     if (span > 0.12) {
@@ -143,22 +229,58 @@ function draw(now) {
   // rim + hub
   g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.strokeStyle = '#0b1214'; g.lineWidth = 8; g.stroke();
   g.strokeStyle = 'rgba(47,216,200,.9)'; g.lineWidth = 3; g.stroke();
+  if (landed && cur.tier === 'legend') { // a spinning rainbow ring
+    for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2 + now / 600; g.fillStyle = `hsl(${i * 15} 95% 65%)`; g.beginPath(); g.arc(cx + Math.cos(a) * (R + 16), cy + Math.sin(a) * (R + 16), 5, 0, Math.PI * 2); g.fill(); }
+  }
   g.beginPath(); g.arc(cx, cy, R * 0.1, 0, Math.PI * 2); g.fillStyle = '#0b1214'; g.fill(); g.strokeStyle = '#2fd8c8'; g.lineWidth = 3; g.stroke();
   // pointer
   g.beginPath(); g.moveTo(cx, cy - R + 26); g.lineTo(cx - 18, cy - R - 12); g.lineTo(cx + 18, cy - R - 12); g.closePath();
   g.fillStyle = '#ffd34d'; g.fill(); g.strokeStyle = '#0b1214'; g.lineWidth = 3; g.stroke();
   // result
-  if (cur.phase === 'hold' || cur.phase === 'out' || cur.phase === 'next') {
+  if (landed) {
     const k = Math.min(1, (now - cur.t0) / 250);
-    const y = cy + R + 60;
+    const y = cy + R + (cur.tier === 'normal' ? 60 : 78); // room for the 희귀/전설 label above the card
     const w = Math.min(W * 0.9, R * 2.2), h = Math.max(56, R * 0.3);
+    const T = TIER[cur.tier];
     g.save(); g.globalAlpha = alpha * k;
-    g.fillStyle = 'rgba(7,12,14,.88)'; g.strokeStyle = row.color || '#2fd8c8'; g.lineWidth = 3;
+    if (cur.tier !== 'normal') {
+      const s = cur.tier === 'legend' ? 1 + 0.06 * Math.sin(now / 120) : 1;
+      text(T.label, cx, y - h / 2 - 22, Math.max(18, h * 0.42) * s, cur.tier === 'legend' ? `hsl(${(now / 5) % 360} 95% 72%)` : T.color, 900);
+    }
+    g.fillStyle = 'rgba(7,12,14,.88)'; g.strokeStyle = T.color || row.color || '#2fd8c8'; g.lineWidth = cur.tier === 'normal' ? 3 : 5;
     g.beginPath(); g.roundRect(cx - w / 2, y - h / 2, w, h, 16); g.fill(); g.stroke();
     text(row.result, cx, y, fit(row.result, w - 40, h * 0.5), '#ffffff', 900);
     g.restore();
   }
-  g.globalAlpha = 1;
+}
+
+// after a fast multi-spin: "꽝 ×6 · 애교 ×2 …" with the rare ones first
+function drawSummary(now) {
+  const row = cur.row;
+  const list = groups.get(row.group) || [];
+  const order = { legend: 0, rare: 1, normal: 2 };
+  const counts = new Map();
+  for (const r of list) { const c = counts.get(r.result) || { ...r, n: 0 }; c.n++; counts.set(r.result, c); }
+  const rows = [...counts.values()].sort((a, b) => order[a.tier] - order[b.tier] || b.n - a.n);
+  const k = Math.min(1, (now - cur.t0) / 300);
+  const w = Math.min(W * 0.9, 560), lh = Math.max(40, Math.min(56, (H * 0.6) / Math.max(1, rows.length)));
+  const h = 120 + rows.length * lh;
+  const x = W / 2 - w / 2, y = Math.max(20, H * 0.46 - h / 2);
+  g.save(); g.globalAlpha = alpha * k;
+  g.fillStyle = 'rgba(7,12,14,.9)'; g.strokeStyle = 'rgba(47,216,200,.9)'; g.lineWidth = 3;
+  g.beginPath(); g.roundRect(x, y, w, h, 18); g.fill(); g.stroke();
+  const title = row.wheel ? (cur.wheel?.title || row.wheelTitle || '무료 룰렛') : row.nick;
+  text(title, W / 2, y + 40, fit(title, w - 40, 30), '#ffd34d', 900);
+  text(`${list.length}회 결과`, W / 2, y + 78, 20, '#cfe3e1', 700);
+  rows.forEach((r, i) => {
+    const yy = y + 120 + i * lh;
+    g.fillStyle = r.color; g.beginPath(); g.roundRect(x + 30, yy - 11, 22, 22, 6); g.fill();
+    const tag = r.tier === 'legend' ? '★ ' : r.tier === 'rare' ? '✦ ' : '';
+    const col = r.tier === 'legend' ? `hsl(${(now / 5) % 360} 95% 72%)` : r.tier === 'rare' ? '#ffd34d' : '#ffffff';
+    text(tag + r.result, x + 66, yy, fit(tag + r.result, w - 200, Math.min(30, lh * 0.6)), col, 800, 'left');
+    text(`×${r.n}`, x + w - 30, yy, Math.min(32, lh * 0.65), '#ffffff', 900, 'right');
+  });
+  g.restore();
 }
 requestAnimationFrame(tick);
 
@@ -168,23 +290,30 @@ if (!DEMO) {
   let ver = null;
   es.addEventListener('hello', (e) => { const v = JSON.parse(e.data).pack; if (ver && v !== ver) location.reload(); ver = v; });
   es.addEventListener('reload', () => location.reload());
-  es.addEventListener('config', (e) => { try { cfg = JSON.parse(e.data); } catch {} });
+  es.addEventListener('config', (e) => { try { cfg = { fastFrom: 3, wheels: [], ...JSON.parse(e.data) }; } catch {} });
   es.addEventListener('queue', (e) => {
     try {
       queue = JSON.parse(e.data) || [];
       // forget ids the server no longer lists (confirmed shown, or skipped)
       for (const id of [...done]) if (!queue.some((r) => r.id === id)) done.delete(id);
       // skipped from the Xylem page while spinning → stop showing it
-      if (cur && !queue.some((r) => r.id === cur.row.id) && cur.phase !== 'out' && cur.phase !== 'next') { cur.phase = 'out'; cur.t0 = performance.now(); }
+      if (cur && cur.phase !== 'summary' && !queue.some((r) => r.id === cur.row.id) && !done.has(cur.row.id) && cur.phase !== 'out' && cur.phase !== 'next') { cur.phase = 'out'; cur.t0 = performance.now(); }
     } catch {}
   });
 } else {
-  cfg = { title: '치즈 룰렛 (미리보기)', spinSec: 5, holdSec: 3, items: [
+  const items = [
     { id: 'a', name: '꽝', weight: 40, color: '#ff6b6b' }, { id: 'b', name: '애교 한 번', weight: 25, color: '#ffd34d' },
-    { id: 'c', name: '노래 한 소절', weight: 20, color: '#5be37d' }, { id: 'd', name: '벌칙 게임', weight: 10, color: '#4fc3f7' }, { id: 'e', name: '소원 들어주기', weight: 5, color: '#b388ff' }] };
+    { id: 'c', name: '노래 한 소절', weight: 20, color: '#5be37d' }, { id: 'd', name: '벌칙 게임', weight: 10, color: '#4fc3f7' }, { id: 'e', name: '소원 들어주기', weight: 5, color: '#b388ff' }];
+  const total = 100;
+  cfg = { title: '치즈 룰렛 (미리보기)', spinSec: 5, holdSec: 3, fastFrom: 3, wheels: [], items: items.map((it) => ({ ...it, tierEff: it.weight / total <= 0.05 ? 'legend' : it.weight / total <= 0.15 ? 'rare' : 'normal' })) };
   let n = 0;
-  const add = () => { const it = cfg.items[Math.floor(Math.random() * cfg.items.length)]; queue.push({ id: 'demo' + (++n), nick: '미리보기', idx: 1, of: 1, itemId: it.id, result: it.name, color: it.color }); };
-  window.ack = (id) => { done.add(id); queue = queue.filter((r) => r.id !== id); };
+  const add = () => {
+    const of = Math.random() < 0.3 ? 5 : 1, group = 'g' + (++n);
+    for (let i = 0; i < of; i++) {
+      const r = Math.random() * 100; let acc = 0; const it = cfg.items.find((x) => (acc += x.weight) > r) || cfg.items[0];
+      queue.push({ id: `${group}-${i}`, group, nick: '미리보기', idx: i + 1, of, itemId: it.id, result: it.name, color: it.color, tier: it.tierEff });
+    }
+  };
   add(); setInterval(() => { if (!queue.length) add(); }, 2000);
 }
 </script>

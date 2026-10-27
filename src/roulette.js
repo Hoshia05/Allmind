@@ -1,4 +1,7 @@
 // 치즈 룰렛 (Toonation-style): every N 치즈 in one donation = one spin.
+// Plus 무료 룰렛 (wheels): the streamer spins them from the Xylem page — no donation involved.
+// Every item has a rarity tier (자동 = by its chance) that the overlay celebrates differently, and a
+// donation worth several spins is shown fast with a summary card at the end.
 // The server decides each result (crypto.randomInt, by weight) and logs it; the overlay only animates
 // the wheel onto that result. Spins wait in a queue until an overlay has shown them, so a restart or
 // an overlay reload mid-spin replays the same result instead of losing or re-rolling it.
@@ -14,7 +17,9 @@ export const DEFAULTS = {
   kinds: { CHAT: true, VIDEO: false, MISSION: false }, // which donation types count
   spinSec: 6,
   holdSec: 5,
+  fastFrom: 3,          // a donation worth this many spins or more is shown fast + summary (0 = never)
   title: '치즈 룰렛',
+  wheels: [],           // 무료 룰렛: [{ id, title, items }]
   items: [
     { id: 'a', name: '꽝', weight: 40, color: COLORS[0] },
     { id: 'b', name: '애교 한 번', weight: 25, color: COLORS[1] },
@@ -24,17 +29,37 @@ export const DEFAULTS = {
   ],
 };
 
-export function clean(input, old = DEFAULTS) {
-  const s = { ...old, ...(input || {}) };
-  const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
-  const items = (Array.isArray(s.items) ? s.items : []).slice(0, 24).map((it, i) => ({
+const TIERS = ['auto', 'normal', 'rare', 'legend'];
+const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+function cleanItems(list, what = '룰렛') {
+  const items = (Array.isArray(list) ? list : []).slice(0, 24).map((it, i) => ({
     id: String(it?.id || crypto.randomBytes(4).toString('hex')).slice(0, 16),
     name: String(it?.name || '').trim().slice(0, 30) || `항목 ${i + 1}`,
     weight: num(it?.weight, 0, 1e6, 1),
     color: /^#[0-9a-f]{6}$/i.test(it?.color || '') ? it.color : COLORS[i % COLORS.length],
+    tier: TIERS.includes(it?.tier) ? it.tier : 'auto',
   }));
-  if (items.length < 2) throw new Error('룰렛 항목은 2개 이상 있어야 해요');
-  if (!items.some((it) => it.weight > 0)) throw new Error('확률이 0보다 큰 항목이 하나는 있어야 해요');
+  if (items.length < 2) throw new Error(`${what} 항목은 2개 이상 있어야 해요`);
+  if (!items.some((it) => it.weight > 0)) throw new Error(`${what}: 확률이 0보다 큰 항목이 하나는 있어야 해요`);
+  return items;
+}
+// 자동 tier: 5 % or less → 전설, 15 % or less → 희귀, else 일반
+export function tierOf(it, items) {
+  if (it.tier && it.tier !== 'auto') return it.tier;
+  const total = items.reduce((a, x) => a + Math.max(0, x.weight), 0) || 1;
+  const p = Math.max(0, it.weight) / total;
+  return p <= 0.05 ? 'legend' : p <= 0.15 ? 'rare' : 'normal';
+}
+const withTiers = (items) => items.map((it) => ({ ...it, tierEff: tierOf(it, items) }));
+
+export function clean(input, old = DEFAULTS) {
+  const s = { ...old, ...(input || {}) };
+  const items = cleanItems(s.items);
+  const wheels = (Array.isArray(s.wheels) ? s.wheels : []).slice(0, 8).map((w, i) => ({
+    id: String(w?.id || crypto.randomBytes(4).toString('hex')).slice(0, 16),
+    title: String(w?.title || '').trim().slice(0, 30) || `무료 룰렛 ${i + 1}`,
+    items: cleanItems(w?.items, String(w?.title || `무료 룰렛 ${i + 1}`)),
+  }));
   return {
     enabled: !!s.enabled,
     price: Math.round(num(s.price, 100, 10_000_000, 1000)),
@@ -42,8 +67,10 @@ export function clean(input, old = DEFAULTS) {
     kinds: { CHAT: !!s.kinds?.CHAT, VIDEO: !!s.kinds?.VIDEO, MISSION: !!s.kinds?.MISSION },
     spinSec: num(s.spinSec, 2, 20, 6),
     holdSec: num(s.holdSec, 1, 30, 5),
+    fastFrom: Math.round(num(s.fastFrom, 0, 50, 3)),
     title: String(s.title || '치즈 룰렛').slice(0, 30),
     items,
+    wheels,
   };
 }
 
@@ -67,7 +94,12 @@ export class Roulette {
     chzzk.on('live-chat', (list) => { for (const m of list) if (m.kind === 'donation') this.onDonation(m); });
   }
 
-  view() { return { title: this.s.title, items: this.s.items, spinSec: this.s.spinSec, holdSec: this.s.holdSec }; }
+  view() {
+    return {
+      title: this.s.title, items: withTiers(this.s.items), spinSec: this.s.spinSec, holdSec: this.s.holdSec, fastFrom: this.s.fastFrom,
+      wheels: this.s.wheels.map((w) => ({ id: w.id, title: w.title, items: withTiers(w.items) })),
+    };
+  }
   queue() { return this.log.filter((r) => !r.shown).slice(0, 100); }
   settings() { return this.s; }
 
@@ -89,16 +121,28 @@ export class Roulette {
     this.add({ nick: d.nick || '익명', uid: d.uid || '', amount: d.amount, n, test: false });
   }
 
-  add({ nick, uid, amount, n, test }) {
+  add({ nick, uid, amount, n, test, wheel = null }) {
     const group = Date.now().toString(36) + crypto.randomBytes(2).toString('hex');
+    const items = wheel ? wheel.items : this.s.items;
     for (let i = 0; i < n; i++) {
-      const it = pick(this.s.items);
-      this.log.push({ id: `${group}-${i}`, time: Date.now(), group, idx: i + 1, of: n, nick: String(nick).slice(0, 30), uid, amount, itemId: it.id, result: it.name, color: it.color, shown: false, done: false, test: !!test });
+      const it = pick(items);
+      this.log.push({
+        id: `${group}-${i}`, time: Date.now(), group, idx: i + 1, of: n, nick: String(nick).slice(0, 30), uid, amount,
+        itemId: it.id, result: it.name, color: it.color, tier: tierOf(it, items), wheel: wheel ? wheel.id : null, wheelTitle: wheel ? wheel.title : null,
+        shown: false, done: false, test: !!test,
+      });
     }
     if (this.log.length > MAX_LOG) this.log.splice(0, this.log.length - MAX_LOG);
-    console.log(`[roulette] ${nick} ${amount}치즈 → ${n}회: ${this.log.slice(-n).map((r) => r.result).join(', ')}${test ? ' (테스트)' : ''}`);
+    console.log(`[roulette] ${wheel ? `무료 룰렛 "${wheel.title}"` : `${nick} ${amount}치즈`} → ${n}회: ${this.log.slice(-n).map((r) => r.result).join(', ')}${test ? ' (테스트)' : ''}`);
     this._changed();
     return this.log.slice(-n);
+  }
+
+  // 무료 룰렛: spun by the streamer from the Xylem page
+  spinWheel(id, spins = 1) {
+    const w = this.s.wheels.find((x) => x.id === id);
+    if (!w) throw new Error('그 무료 룰렛이 없어요 — 저장했는지 확인해 주세요');
+    return this.add({ nick: w.title, uid: '', amount: 0, n: Math.max(1, Math.min(10, Number(spins) || 1)), test: false, wheel: w });
   }
 
   test(spins = 1) {

@@ -10,8 +10,14 @@
         !시작 (streamer/manager) start now. Donations do nothing here — no pay-to-win.
   Boss round: !보스 (streamer/manager) makes the next round everyone vs. the aerial fortress BASTION;
   ?boss=N makes every N-th round a boss round. Its HP and firepower grow with the number of jets.
+  Autopilot style (how your jet flies between your commands): !공격형 · !회피형 · !호위형 · !기본형
+  Team mode (set on the Xylem page: 2–4 teams, owner's names): !팀 1 / !팀 <이름> joins or switches;
+  !출격 joins the smallest team. Last team flying wins; bots even the teams out.
+  Weather: clouds (a missile loses a jet inside one) and the sun (a missile chasing a jet into the
+  sun can lose it in the glare). New each round. ?weather=0 turns it off.
   URL options: ?lobby=25 (seconds before a round) · ?fighters=4 (bots fill up to this)
-               ?board=0 (hide ranking) · ?help=0 (hide the command list) · ?demo=1 (fake viewers)
+               ?board=0 (hide ranking) · ?help=0 (hide the command list) · ?weather=0 · ?demo=1 (fake viewers,
+               &team=3 for a demo team mode)
 -->
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; }
@@ -32,6 +38,17 @@ const SHOW_BOARD = Q.get('board') !== '0';
 const DEMO = Q.get('demo') === '1';
 const SHOW_HELP = Q.get('help') !== '0';
 const BOSS_EVERY = Math.max(0, Number(Q.get('boss')) || 0);
+const WEATHER = Q.get('weather') !== '0';
+const TEAM_LIMIT = 100;      // seconds for a team round; then the team with more jets (then HP) left wins
+// Autopilot styles. Viewers pick with chat; bots get one at random. Only humans show the tag.
+const STYLES = {
+  normal: { name: '기본형', tag: '' },
+  attack: { name: '공격형', tag: '⚔' },
+  evade: { name: '회피형', tag: '☁' },
+  escort: { name: '호위형', tag: '✚' },
+};
+const STYLE_CMDS = { '!공격형': 'attack', '!회피형': 'evade', '!방어형': 'evade', '!호위형': 'escort', '!기본형': 'normal' };
+const STYLE_KEYS = Object.keys(STYLES);
 const BOSS_LIMIT = 150;  // seconds for a boss round
 const BOSS_NAME = '공중요새 BASTION';
 const SP_CD = 25;      // special weapon reload (s)
@@ -48,6 +65,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const wrapA = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(Math.random() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; } // fair, unlike sort(() => rnd)
 function hueOf(s) { let h = 0; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; }
 const BOT_NAMES = ['BOGEY', 'BANDIT', 'SKULL', 'VIPER', 'RAVEN', 'COBRA', 'JESTER', 'HOUND', 'WRAITH', 'GHOST', 'ONYX'];
 
@@ -66,8 +84,16 @@ let boss = null;            // the fortress during a boss round
 let bossNext = false;       // !보스 queued the next round
 let roundNo = 0;
 let bossWon = false;        // result of the last boss round
+let mode = { mode: 'solo', teams: [{ name: '레드', color: '#ff5a5a' }, { name: '블루', color: '#4f9dff' }] }; // from Allmind
+let teamRound = false;      // this fight is a team fight
+let teamWin = null;         // { idx, name, color, tie } after a team fight
+let teamStats = [];         // per team at the end: { name, color, alive, jets, kills }
+let clouds = [], sun = null;
 
 function makeJet(p, i, n, fight) {
+  // In a team fight every jet gets the same autopilot (bots' one), so a team with idle viewers isn't
+  // weaker than an all-bot team — the result has to be fair when it's used to decide something.
+  const h = p.human && !teamRound;
   const ang = (i / Math.max(1, n)) * Math.PI * 2;
   const j = {
     uid: p.uid, nick: p.nick, human: !!p.human,
@@ -76,10 +102,12 @@ function makeJet(p, i, n, fight) {
     y: H / 2 + Math.sin(ang) * (fight ? 330 : rnd(100, 300)),
     a: ang + Math.PI / 2 + (fight ? 0.3 : 0), spd: 300,
     hp: 100, alive: true, kills: 0,
-    gunCd: rnd(0.5, 1.5), msslCd: p.human ? rnd(6, 10) : rnd(5, 9), manualMsslCd: 0,
-    flareCd: 0, autoMsslAt: p.human ? rnd(14, 20) : rnd(8, 13),
-    spCd: p.human ? 0 : rnd(18, 30), cobraCd: 0, cobra: 0, evade: 0, laser: 0, laserTarget: null,
+    gunCd: rnd(0.5, 1.5), msslCd: h ? rnd(6, 10) : rnd(5, 9), manualMsslCd: 0,
+    flareCd: 0, autoMsslAt: h ? rnd(14, 20) : rnd(8, 13),
+    spCd: h ? 0 : rnd(18, 30), cobraCd: 0, cobra: 0, evade: 0, laser: 0, laserTarget: null,
     target: null, retarget: 0, jink: 0, jinkDir: 1, wp: null, trail: [], trailT: 0, flash: 0,
+    style: p.style || (p.human ? 'normal' : STYLE_KEYS[Math.floor(Math.random() * STYLE_KEYS.length)]),
+    team: p.team ?? null, lastHitBy: null, lastHitAt: -99,
   };
   return j;
 }
@@ -91,20 +119,67 @@ function rebuildLobbyJets() {
   const list = [...roster.values()];
   jets = list.map((p, i) => {
     const old = keep.get(p.uid);
-    if (old) { old.alive = true; old.hp = 100; old.nick = p.nick; return old; }
+    if (old) { old.alive = true; old.hp = 100; old.nick = p.nick; old.style = p.style || 'normal'; old.team = p.team ?? null; return old; }
     const j = makeJet(p, i, list.length, false);
     j.x = rnd(-60, 0) < -30 ? -40 : W + 40; j.y = rnd(200, H - 200); j.a = j.x < 0 ? 0 : Math.PI;
     return j;
   });
 }
-function join(p) {
+const teamsOn = () => mode.mode === 'team';
+function smallestTeam(skip) {
+  const c = mode.teams.map(() => 0);
+  for (const r of roster.values()) if (r !== skip && r.team != null && r.team < c.length) c[r.team]++;
+  const min = Math.min(...c);
+  const pick = c.map((v, i) => (v === min ? i : -1)).filter((i) => i >= 0);
+  return pick[Math.floor(Math.random() * pick.length)];
+}
+// "!팀 2" / "!팀 블루" / "!팀블루"
+function teamArg(text) {
+  const arg = text.replace(/^!팀\s*/, '').trim().toLowerCase();
+  if (!arg) return null;
+  const n = Number(arg);
+  if (Number.isInteger(n) && n >= 1 && n <= mode.teams.length) return n - 1;
+  const i = mode.teams.findIndex((t) => t.name.toLowerCase() === arg);
+  if (i >= 0) return i;
+  const j = mode.teams.findIndex((t) => t.name.toLowerCase().startsWith(arg));
+  return j >= 0 ? j : null;
+}
+function chooseTeam(p, idx) {
+  if (!teamsOn()) return;
+  let r = roster.get(p.uid);
+  if (!r) { join(p, idx); return; }
+  if (idx == null || idx === r.team) return;
+  r.team = idx;
+  if (phase === 'lobby') { rebuildLobbyJets(); say(`${r.nick} → ${mode.teams[idx].name}`, mode.teams[idx].color); }
+  else say(`${r.nick} 다음 라운드부터 ${mode.teams[idx].name}`, '#9fb8b6');
+}
+function setStyle(p, style) {
+  const r = roster.get(p.uid);
+  if (!r) { join(p); return setStyle(p, style); }
+  r.style = style;
+  const j = jetOf(p.uid);
+  if (j) { j.style = style; floatText(j, STYLES[style].name, '#c9f7ff'); }
+}
+function setMode(m) {
+  if (!m || !Array.isArray(m.teams) || m.teams.length < 2) return;
+  const was = mode.mode;
+  mode = { mode: m.mode === 'team' ? 'team' : 'solo', teams: m.teams.slice(0, 4) };
+  for (const r of roster.values()) if (r.team != null && r.team >= mode.teams.length) r.team = null;
+  if (teamsOn()) for (const r of roster.values()) if (r.team == null) r.team = smallestTeam(r);
+  if (phase === 'lobby') rebuildLobbyJets();
+  if (was !== mode.mode) say(teamsOn() ? `다음 라운드부터 팀전 — ${mode.teams.map((t) => t.name).join(' vs ')}` : '다음 라운드부터 개인전', '#ffd34d', true);
+}
+
+function join(p, team) {
   if (roster.has(p.uid)) { const r = roster.get(p.uid); r.nick = p.nick; return; }
   if (roster.size >= 24) return;
-  roster.set(p.uid, { uid: p.uid, nick: p.nick || '???', human: true, role: p.role });
+  roster.set(p.uid, { uid: p.uid, nick: p.nick || '???', human: true, role: p.role, style: 'normal', team: null });
+  if (teamsOn()) roster.get(p.uid).team = team ?? smallestTeam(roster.get(p.uid));
   if (phase === 'lobby') {
     rebuildLobbyJets();
     if (lobbyLeft < 3) lobbyLeft = 3; // a last-second joiner gets a moment, but nobody can stall the lobby
-    say(`${p.nick} 출격 준비 완료`, ACCENT);
+    const tm = teamsOn() ? mode.teams[roster.get(p.uid).team] : null;
+    say(tm ? `${p.nick} 출격 준비 완료 — ${tm.name}` : `${p.nick} 출격 준비 완료`, tm ? tm.color : ACCENT);
   } else {
     say(`${p.nick} 다음 라운드 대기`, '#9fb8b6');
   }
@@ -118,22 +193,85 @@ function leave(uid) {
 
 function startFight() {
   roundNo++;
+  makeWeather();
+  teamRound = false; teamWin = null;
   if (bossNext || (BOSS_EVERY && roundNo % BOSS_EVERY === 0)) { bossNext = false; return startBoss(); }
   boss = null;
+  if (teamsOn()) return startTeams();
   const humans = [...roster.values()];
   const list = humans.slice();
   const nBots = Math.max(0, FIGHTERS - humans.length);
-  const names = BOT_NAMES.slice().sort(() => Math.random() - 0.5);
+  const names = BOT_NAMES.slice(); shuffle(names);
   for (let i = 0; i < nBots; i++) list.push({ uid: `bot:${++botSeq}`, nick: names[i % names.length], human: false });
-  list.sort(() => Math.random() - 0.5);
+  shuffle(list);
   jets = list.map((p, i) => makeJet(p, i, list.length, true));
   bullets = []; missiles = []; flares = []; beams = [];
   phase = 'fight'; phaseT = 0; roundT = 0; winner = null;
   say('교전 개시 — ENGAGE!', '#ffd34d', true);
 }
 
+// ---------- team fight ----------
+function startTeams() {
+  teamRound = true;
+  const n = mode.teams.length;
+  const humans = [...roster.values()];
+  for (const h of humans) if (h.team == null || h.team >= n) h.team = smallestTeam(h);
+  const counts = mode.teams.map((_, i) => humans.filter((h) => h.team === i).length);
+  // every team gets the same number of jets: bots fill up (at least 2 a side, about FIGHTERS in total)
+  const per = Math.min(8, Math.max(2, ...counts, Math.ceil(FIGHTERS / n)));
+  const names = BOT_NAMES.slice(); shuffle(names);
+  let k = 0;
+  const groups = mode.teams.map((_, i) => {
+    const list = humans.filter((h) => h.team === i).slice(0, per);
+    while (list.length < per) list.push({ uid: `bot:${++botSeq}`, nick: names[k++ % names.length], human: false, team: i });
+    return list;
+  });
+  jets = [];
+  // start points every team is equally far from: opposite sides / a triangle / the four corners,
+  // shuffled each round so no team always gets the same one
+  const SPOTS = { 2: [[-680, 0], [680, 0]], 3: [[0, -360], [312, 180], [-312, 180]].map(([x, y]) => [x, y + 30]), 4: [[-600, -300], [600, -300], [600, 300], [-600, 300]] }[n];
+  const slots = shuffle(SPOTS.slice());
+  groups.forEach((list, ti) => {
+    const cx = W / 2 + slots[ti][0], cy = H / 2 + slots[ti][1];
+    list.forEach((p, i) => {
+      const j = makeJet({ ...p, team: ti }, i, list.length, true);
+      const row = i - (list.length - 1) / 2;
+      const head = Math.atan2(H / 2 - cy, W / 2 - cx);
+      j.x = cx + Math.cos(head + Math.PI / 2) * row * 70 - Math.cos(head) * Math.abs(row) * 30;
+      j.y = cy + Math.sin(head + Math.PI / 2) * row * 70 - Math.sin(head) * Math.abs(row) * 30;
+      j.a = head;
+      jets.push(j);
+    });
+  });
+  shuffle(jets); // update order must not favour a team
+  bullets = []; missiles = []; flares = []; beams = [];
+  phase = 'fight'; phaseT = 0; roundT = 0; winner = null;
+  say(`팀전 개시 — ${mode.teams.map((t) => t.name).join(' vs ')}!`, '#ffd34d', true);
+}
+function teamAlive() { return mode.teams.map((_, i) => jets.filter((j) => j.team === i && j.alive).length); }
+function endTeams() {
+  teamStats = mode.teams.map((t, i) => {
+    const mine = jets.filter((j) => j.team === i);
+    return { idx: i, name: t.name, color: t.color, alive: mine.filter((j) => j.alive).length, jets: mine.length, humans: mine.filter((j) => j.human).length, hp: mine.reduce((a, j) => a + (j.alive ? j.hp : 0), 0), kills: mine.reduce((a, j) => a + j.kills, 0) };
+  });
+  const order = teamStats.slice().sort((a, b) => b.alive - a.alive || b.hp - a.hp || b.kills - a.kills);
+  let top = order[0];
+  const tied = order.filter((t) => t.alive === top.alive && t.hp === top.hp && t.kills === top.kills);
+  const tie = tied.length > 1;
+  if (tie) top = tied[Math.floor(Math.random() * tied.length)]; // a dead heat: drawn by lot (and said so)
+  teamWin = { idx: top.idx, name: top.name, color: top.color, tie };
+  phase = 'result'; phaseT = 0;
+  say(`${top.name} 승리!${tie ? ' (동점 — 추첨)' : ''}`, top.color, true);
+  const humans = jets.filter((j) => j.human);
+  fetch('/api/dogfight/result', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ winner: null, pilots: humans.map((j) => ({ uid: j.uid, nick: j.nick, kills: j.kills })), team: { winner: top.name, color: top.color, teams: teamStats.map(({ name, alive, jets: n, humans: h }) => ({ name, alive, jets: n, humans: h })) } }),
+  }).then((r) => r.json()).then((r) => { if (r.board) board = r.board; }).catch(() => {});
+}
+
 function endFight() {
   if (boss) return endBoss();
+  if (teamRound) return endTeams();
   const alive = jets.filter((j) => j.alive);
   const pool = alive.length ? alive : jets;
   winner = pool.slice().sort((a, b) => b.hp - a.hp || b.kills - a.kills)[0] || null;
@@ -148,7 +286,7 @@ function endFight() {
 }
 
 function backToLobby() {
-  boss = null;
+  boss = null; teamRound = false; teamWin = null; clouds = []; sun = null;
   phase = 'lobby'; phaseT = 0; lobbyLeft = LOBBY_S;
   bullets = []; missiles = []; flares = []; beams = [];
   jets = jets.filter((j) => j.human && roster.has(j.uid));
@@ -160,6 +298,11 @@ function onCmd(c) {
   const t = (c.text || '').trim().split(/\s+/)[0].toLowerCase();
   const p = { uid: c.uid || `nick:${c.nick}`, nick: c.nick || '???', role: c.role };
   if (['!출격', '!참전', '!sortie', '!join'].includes(t)) return join(p);
+  if (t === '!팀' || t.startsWith('!팀') && !t.startsWith('!팀전')) {
+    if (!teamsOn()) return;
+    return chooseTeam(p, teamArg((c.text || '').trim()));
+  }
+  if (STYLE_CMDS[t]) return setStyle(p, STYLE_CMDS[t]);
   if (['!귀환', '!leave'].includes(t)) return leave(p.uid);
   const boss_ = c.role === 'streamer' || c.role === 'manager';
   if (['!시작', '!start'].includes(t) && boss_) {
@@ -206,15 +349,20 @@ function launch(j, t, o = {}) {
   });
 }
 function fireMissile(j) {
-  const t = j.target && j.target.alive ? j.target : nearestEnemy(j);
+  let t = j.target && j.target.alive ? j.target : nearestEnemy(j);
   if (!t) return false;
+  if (!t.isBoss && inCloud(t)) { // no lock on a jet inside a cloud: take another one, if there is one
+    t = enemiesBy(j).find((o) => !inCloud(o));
+    if (!t) { floatText(j, 'LOCK 불가 (구름)', '#9fb8b6'); return false; }
+  }
   launch(j, t);
   floatText(j, 'FOX 2!', '#ffd34d');
   return true;
 }
+const foe = (a, b) => a !== b && b.alive && !(teamRound && a.team === b.team);
 function enemiesBy(j, maxD = 1e9) {
   if (boss) return boss.alive ? [boss] : [];
-  return jets.filter((o) => o !== j && o.alive && dist(j, o) < maxD).sort((a, b) => dist(j, a) - dist(j, b));
+  return jets.filter((o) => foe(j, o) && dist(j, o) < maxD).sort((a, b) => dist(j, a) - dist(j, b));
 }
 
 // Special weapons — one at random per !특수 (Ace Combat-style arsenal)
@@ -266,11 +414,76 @@ function dropFlares(j, manual) {
   for (const m of missiles) if (m.target === j && dist(m, j) < 520 && Math.random() < (manual ? 0.95 : 0.6) * (1 - m.flareRes)) m.decoyed = true;
   floatText(j, 'FLARE', '#ff9f43');
 }
-function nearestEnemy(j) {
+function nearestEnemy(j, from = j) {
   if (boss) return boss.alive ? boss : null;
   let best = null, bd = 1e9;
-  for (const o of jets) if (o !== j && o.alive) { const d = dist(j, o); if (d < bd) { bd = d; best = o; } }
+  for (const o of jets) if (foe(j, o)) { const d = dist(from, o); if (d < bd) { bd = d; best = o; } }
   return best;
+}
+
+// ---------- weather: clouds + sun ----------
+// Clouds drift slowly; a missile can't lock a jet inside one and loses one that flies in.
+// The sun sits just off one edge; a missile chasing a jet straight into it can lose it in the glare.
+function makeWeather() {
+  clouds = []; sun = null;
+  if (!WEATHER) return;
+  const n = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < n; i++) {
+    const r = rnd(80, 130);
+    const puffs = [];
+    const k = 5 + Math.floor(Math.random() * 3);
+    for (let q = 0; q < k; q++) puffs.push({ x: rnd(-r, r) * 1.2, y: rnd(-r, r) * 0.5, r: rnd(r * 0.55, r * 0.9) });
+    clouds.push({ x: rnd(260, W - 260), y: rnd(200, H - 220), vx: rnd(8, 18) * (Math.random() < 0.5 ? -1 : 1), puffs });
+  }
+  const spots = [[rnd(300, W - 300), -40], [-40, rnd(120, 420)], [W + 40, rnd(120, 420)], [rnd(200, 700), -40], [rnd(W - 700, W - 200), -40]];
+  const [x, y] = spots[Math.floor(Math.random() * spots.length)];
+  sun = { x, y };
+}
+function inCloud(o) {
+  for (const c of clouds) for (const p of c.puffs) if (Math.hypot(o.x - c.x - p.x, o.y - c.y - p.y) < p.r * 0.8) return true;
+  return false;
+}
+function nearestCloud(o) {
+  let best = null, bd = 1e9;
+  for (const c of clouds) { const d = Math.hypot(o.x - c.x, o.y - c.y); if (d < bd) { bd = d; best = c; } }
+  return best ? { x: best.x, y: best.y, d: bd } : null;
+}
+// called per missile each frame while it still tracks a jet
+function weatherOnMissile(m, dt) {
+  const t = m.target;
+  if (t.isBoss || m.lost || m.decoyed) return;
+  if (inCloud(t)) {
+    if (Math.random() < dt * 1.6 * (1 - m.flareRes * 0.5)) { m.lost = true; floatText(t, '구름 속으로!', '#dfe9ec'); }
+    return;
+  }
+  if (sun) {
+    const toSun = Math.atan2(sun.y - m.y, sun.x - m.x);
+    const toT = Math.atan2(t.y - m.y, t.x - m.x);
+    if (Math.abs(wrapA(toSun - toT)) < 0.3 && Math.abs(wrapA(toSun - m.a)) < 0.35 && Math.random() < dt * 1.2 * (1 - m.flareRes * 0.5)) {
+      m.lost = true; floatText(t, '태양에 묻힘!', '#ffe9a0');
+    }
+  }
+}
+function updateWeather(dt) {
+  for (const c of clouds) { c.x += c.vx * dt; if (c.x > W + 260) c.x = -260; if (c.x < -260) c.x = W + 260; }
+}
+function drawWeather() {
+  if (sun) {
+    const gr = g.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 300);
+    gr.addColorStop(0, 'rgba(255,250,225,.55)'); gr.addColorStop(0.25, 'rgba(255,235,170,.22)'); gr.addColorStop(1, 'rgba(255,220,140,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(sun.x, sun.y, 300, 0, Math.PI * 2); g.fill();
+    // a few lens-flare rings toward the centre
+    for (const [k, r, a] of [[0.35, 26, 0.12], [0.55, 14, 0.14], [0.8, 40, 0.07]]) {
+      const x = sun.x + (W / 2 - sun.x) * k, y = sun.y + (H / 2 - sun.y) * k;
+      g.fillStyle = `rgba(255,240,200,${a})`; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+  }
+  for (const c of clouds) for (const p of c.puffs) {
+    const x = c.x + p.x, y = c.y + p.y;
+    const gr = g.createRadialGradient(x, y, p.r * 0.2, x, y, p.r);
+    gr.addColorStop(0, 'rgba(236,243,246,.62)'); gr.addColorStop(0.7, 'rgba(220,232,238,.4)'); gr.addColorStop(1, 'rgba(210,225,232,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, p.r, 0, Math.PI * 2); g.fill();
+  }
 }
 
 // ---------- effects ----------
@@ -294,6 +507,7 @@ function damage(v, amount, from, how) {
   if (v.isBoss) return hitBoss(amount, from);
   if (boss && v.evade > 0 && how === '하전입자포') amount *= 0.15; // a cobra mostly dodges the beam
   v.hp -= amount; v.flash = 0.12;
+  if (from && from !== v && !from.isBoss) { v.lastHitBy = from; v.lastHitAt = roundT; }
   if (v.hp <= 0) kill(v, from, how);
 }
 
@@ -324,8 +538,9 @@ function flyLobby(j, dt) {
 function flyFight(j, dt) {
   j.gunCd -= dt; j.msslCd -= dt; j.manualMsslCd -= dt; j.flareCd -= dt; j.retarget -= dt; j.jink -= dt;
   j.spCd -= dt; j.cobraCd -= dt; j.evade -= dt;
-  if (!j.target || !j.target.alive || j.retarget <= 0) { j.target = nearestEnemy(j); j.retarget = rnd(2.5, 4.5); }
+  if (!j.target || !j.target.alive || j.retarget <= 0) { j.target = pickTarget(j); j.retarget = rnd(2.5, 4.5); }
   const t = j.target;
+  const st = j.style;
   if (j.cobra > 0) { // nose high, nearly stalled, swinging onto the nearest enemy
     j.cobra -= dt;
     const n = nearestEnemy(j);
@@ -339,12 +554,12 @@ function flyFight(j, dt) {
     if (lt) steer(j, Math.atan2(lt.y - j.y, lt.x - j.x), dt, 2.6);
     const x2 = j.x + Math.cos(j.a) * 1000, y2 = j.y + Math.sin(j.a) * 1000;
     if (boss) { if (boss.alive && segDist(boss.x, boss.y, j.x, j.y, x2, y2) < 120) damage(boss, 75 * dt, j, 'TLS'); }
-    else for (const o of jets) if (o !== j && o.alive && segDist(o.x, o.y, j.x, j.y, x2, y2) < 16) damage(o, 75 * dt, j, 'TLS');
+    else for (const o of jets) if (foe(j, o) && segDist(o.x, o.y, j.x, j.y, x2, y2) < 16) damage(o, 75 * dt, j, 'TLS');
     j.spd += (220 - j.spd) * dt * 2;
     return;
   }
-  // bots (and only bots) use evade and specials on their own; viewers do it from chat
-  if (!j.human) {
+  // bots (and only bots) use evade and specials on their own; viewers do it from chat (team fights: everyone, see makeJet)
+  if (!j.human || teamRound) {
     const close = missiles.find((m) => m.target === j && !m.decoyed && !m.lost && dist(m, j) < 260);
     if (close && j.cobraCd <= 0 && Math.random() < dt * 1.5) cobra(j);
     if (j.spCd <= 0 && roundT > 6 && t && dist(j, t) < 900) { if (fireSpecial(j)) j.spCd = rnd(22, 34); }
@@ -352,12 +567,21 @@ function flyFight(j, dt) {
   // incoming missile?
   const threat = missiles.find((m) => m.target === j && !m.decoyed && !m.lost && dist(m, j) < 420);
   if (threat) {
-    if (j.flareCd <= 0 && Math.random() < (j.human ? 0.5 : 0.65) * dt * 3) dropFlares(j, false);
+    const fk = st === 'evade' ? 1.6 : st === 'attack' ? 0.5 : 1;
+    if (j.flareCd <= 0 && Math.random() < (j.human && !teamRound ? 0.5 : 0.65) * fk * dt * 3) dropFlares(j, false);
     if (j.jink <= 0) { j.jink = rnd(0.5, 0.9); j.jinkDir = Math.random() < 0.5 ? -1 : 1; }
   }
-  let want = j.a, rate = 2.5;
-  if (j.jink > 0 && threat) { want = j.a + j.jinkDir * 1.5; rate = 3.4; }
-  else if (t) {
+  let want = j.a, rate = st === 'attack' ? 2.6 : 2.5;
+  // 회피형: under fire, run for the nearest cloud (or into the sun) instead of jinking
+  const hide = st === 'evade' && threat && !boss ? hideSpot(j, threat) : null;
+  const buddy = st === 'escort' ? buddyOf(j) : null;
+  if (hide) { want = Math.atan2(hide.y - j.y, hide.x - j.x); rate = 3.1; }
+  else if (j.jink > 0 && threat) { want = j.a + j.jinkDir * 1.5; rate = st === 'attack' ? 3.0 : 3.4; }
+  else if (buddy && t && !t.isBoss && dist(buddy, t) > 650) {
+    // 호위형 with nothing near its buddy: stay on the buddy's wing
+    const fx = buddy.x - Math.cos(buddy.a) * 90 + Math.cos(buddy.a + Math.PI / 2) * 70, fy = buddy.y - Math.sin(buddy.a) * 90 + Math.sin(buddy.a + Math.PI / 2) * 70;
+    want = Math.atan2(fy - j.y, fx - j.x);
+  } else if (t) {
     const d = dist(j, t);
     if (t.isBoss) {
       // strafing runs: dive at the fortress, break off close in, swing round at a distance, repeat
@@ -371,7 +595,7 @@ function flyFight(j, dt) {
       want = Math.atan2(py - j.y, px - j.x);
       if (d < 110) want += Math.PI * 0.6; // don't ram: overshoot and come round
     }
-    if (boss && boss.beam && boss.beam.warn > 0 && j.dodgeBeam && segDist(j.x, j.y, boss.x, boss.y, boss.x + Math.cos(boss.beam.a) * 2400, boss.y + Math.sin(boss.beam.a) * 2400) < 110) want = boss.beam.a + Math.PI / 2; // get out of the charging beam
+    if (boss && boss.beam && boss.beam.warn > 0 && (j.dodgeBeam || st === 'evade') && segDist(j.x, j.y, boss.x, boss.y, boss.x + Math.cos(boss.beam.a) * 2400, boss.y + Math.sin(boss.beam.a) * 2400) < 110) want = boss.beam.a + Math.PI / 2; // get out of the charging beam
   }
   const off = steer(j, edgeAvoid(j, want), dt, rate);
   j.spd += ((off > 0.8 ? 260 : 330) - j.spd) * dt * 1.5;
@@ -384,9 +608,38 @@ function flyFight(j, dt) {
       bullets.push({ x: j.x + Math.cos(j.a) * 22, y: j.y + Math.sin(j.a) * 22, vx: Math.cos(a) * 1100, vy: Math.sin(a) * 1100, life: 0.6, owner: j });
     }
     if (roundT > 3 && j.msslCd <= 0 && roundT >= j.autoMsslAt && d < 950) {
-      if (fireMissile(j)) { j.msslCd = j.human ? rnd(15, 22) : rnd(9, 14); j.autoMsslAt = roundT + j.msslCd; }
+      const k = st === 'attack' ? 0.9 : st === 'evade' ? 1.1 : 1;
+      if (fireMissile(j)) { j.msslCd = (j.human && !teamRound ? rnd(15, 22) : rnd(9, 14)) * k; j.autoMsslAt = roundT + j.msslCd; }
+      else { j.msslCd = 1.5; } // no lock (cloud): try again shortly
     }
   }
+}
+
+// who to chase: 호위형 guards a teammate (whoever is after them), or hits back at its last attacker
+function pickTarget(j) {
+  if (boss) return nearestEnemy(j);
+  if (j.style === 'escort') {
+    const b = buddyOf(j);
+    if (b) {
+      const onBuddy = jets.filter((o) => foe(j, o) && o.target === b).sort((p, q) => dist(b, p) - dist(b, q))[0];
+      return onBuddy || nearestEnemy(j, b);
+    }
+    if (j.lastHitBy && j.lastHitBy.alive && foe(j, j.lastHitBy) && roundT - j.lastHitAt < 10) return j.lastHitBy;
+  }
+  return nearestEnemy(j);
+}
+function buddyOf(j) {
+  if (!teamRound) return null;
+  if (j.buddy && j.buddy.alive) return j.buddy;
+  const mates = jets.filter((o) => o !== j && o.alive && o.team === j.team).sort((p, q) => (q.human - p.human) || dist(j, p) - dist(j, q));
+  j.buddy = mates[0] || null;
+  return j.buddy;
+}
+function hideSpot(j, threat) {
+  const c = nearestCloud(j);
+  if (c && c.d < 520) return c;
+  if (sun && Math.abs(wrapA(Math.atan2(sun.y - j.y, sun.x - j.x) - Math.atan2(j.y - threat.y, j.x - threat.x))) < 1.2) return sun; // sun roughly ahead, missile behind
+  return null;
 }
 
 function moveJet(j, dt) {
@@ -405,6 +658,7 @@ function update(dt) {
     for (const j of jets) { flyLobby(j, dt); moveJet(j, dt); }
   } else if (phase === 'fight') {
     roundT += dt;
+    updateWeather(dt);
     for (const j of jets) if (j.alive) { flyFight(j, dt); moveJet(j, dt); }
     if (boss) updateBoss(dt);
     for (const b of bullets) {
@@ -413,12 +667,13 @@ function update(dt) {
         if (boss.alive && insideBoss(b.x, b.y)) { damage(boss, 6, b.owner, '기관포'); b.life = 0; parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.15, max: 0.15, kind: 'fire', r: 4 }); }
         continue;
       }
-      for (const j of jets) if (j.alive && j !== b.owner && Math.hypot(j.x - b.x, j.y - b.y) < 18) { damage(j, b.owner === boss ? 2 : 6, b.owner, b.owner === boss ? '대공포' : '기관포'); b.life = 0; parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.15, max: 0.15, kind: 'fire', r: 4 }); break; }
+      for (const j of jets) if (j.alive && j !== b.owner && !(teamRound && b.owner.team === j.team) && Math.hypot(j.x - b.x, j.y - b.y) < 18) { damage(j, b.owner === boss ? 2 : 6, b.owner, b.owner === boss ? '대공포' : '기관포'); b.life = 0; parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.15, max: 0.15, kind: 'fire', r: 4 }); break; }
     }
     for (const m of missiles) {
       m.life -= dt; m.spd = Math.min(m.max, m.spd + m.acc * dt);
       let tx, ty;
       if (!m.lost && !m.decoyed && m.target.alive && m.target.evade > 0 && dist(m, m.target) < 220) breakLock(m);
+      if (m.target.alive) weatherOnMissile(m, dt);
       if (m.lost) { tx = m.x + Math.cos(m.a) * 100; ty = m.y + Math.sin(m.a) * 100; } // overshot a cobra: flies on
       else if (m.decoyed) { const f = flares[flares.length - 1]; tx = f ? f.x : m.x + Math.cos(m.a) * 100; ty = f ? f.y : m.y + Math.sin(m.a) * 100; }
       else if (m.target.alive) { tx = m.target.x; ty = m.target.y; }
@@ -435,11 +690,14 @@ function update(dt) {
     missiles = missiles.filter((m) => m.life > 0 && m.x > -200 && m.x < W + 200 && m.y > -200 && m.y < H + 200);
     const alive = jets.filter((j) => j.alive).length;
     if (boss) { if ((!boss.alive && boss.dying <= 0) || alive === 0 || roundT > BOSS_LIMIT) endFight(); }
+    else if (teamRound) { if (teamAlive().filter((n) => n > 0).length <= 1 || roundT > TEAM_LIMIT) endFight(); }
     else if (alive <= 1 || roundT > ROUND_LIMIT) endFight();
   } else if (phase === 'result') {
+    updateWeather(dt);
     if (boss) { for (const j of jets) if (j.alive) { flyLobby(j, dt); moveJet(j, dt); } if (boss.alive) updateBoss(dt, true); }
+    else if (teamRound) { for (const j of jets) if (j.alive) { flyLobby(j, dt); moveJet(j, dt); } }
     else if (winner && winner.alive) { flyLobby(winner, dt); moveJet(winner, dt); }
-    if (phaseT > RESULT_S) backToLobby();
+    if (phaseT > (teamRound ? RESULT_S + 4 : RESULT_S)) backToLobby();
   }
   for (const b of beams) b.life -= dt;
   beams = beams.filter((b) => b.life > 0);
@@ -473,7 +731,7 @@ function startBoss() {
   const humans = [...roster.values()];
   const list = humans.slice();
   // a lone viewer still gets wingmen: at least 3 jets
-  const names = BOT_NAMES.slice().sort(() => Math.random() - 0.5);
+  const names = BOT_NAMES.slice(); shuffle(names);
   for (let i = 0; list.length < 3; i++) list.push({ uid: `bot:${++botSeq}`, nick: names[i % names.length], human: false });
   jets = list.map((p, i) => { const j = makeJet(p, i, list.length, true); j.x = 260 + (i % 6) * 70; j.y = H - 200 - Math.floor(i / 6) * 70; j.a = -Math.PI / 3; j.bossDmg = 0; j.dodgeBeam = false; return j; });
   const n = jets.length;
@@ -638,7 +896,11 @@ function panel(x, y, w, h) {
   g.fillStyle = 'rgba(7,14,16,.72)'; g.strokeStyle = 'rgba(47,216,200,.45)'; g.lineWidth = 2;
   g.beginPath(); g.roundRect(x, y, w, h, 14); g.fill(); g.stroke();
 }
-function jetColor(j, l = 62) { return j.human ? `hsl(${j.hue} 80% ${l}%)` : `hsl(0 10% ${l - 8}%)`; }
+const showTeams = () => (phase === 'lobby' ? teamsOn() : teamRound);
+function jetColor(j, l = 62) {
+  if (showTeams() && j.team != null && mode.teams[j.team]) return mode.teams[j.team].color;
+  return j.human ? `hsl(${j.hue} 80% ${l}%)` : `hsl(0 10% ${l - 8}%)`;
+}
 
 function drawJet(j, now) {
   // trail
@@ -661,11 +923,14 @@ function drawJet(j, now) {
   g.closePath();
   g.fillStyle = j.flash > 0 ? '#fff' : jetColor(j);
   g.strokeStyle = 'rgba(3,10,12,.9)'; g.lineWidth = 2.5;
-  g.fill(); g.stroke();
+  g.fill();
+  if (!j.human && j.flash <= 0 && showTeams() && j.team != null) { g.fillStyle = 'rgba(0,0,0,.38)'; g.fill(); } // team bots: darker shade of the team colour
+  g.stroke();
   g.fillStyle = 'rgba(10,30,40,.85)'; g.beginPath(); g.ellipse(7, 0, 5, 2.2, 0, 0, Math.PI * 2); g.fill();
   g.restore();
   // label + hp
-  text(j.nick, j.x, j.y - 36, 22, j.human ? jetColor(j, 74) : '#d9b3b3', 'center');
+  const tag = j.human && STYLES[j.style]?.tag ? ` ${STYLES[j.style].tag}` : '';
+  text(j.nick + tag, j.x, j.y - 36, 22, j.human ? jetColor(j, 74) : showTeams() && j.team != null ? jetColor(j) : '#d9b3b3', 'center');
   if (phase === 'fight') {
     g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(j.x - 24, j.y + 26, 48, 6);
     g.fillStyle = j.hp > 50 ? '#5be37d' : j.hp > 25 ? '#ffc93c' : '#ff5f5f'; g.fillRect(j.x - 24, j.y + 26, 48 * clamp(j.hp / 100, 0, 1), 6);
@@ -689,6 +954,7 @@ function draw(now) {
   }
   drawBoss(now);
   for (const j of jets) if (j.alive) drawJet(j, now);
+  drawWeather(); // over the jets: a jet in a cloud is hidden in it
   for (const p of parts) {
     const k = clamp(p.life / p.max, 0, 1);
     if (p.kind === 'vapor') { g.strokeStyle = `rgba(220,245,255,${k * 0.8})`; g.lineWidth = 4; g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.stroke(); continue; }
@@ -702,11 +968,34 @@ function draw(now) {
 
 function drawHud() {
   // radio feed, bottom left
-  feed.forEach((f, i) => { g.globalAlpha = clamp(f.life, 0, 1); text(f.text, 40, H - 60 - (feed.length - 1 - i) * 36, 24, f.color); });
+  // in the lobby the join panel takes the bottom: the feed sits above it so they don't overlap
+  const feedY = phase === 'lobby' ? H - 40 - (teamsOn() ? (SHOW_HELP ? 300 : 232) : (SHOW_HELP ? 234 : 110)) - 30 : H - 60;
+  feed.forEach((f, i) => { g.globalAlpha = clamp(f.life, 0, 1); text(f.text, 40, feedY - (feed.length - 1 - i) * 36, 24, f.color); });
   g.globalAlpha = 1;
-  if (phase === 'lobby') {
+  if (phase === 'lobby' && teamsOn()) {
+    const n = roster.size, T = mode.teams;
+    const w = 1000, x = (W - w) / 2, hh = SHOW_HELP ? 300 : 232, y = H - 40 - hh;
+    panel(x, y, w, hh);
+    text('공중전 · 팀전', x + 28, y + 34, 30, ACCENT, 'left', 900);
+    const nextBoss = bossNext || (BOSS_EVERY && (roundNo + 1) % BOSS_EVERY === 0);
+    text(n ? `${nextBoss ? '⚠ 보스전 ' : '출격'}까지 ${Math.ceil(lobbyLeft)}초  ·  조종사 ${n}명` : '조종사 대기 중', x + w - 28, y + 34, 24, nextBoss ? '#ff6b6b' : '#e8f6f4', 'right');
+    const bw = (w - 56 - (T.length - 1) * 14) / T.length;
+    T.forEach((t, i) => {
+      const bx = x + 28 + i * (bw + 14), by = y + 62;
+      g.fillStyle = 'rgba(255,255,255,.04)'; g.strokeStyle = t.color; g.lineWidth = 3;
+      g.beginPath(); g.roundRect(bx, by, bw, 96, 12); g.fill(); g.stroke();
+      const cnt = [...roster.values()].filter((r) => r.team === i).length;
+      text(t.name, bx + bw / 2, by + 32, 28, t.color, 'center', 900);
+      text(`!팀 ${i + 1}   ·   ${cnt}명`, bx + bw / 2, by + 70, 22, '#e8f6f4', 'center', 800);
+    });
+    text('채팅에  !팀 1 · !팀 2 …  (또는 팀 이름)  ·  !출격 은 사람이 적은 팀으로', x + 28, y + 190, 22, '#ffd34d', 'left', 800);
+    if (SHOW_HELP) {
+      cmdRow(x + 28, y + 232, [['!미사일', '미사일'], ['!플레어', '플레어'], ['!회피', '코브라'], ['!특수', '특수무기'], ['!귀환', '나가기']], 20);
+      cmdRow(x + 28, y + 268, [['자동 조종', ''], ['!공격형', ''], ['!회피형', ''], ['!호위형', '팀원 지키기'], ['!기본형', '']], 20);
+    }
+  } else if (phase === 'lobby') {
     const n = roster.size;
-    const w = 860, x = (W - w) / 2, hh = SHOW_HELP ? 196 : 110, y = H - 40 - hh;
+    const w = 860, x = (W - w) / 2, hh = SHOW_HELP ? 234 : 110, y = H - 40 - hh;
     panel(x, y, w, hh);
     text('공중전', x + 28, y + 34, 30, ACCENT, 'left', 900);
     const nextBoss = bossNext || (BOSS_EVERY && (roundNo + 1) % BOSS_EVERY === 0);
@@ -715,6 +1004,7 @@ function drawHud() {
     if (SHOW_HELP) {
       cmdRow(x + 28, y + 124, [['!미사일', '미사일'], ['!플레어', '플레어'], ['!회피', '코브라 기동'], ['!특수', '특수무기']]);
       cmdRow(x + 28, y + 162, [['!귀환', '나가기'], ['!시작', '바로 시작'], ['!보스', '보스전 예약'], ['', '(방송인·매니저)']]);
+      cmdRow(x + 28, y + 200, [['자동 조종', ''], ['!공격형', ''], ['!회피형', '구름·태양으로'], ['!호위형', '반격'], ['!기본형', '']]);
     }
   } else if (phase === 'fight' && boss) {
     const alive = jets.filter((j) => j.alive).length;
@@ -729,6 +1019,18 @@ function drawHud() {
       const cw = 980;
       panel(W / 2 - cw / 2, 110, cw, 48);
       cmdRow(W / 2 - cw / 2 + 24, 134, [['!미사일', '미사일 7초'], ['!플레어', '플레어'], ['!회피', '코브라 (빔도 회피)'], ['!특수', `특수무기 ${SP_CD}초`]], 20);
+    }
+  } else if (phase === 'fight' && teamRound) {
+    const al = teamAlive();
+    const left = Math.max(0, TEAM_LIMIT - roundT);
+    const w = 200 + mode.teams.length * 200, x = W / 2 - w / 2;
+    panel(x, 24, w, 60);
+    mode.teams.forEach((t, i) => { text(`${t.name} ${al[i]}`, x + 30 + i * 200, 54, 26, al[i] ? t.color : '#7b8b8a', 'left', 900); });
+    text(`${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`, x + w - 24, 54, 26, left < 10 ? '#ff5f5f' : ACCENT, 'right', 800);
+    if (SHOW_HELP) {
+      const cw = 980;
+      panel(W / 2 - cw / 2, 96, cw, 48);
+      cmdRow(W / 2 - cw / 2 + 24, 120, [['!미사일', '미사일 7초'], ['!플레어', '플레어'], ['!회피', '코브라'], ['!특수', `특수무기 ${SP_CD}초`]], 20);
     }
   } else if (phase === 'fight') {
     const alive = jets.filter((j) => j.alive).length;
@@ -747,6 +1049,16 @@ function drawHud() {
     text(bossWon ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED', W / 2, H / 2 - 60, 34, bossWon ? ACCENT : '#ff6b6b', 'center', 900);
     text(bossWon ? `${BOSS_NAME} 격파!` : `${BOSS_NAME} 이탈`, W / 2, H / 2 + 4, 52, '#e8f6f4', 'center', 900);
     if (winner) text(`MVP  ${winner.nick}  ·  피해 ${Math.round(winner.bossDmg)}`, W / 2, H / 2 + 66, 26, winner.human ? jetColor(winner, 72) : '#e8f6f4', 'center');
+    g.globalAlpha = 1;
+  } else if (phase === 'result' && teamRound && teamWin) {
+    g.globalAlpha = clamp(phaseT * 2, 0, 1);
+    const w = 960, h = 250, x = W / 2 - w / 2, y = H / 2 - 130;
+    panel(x, y, w, h);
+    g.strokeStyle = teamWin.color; g.lineWidth = 4; g.beginPath(); g.roundRect(x, y, w, h, 14); g.stroke();
+    text('MISSION ACCOMPLISHED', W / 2, y + 44, 30, ACCENT, 'center', 900);
+    text(`${teamWin.name} 승리!`, W / 2, y + 116, 72, teamWin.color, 'center', 900);
+    text(teamStats.map((t) => `${t.name} 생존 ${t.alive}/${t.jets} · 격추 ${t.kills}`).join('    '), W / 2, y + 184, 22, '#e8f6f4', 'center');
+    if (teamWin.tie) text('동점이라 추첨으로 정했어요', W / 2, y + 220, 20, '#9fb8b6', 'center');
     g.globalAlpha = 1;
   } else if (phase === 'result' && winner) {
     const a = clamp(phaseT * 2, 0, 1);
@@ -803,12 +1115,15 @@ if (!DEMO || Q.get('live') === '1') {
   es.addEventListener('reload', () => location.reload());
   es.addEventListener('cmd', (e) => { try { onCmd(JSON.parse(e.data)); } catch {} });
   es.addEventListener('board', (e) => { try { board = JSON.parse(e.data) || []; } catch {} });
+  es.addEventListener('mode', (e) => { try { setMode(JSON.parse(e.data)); } catch {} });
 }
 if (DEMO) {
+  const nt = Number(Q.get('team')) || 0;
+  if (nt >= 2) setMode({ mode: 'team', teams: [{ name: '레드', color: '#ff5a5a' }, { name: '블루', color: '#4f9dff' }, { name: '옐로', color: '#ffd34d' }, { name: '그린', color: '#5be37d' }].slice(0, Math.min(4, nt)) });
   const fake = ['호시아', '별빛조종사', 'Cipher', '라면왕', '야간비행', '구름위'];
   let k = 0;
   setInterval(() => {
-    if (phase === 'lobby' && k < fake.length && Math.random() < 0.6) { const n = fake[k++]; onCmd({ uid: `demo:${n}`, nick: n, text: '!출격' }); }
+    if (phase === 'lobby' && k < fake.length && Math.random() < 0.6) { const n = fake[k++]; onCmd({ uid: `demo:${n}`, nick: n, text: '!출격' }); if (Math.random() < 0.5) onCmd({ uid: `demo:${n}`, nick: n, text: ['!공격형', '!회피형', '!호위형'][k % 3] }); }
     if (phase === 'fight') {
       const humans = [...roster.values()];
       const p = humans[Math.floor(Math.random() * humans.length)];

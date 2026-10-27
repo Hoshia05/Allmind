@@ -30,7 +30,7 @@ import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.31.1';
+const VERSION = '0.32.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -341,6 +341,7 @@ async function main() {
     overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size },
     roulette: roulette.status(),
     board: dogfight.board(),
+    dogfight: dogfight.status(),
   });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
   const deck = new Deck({ config, bgm, soundboard, markers });
@@ -600,6 +601,8 @@ async function main() {
     'POST /api/roulette/skip': () => roulette.skipAll(),
     'POST /api/roulette/clear-log': () => roulette.clearLog(),
     'POST /api/dogfight/reset': () => dogfight.reset(),
+    'POST /api/dogfight/mode': (b) => ({ mode: dogfight.setMode(b) }),
+    'POST /api/roulette/wheel-spin': (b) => ({ spins: roulette.spinWheel(String(b.id || ''), b.spins) }),
   };
   const SECRET_MASK = '••••••••';
   const chzzkRedirect = () => `http://localhost:${PORT}/api/chzzk-open/callback`;

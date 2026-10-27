@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "minAllmind": "0.29.0",
-  "notes": "첫 Xylem 팩: 치즈 룰렛, 공중전",
+  "version": "1.1.0",
+  "minAllmind": "0.32.0",
+  "notes": "공중전: 자동 조종 성향, 구름·태양, 팀전 · 룰렛: 등급 효과, 빠른 연속 회전, 무료 룰렛",
   "modules": [
     {
       "id": "roulette",
@@ -19,11 +19,11 @@
     }
   ],
   "files": {
-    "dogfight.html": "9963ecd0c0ab5ba617a27fb283658387581b823ac249c8529c4e6676ba5672fc",
-    "dogfight.panel.js": "6de99a859a4219eacb11dcebec3ef6ffd9882f882b2cc0f67127f59f141c93ef",
+    "dogfight.html": "b1d951d52023e463b6a083b531112d070fe9731e72d6f0581a9bb0c2d3dcaac8",
+    "dogfight.panel.js": "41331d690be4a59914095516bce18c1ef8024dfc43575d354d2df3db4d34b486",
     "index.html": "4d25a0d686b47dee0cf5996a3c7c9677ba5d6b6d925c731ef71a1efaf6aaa0d5",
-    "roulette.html": "e394a31880d8308e0d0f449e12428093ea4434349981f8b7c6cbc4e050c2acfd",
-    "roulette.panel.js": "28cb3c278ac446ab9958ecae4e2d85b3ec196db60392b7593a7fa1f90db2ac0b",
+    "roulette.html": "df20078c64169796803bffcecfb11823c46d2596da8e02f57c4103d90b1bace5",
+    "roulette.panel.js": "c4d81986e093dc485ba6c9c1f4d9cb2d38b8d29ebd5dfe4ec018a54c5eb2bf0a",
     "xylem.css": "9beca687e02cd7166da271da373c22572c27410e54f457e95a96a13256c644fe",
     "xylem.js": "48d4501d3f6153799e05e50a670e111c8cfe44b38527c8ba63fd6739f644c6c5"
   }
