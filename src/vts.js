@@ -1,5 +1,5 @@
 // VTube Studio public API client (docs/plans/vts.md). VTS runs on the main PC; Allmind connects to
-// ws://<main PC>:8001 with Node's built-in WebSocket. First connect asks the owner to allow Allmind in a
+// ws://<main PC>:8001 with the 'ws' package. First connect asks the owner to allow Allmind in a
 // VTS popup; the token is kept in DATA_DIR/vts-auth.json (a secret: never logged). Connected only while
 // config.vts.enabled.
 import { EventEmitter } from 'node:events';
@@ -106,7 +106,7 @@ export class VTS extends EventEmitter {
     this.ws = ws;
     let opened = false;
     ws.on('open', () => { opened = true; console.log(`[vts] connected to ${url}`); this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); });
-    ws.on('message', (data, isBinary) => this._onMessage(isBinary ? data : data.toString('utf8')));
+    ws.on('message', (data) => this._onMessage(data));
     const end = () => {
       if (this.ws !== ws) return;
       this.ws = null;
@@ -122,34 +122,16 @@ export class VTS extends EventEmitter {
     ws.on('error', (e) => { if (!opened) console.warn('[vts] connect failed:', e.code || e.message); end(); });
   }
 
-  // VTS sends JSON text frames. Be lenient about what arrives (binary frames, a BOM, NULs, two objects
-  // in one frame): a token answer that couldn't be read left Allmind waiting forever (0.35.1 log).
-  _onMessage(raw) {
-    if (typeof Blob !== 'undefined' && raw instanceof Blob) { raw.arrayBuffer().then((ab) => this._onMessage(ab), () => {}); return; }
-    let text;
-    if (typeof raw === 'string') text = raw;
-    else {
-      const buf = raw instanceof ArrayBuffer ? Buffer.from(raw) : ArrayBuffer.isView(raw) ? Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength) : Buffer.from(String(raw));
-      text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString('utf16le') : buf.toString('utf8');
+  // VTS sends one JSON object per frame (text or binary — both arrive as a Buffer from 'ws')
+  _onMessage(data) {
+    const text = data.toString('utf8').replace(/^﻿/, '').trim();
+    let m;
+    try { m = JSON.parse(text); } catch {
+      // redacted: a token is a long hex string
+      console.warn(`[vts] unreadable message (${text.length} chars): ${text.slice(0, 160).replace(/[0-9a-f]{24,}/gi, '…')}`);
+      return;
     }
-    text = text.replace(/^﻿/, '').replace(/\u0000/g, '').trim();
-    if (!text) { console.warn(`[vts] empty message (${typeof raw === 'string' ? 'text' : 'binary'})`); return; }
-    let list = [];
-    try { list = [JSON.parse(text)]; } catch {
-      // several objects in one frame?
-      try { list = text.replace(/}\s*{/g, '}\n{').split('\n').map((x) => JSON.parse(x)); } catch { list = []; }
-    }
-    if (!list.length) {
-      // last resort: pull the token (and which request it answers) out of the text
-      const tok = /"authenticationToken"\s*:\s*"([^"]{8,})"/.exec(text);
-      const rid = /"requestID"\s*:\s*"([^"]*)"/.exec(text);
-      const type = /"messageType"\s*:\s*"([^"]*)"/.exec(text);
-      const preview = text.slice(0, 160).replace(/[0-9a-f]{24,}/gi, '…');
-      console.warn(`[vts] unreadable message (${typeof raw === 'string' ? 'text' : 'binary'}, ${text.length} chars, type ${type?.[1] || '?'}): ${preview}`);
-      if (tok) list = [{ messageType: 'AuthenticationTokenResponse', requestID: rid?.[1], data: { authenticationToken: tok[1] } }];
-      else return;
-    }
-    for (const m of list) this._handle(m);
+    this._handle(m);
   }
 
   _handle(m) {

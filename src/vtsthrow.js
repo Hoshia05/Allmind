@@ -124,8 +124,8 @@ export class VTSThrow extends EventEmitter {
     if (this.cache.has(key)) return this.cache.get(key);
     const buf = builtin ? readAsset(`public/vts-items/${name}`) : fs.readFileSync(path.join(ITEMS_DIR, name));
     if (!buf) throw new Error(`물건 파일이 없어요: ${name}`);
-    // VTS remembers approved images by hash; the file name is only a label
-    // VTS: custom-data file names are 8–32 chars of letters, digits and hyphens, ending .png or .jpg
+    // VTS remembers approved images by hash; the file name is only a label, but VTS insists on
+    // 8–32 chars of letters, digits and hyphens ending .png or .jpg
     const ext = /\.jpe?g$/i.test(name) ? '.jpg' : '.png'; // (a GIF is still sent as GIF data; only the label says .png)
     const v = { b64: buf.toString('base64'), name: `allmind-${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 12)}${ext}` };
     this.cache.set(key, v);

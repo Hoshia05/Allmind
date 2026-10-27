@@ -14,6 +14,7 @@ function sha256b64(s) {
 export class OBSClient extends EventEmitter {
   constructor({ url, password }) {
     super();
+    this.setMaxListeners(30); // many modules each listen for connected/closed once — not a leak
     this.url = url;
     this.password = password || '';
     this.ws = null;

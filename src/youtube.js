@@ -257,10 +257,4 @@ export class YouTubeGuard extends EventEmitter {
     this._save();
     this._set({ b: null, alert: null, error: `${why} — 설정 창 → 연동에서 "스트림 키 만들기"를 다시 누르고, 새 주소·키를 OBS Multi-RTMP에 넣어 주세요` });
   }
-
-  forgetKey() {
-    this.st = {};
-    this._save();
-    this._set({ b: null, alert: null, error: null });
-  }
 }

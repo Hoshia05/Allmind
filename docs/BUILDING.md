@@ -32,6 +32,24 @@ sh tools/dev/down.sh   # 끄기
 
 처음 실행하면 `.dev/`에 테스트용 화면·음악·효과음과 설정 파일을 만들어요(ffmpeg 필요).
 
+## Stream Deck 플러그인
+
+`streamdeck/`을 고쳤다면 다시 만들어서 **커밋**해 주세요 — exe와 CI 빌드는 저장소에 있는 `public/streamdeck/Allmind.streamDeckPlugin`을 그대로 넣어요.
+
+```bash
+node tools/build-streamdeck.mjs --bump   # 플러그인 버전 올리고 빌드 + 패킹 (Elgato CLI가 manifest도 검사)
+```
+
+## Xylem 팩 (방송 중 패치)
+
+`public/xylem/`만 고친 경우엔 Allmind 버전을 올리지 않고 팩만 올려요.
+
+```bash
+node tools/xylem-pack.mjs --bump   # manifest.json의 버전과 파일 해시 갱신
+```
+
+커밋 → `main` 푸시 → Xylem 페이지(`/xylem`)에서 **지금 적용**. 서버 쪽 코드가 새로 필요하면 manifest의 `minAllmind`를 올리고 Allmind도 같이 릴리스해야 해요.
+
 ## 릴리스
 
 릴리스는 **자동**입니다(`.github/workflows/release.yml`).

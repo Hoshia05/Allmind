@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.35.4';
+const VERSION = '0.35.5';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -525,10 +525,14 @@ async function main() {
 
   // ---------- 방송 전 점검 (src/preflight.js) ----------
   let preflightBusy = null;
+  // OBS's start time (a PowerShell call) only changes when OBS restarts, i.e. on a new connection
+  let obsStarted = null;
+  obs.on('connected', () => { obsStarted = null; });
+  const obsStartedAt = () => (obsStarted ??= win.obsStartTime().catch(() => { obsStarted = null; return null; }));
   async function preflight() {
     if (preflightBusy) return preflightBusy;
     preflightBusy = runPreflight({
-      obs, config, obsInfo, obsStreaming: () => obsStreaming, obsStartedAt: () => win.obsStartTime(),
+      obs, config, obsInfo, obsStreaming: () => obsStreaming, obsStartedAt,
       bgm, soundboard, viewer, chatViewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, update: () => updater.state(),
     }).then((r) => { preflightLast = r; stateChanged(); return r; }).finally(() => { preflightBusy = null; });
     return preflightBusy;
