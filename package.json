@@ -1,6 +1,6 @@
 {
   "name": "allmind",
-  "version": "0.35.3",
+  "version": "0.35.4",
   "description": "One control page for a two-PC streaming setup: 영도 viewer with click-through, BGM setlist with auto-pause, driven by OBS on the stream PC.",
   "type": "module",
   "license": "MIT",

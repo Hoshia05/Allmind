@@ -65,6 +65,8 @@ wss.on('connection', (ws) => {
     }
     if (t === 'ItemLoad') {
       if (d.customDataBase64 && !custom) return err(m, 758, 'Plugin does not have the LoadCustomImagesAsItems permission');
+      // real VTS: "It can only contain alphanumeric characters and hyphens and must end with .jpg or .png … between 8 and 32 characters long"
+      if (d.customDataBase64 && !/^[A-Za-z0-9-]+\.(png|jpg)$/.test(d.fileName || '') || (d.customDataBase64 && (d.fileName.length < 8 || d.fileName.length > 32))) return err(m, 757, 'Invalid filename provided. Even when loading custom image data, you must provide a valid filename.');
       const hash = d.customDataBase64 ? crypto.createHash('sha256').update(d.customDataBase64).digest('hex') : null;
       if (hash && !stats.approvedImages.has(hash)) { stats.approvedImages.add(hash); log('  popup: load this image? → yes'); }
       if (stats.items.size >= 60) return err(m, 754, 'scene full');

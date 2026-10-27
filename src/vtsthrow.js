@@ -125,7 +125,9 @@ export class VTSThrow extends EventEmitter {
     const buf = builtin ? readAsset(`public/vts-items/${name}`) : fs.readFileSync(path.join(ITEMS_DIR, name));
     if (!buf) throw new Error(`물건 파일이 없어요: ${name}`);
     // VTS remembers approved images by hash; the file name is only a label
-    const v = { b64: buf.toString('base64'), name: `allmind_${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10)}${path.extname(name).toLowerCase() || '.png'}` };
+    // VTS: custom-data file names are 8–32 chars of letters, digits and hyphens, ending .png or .jpg
+    const ext = /\.jpe?g$/i.test(name) ? '.jpg' : '.png'; // (a GIF is still sent as GIF data; only the label says .png)
+    const v = { b64: buf.toString('base64'), name: `allmind-${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 12)}${ext}` };
     this.cache.set(key, v);
     return v;
   }
@@ -285,7 +287,7 @@ export class VTSThrow extends EventEmitter {
     const buf = readAsset('public/vts-items/aim.png');
     const h = this.head(model);
     const r = await vts.call('ItemLoad', {
-      fileName: 'allmind_aim.png', positionX: h.x, positionY: h.y, size: 0.12, rotation: 0, fadeTime: 0.2, failIfOrderTaken: false, locked: false,
+      fileName: 'allmind-aim.png', positionX: h.x, positionY: h.y, size: 0.12, rotation: 0, fadeTime: 0.2, failIfOrderTaken: false, locked: false,
       unloadWhenPluginDisconnects: true, customDataBase64: buf.toString('base64'), customDataAskUserFirst: true, customDataSkipAskingUserIfWhitelisted: true, customDataAskTimer: -1,
     }, 60000);
     const id = r.instanceID;
