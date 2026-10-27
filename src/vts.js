@@ -1,0 +1,198 @@
+// VTube Studio public API client (docs/plans/vts.md). VTS runs on the main PC; Allmind connects to
+// ws://<main PC>:8001 with Node's built-in WebSocket. First connect asks the owner to allow Allmind in a
+// VTS popup; the token is kept in DATA_DIR/vts-auth.json (a secret: never logged). Connected only while
+// config.vts.enabled.
+import { EventEmitter } from 'node:events';
+import crypto from 'node:crypto';
+import { loadState, saveState, readAsset } from './config.js';
+
+const PLUGIN = { pluginName: 'Allmind', pluginDeveloper: 'Hoshia' };
+
+export const vtsUrl = (host) => {
+  let h = String(host || '').trim().replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  if (!h) h = '127.0.0.1:8001';
+  if (!/:\d+$/.test(h)) h += ':8001';
+  return `ws://${h}`;
+};
+
+export class VTS extends EventEmitter {
+  constructor(config) {
+    super();
+    this.config = config;
+    this.auth = loadState('vts-auth', {}); // { token }
+    this.ws = null;
+    this.state = 'off';      // off | connecting | auth (waiting for the popup) | ready | error
+    this.error = null;
+    this.pending = new Map();
+    this.retryMs = 5000;
+    this.timer = null;
+    this.model = null;       // { name, id, position }
+    this.canCustomItems = false;
+    this.version = null;
+  }
+
+  get cfg() { return this.config.vts || {}; }
+  get url() { return vtsUrl(this.cfg.host); }
+  get ready() { return this.state === 'ready'; }
+
+  status() {
+    return { enabled: !!this.cfg.enabled, url: this.url, state: this.state, error: this.error, model: this.model?.name || null, customItems: this.canCustomItems, version: this.version, hasToken: !!this.auth.token };
+  }
+
+  // (re)apply config.vts: start, stop or move to another address
+  apply() {
+    const want = !!this.cfg.enabled;
+    if (!want) return this.stop();
+    if (this.ws && this.wsUrl === this.url) return;
+    this.stop(false);
+    this._connect();
+  }
+
+  stop(clearState = true) {
+    clearTimeout(this.timer); this.timer = null;
+    const ws = this.ws; this.ws = null;
+    if (ws) { try { ws.close(); } catch {} }
+    this._failAll('VTube Studio 연결이 끊겼어요');
+    if (clearState) { this._set('off', null); }
+  }
+
+  // forget the token (e.g. the owner revoked Allmind in VTS) and ask again
+  forget() {
+    this.auth = {};
+    saveState('vts-auth', this.auth);
+    this.stop(false);
+    if (this.cfg.enabled) this._connect();
+  }
+
+  _set(state, error) {
+    if (this.state === state && this.error === error) return;
+    this.state = state; this.error = error;
+    this.emit('change');
+  }
+
+  _failAll(msg) {
+    for (const p of this.pending.values()) { clearTimeout(p.t); p.reject(new Error(msg)); }
+    this.pending.clear();
+  }
+
+  _retry() {
+    if (!this.cfg.enabled) return;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => { this.timer = null; this._connect(); }, this.retryMs);
+    this.retryMs = Math.min(60000, this.retryMs * 2);
+  }
+
+  _connect() {
+    if (!this.cfg.enabled) return;
+    const url = this.url;
+    this.wsUrl = url;
+    this._set('connecting', this.error);
+    let ws;
+    try { ws = new WebSocket(url); } catch (e) { this._set('error', `주소가 올바르지 않아요 (${url})`); return this._retry(); }
+    this.ws = ws;
+    let opened = false;
+    ws.onopen = () => { opened = true; this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); };
+    ws.onmessage = (ev) => this._onMessage(ev.data);
+    const end = () => {
+      if (this.ws !== ws) return;
+      this.ws = null;
+      this._failAll('VTube Studio 연결이 끊겼어요');
+      this.model = null;
+      const msg = opened ? 'VTube Studio 연결이 끊겼어요' : `${url.replace('ws://', '')}에 연결할 수 없어요 — 메인 PC에서 VTube Studio가 켜져 있고 API가 켜져 있는지 확인해 주세요`;
+      this._set('error', this.state === 'error' && this.error && opened ? this.error : msg);
+      this.emit('down');
+      this._retry();
+    };
+    ws.onclose = end;
+    ws.onerror = end;
+  }
+
+  _onMessage(raw) {
+    let m;
+    try { m = JSON.parse(typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')); } catch { return; }
+    const p = m.requestID && this.pending.get(m.requestID);
+    if (p) {
+      this.pending.delete(m.requestID); clearTimeout(p.t);
+      if (m.messageType === 'APIError') { const e = new Error(m.data?.message || 'VTS 오류'); e.code = m.data?.errorID; p.reject(e); }
+      else p.resolve(m.data || {});
+      return;
+    }
+    if (m.messageType?.endsWith('Event')) this.emit('event', m.messageType, m.data || {});
+  }
+
+  // one request → its response data (rejects on APIError, with err.code = VTS errorID)
+  request(type, data = {}, timeoutMs = 8000) {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== 1) return Promise.reject(new Error('VTube Studio에 연결되어 있지 않아요'));
+    const requestID = crypto.randomBytes(6).toString('hex');
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { this.pending.delete(requestID); reject(new Error(`VTS 응답 없음 (${type})`)); }, timeoutMs);
+      this.pending.set(requestID, { resolve, reject, t });
+      ws.send(JSON.stringify({ apiName: 'VTubeStudioPublicAPI', apiVersion: '1.0', requestID, messageType: `${type}Request`, data }));
+    });
+  }
+  // for the authenticated-only calls
+  call(type, data, timeoutMs) {
+    if (!this.ready) return Promise.reject(new Error(this.state === 'auth' ? 'VTube Studio에서 Allmind를 허용해 주세요' : 'VTube Studio에 연결되어 있지 않아요'));
+    return this.request(type, data, timeoutMs);
+  }
+
+  async _handshake() {
+    const st = await this.request('APIState');
+    this.version = st.vTubeStudioVersion || null;
+    if (!this.auth.token) {
+      this._set('auth', 'VTube Studio(메인 PC)에 뜬 창에서 Allmind를 허용해 주세요');
+      const icon = iconB64();
+      let r;
+      try { r = await this.request('AuthenticationToken', { ...PLUGIN, ...(icon ? { pluginIcon: icon } : {}) }, 5 * 60 * 1000); }
+      catch (e) { throw new Error(e.code === 50 ? 'VTube Studio에서 Allmind를 거절했어요 — 다시 연결을 눌러 허용해 주세요' : e.message); }
+      this.auth = { token: r.authenticationToken };
+      saveState('vts-auth', this.auth);
+    }
+    const a = await this.request('Authentication', { ...PLUGIN, authenticationToken: this.auth.token });
+    if (!a.authenticated) {
+      this.auth = {}; saveState('vts-auth', this.auth);
+      throw new Error('VTube Studio에서 Allmind 허용이 취소됐어요 — 다시 연결을 눌러 주세요');
+    }
+    this.retryMs = 5000;
+    // our thrown items are our own images → one more permission (asked once)
+    try {
+      const pr = await this.request('Permission', {});
+      this.canCustomItems = !!pr.permissions?.find((x) => x.name === 'LoadCustomImagesAsItems')?.granted;
+      if (!this.canCustomItems) {
+        this._set('auth', 'VTube Studio에 뜬 창에서 "이미지 불러오기" 권한을 허용해 주세요 (던질 물건)');
+        const g = await this.request('Permission', { requestedPermission: 'LoadCustomImagesAsItems' }, 5 * 60 * 1000);
+        this.canCustomItems = !!g.grantSuccess;
+      }
+    } catch { this.canCustomItems = false; }
+    await this.refreshModel().catch(() => {});
+    this._set('ready', this.canCustomItems ? null : '이미지 불러오기 권한이 없어서 물건을 던질 수 없어요 — 다시 연결해서 허용해 주세요');
+    this.emit('ready');
+  }
+
+  async refreshModel() {
+    const m = await this.request('CurrentModel');
+    this.model = m.modelLoaded ? { name: m.modelName, id: m.modelID, position: m.modelPosition } : null;
+    return this.model;
+  }
+
+  // ---------- groundwork for viewers changing model parts (expressions) ----------
+  async expressions() {
+    const r = await this.call('ExpressionState', { details: false });
+    return (r.expressions || []).map((e) => ({ name: e.name, file: e.file, active: !!e.active }));
+  }
+  setExpression(file, active, fadeTime = 0.25) { return this.call('ExpressionActivation', { expressionFile: String(file), active: !!active, fadeTime }); }
+  async hotkeys() {
+    const r = await this.call('HotkeysInCurrentModel', {});
+    return (r.availableHotkeys || []).map((h) => ({ id: h.hotkeyID, name: h.name, type: h.type, file: h.file }));
+  }
+  triggerHotkey(id) { return this.call('HotkeyTrigger', { hotkeyID: String(id) }); }
+}
+
+let iconCache = null;
+function iconB64() { // VTS wants exactly 128×128 (PNG/JPG)
+  if (iconCache !== null) return iconCache || undefined;
+  const buf = readAsset('public/vts-items/plugin-icon.png');
+  iconCache = buf ? buf.toString('base64') : '';
+  return iconCache || undefined;
+}

@@ -7,6 +7,7 @@ D=.dev
 [ -f $D/config.json ] || sh tools/dev/fixtures.sh
 sh tools/dev/down.sh
 env MOCK_FRAMES=$D/frames MOCK_OBS_PASSWORD=hunter2 "$@" node tools/mock-obs.js > $D/mock.log 2>&1 & echo $! > $D/mock.pid
+[ "$MOCK_VTS" = 0 ] || { node tools/mock-vts.js > $D/vts.log 2>&1 & echo $! > $D/vts.pid; }
 sleep 1
 ALLMIND_CONFIG=$D/config.json ALLMIND_DATA=$D/data node src/server.js > $D/server.log 2>&1 & echo $! > $D/server.pid
 sleep 3

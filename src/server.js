@@ -28,9 +28,11 @@ import { Dogfight } from './dogfight.js';
 import { XylemPack } from './xylem.js';
 import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
+import { VTS } from './vts.js';
+import { VTSThrow } from './vtsthrow.js';
 import * as win from './win.js';
 
-const VERSION = '0.32.0';
+const VERSION = '0.33.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -332,6 +334,10 @@ async function main() {
   const xylemPage = xylem.channel(); // open /xylem pages: told to reload on a pack switch
   const dogfight = new Dogfight(chzzk, xylem);
   const roulette = new Roulette(chzzk, xylem);
+  // VTube Studio on the main PC (docs/plans/vts.md): 던지기 now, expression changes later
+  const vts = new VTS(config);
+  const vtsThrow = new VTSThrow(vts, chzzk);
+  vts.apply();
   // while a Xylem page is open, look for a newer pack every 3 min (one small GitHub request)
   setInterval(() => { if (xylemPage.size) xylem.check().catch(() => {}); }, 3 * 60000).unref();
   const xylemState = () => ({
@@ -342,6 +348,7 @@ async function main() {
     roulette: roulette.status(),
     board: dogfight.board(),
     dogfight: dogfight.status(),
+    vts: { ...vts.status(), throw: vtsThrow.status() },
   });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
   const deck = new Deck({ config, bgm, soundboard, markers });
@@ -602,6 +609,31 @@ async function main() {
     'POST /api/roulette/clear-log': () => roulette.clearLog(),
     'POST /api/dogfight/reset': () => dogfight.reset(),
     'POST /api/dogfight/mode': (b) => ({ mode: dogfight.setMode(b) }),
+    // ---------- VTube Studio ----------
+    'POST /api/vts/connect': (b) => {
+      const v = { enabled: !!b.enabled, host: String(b.host ?? config.vts?.host ?? '').trim().slice(0, 100) };
+      saveConfig({ vts: v });
+      config.vts = { ...(config.vts || {}), ...v };
+      vts.apply();
+      return { vts: vts.status() };
+    },
+    'POST /api/vts/reconnect': () => { vts.stop(false); vts.apply(); return { vts: vts.status() }; },
+    'POST /api/vts/forget': () => { vts.forget(); return { vts: vts.status() }; },
+    'POST /api/vts/throw-settings': (b) => ({ settings: vtsThrow.setSettings(b.settings) }),
+    'POST /api/vts/test-throw': (b) => {
+      const n = Math.max(1, Math.min(10, Number(b.count) || 1));
+      let r;
+      for (let i = 0; i < n; i++) r = vtsThrow.request({ source: 'test', force: true, side: Number(b.side) || undefined });
+      if (!r.ok) throw new Error(r.reason);
+      return {};
+    },
+    'POST /api/vts/items': (b) => vtsThrow.addItem(b.name, b.data),
+    'POST /api/vts/items-remove': (b) => vtsThrow.removeItem(b.file),
+    'POST /api/vts/aim-start': () => vtsThrow.startAim(),
+    'POST /api/vts/aim-stop': () => vtsThrow.stopAim(),
+    'GET /api/vts/expressions': async () => ({ expressions: await vts.expressions() }),
+    'POST /api/vts/expression': async (b) => { await vts.setExpression(b.file, b.active); return { expressions: await vts.expressions() }; },
+    'GET /api/vts/hotkeys': async () => ({ hotkeys: await vts.hotkeys() }),
     'POST /api/roulette/wheel-spin': (b) => ({ spins: roulette.spinWheel(String(b.id || ''), b.spins) }),
   };
   const SECRET_MASK = '••••••••';
@@ -865,6 +897,13 @@ async function main() {
     if (key === 'GET /api/roulette/events') return roulette.attach(req, res);
     if (key === 'POST /api/roulette/shown') { roulette.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
     if (key === 'GET /api/dogfight/events') return dogfight.attach(req, res);
+    if (key === 'GET /api/vts/item') {
+      const buf = vtsThrow.itemFile(url.searchParams.get('file'));
+      if (!buf) return json(res, 404, { ok: false });
+      const ext = path.extname(url.searchParams.get('file') || '').toLowerCase();
+      res.writeHead(200, { 'Content-Type': ext === '.gif' ? 'image/gif' : ext === '.png' ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-cache' });
+      return res.end(buf);
+    }
     if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
     if (key === 'POST /api/dogfight/cmd') { dogfight.inject(await readBody(req)); return json(res, 200, { ok: true }); }
 

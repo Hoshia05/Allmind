@@ -79,6 +79,11 @@
     "token": ""
   },
 
+  "vts": {
+    "enabled": false,
+    "host": ""
+  },
+
   "dashboard": {
     "shortcuts": false
   },
