@@ -187,7 +187,7 @@ export function mount(el, x) {
     const [cls, txt] = STATE[v.state] || ['', v.state];
     $('vState').className = `pill ${cls}`;
     $('vState').textContent = v.state === 'ready' && v.model ? `연결됨 · ${v.model}` : txt;
-    if (!hostTyped) { $('vOn').checked = v.enabled; if (document.activeElement !== $('vHost')) $('vHost').value = v.url.replace('ws://', '') === '127.0.0.1:8001' && !v.enabled ? '' : v.url.replace('ws://', ''); }
+    if (!hostTyped) { $('vOn').checked = v.enabled; if (document.activeElement !== $('vHost')) $('vHost').value = v.host ?? (v.url || '').replace('ws://', ''); }
     $('vMsg').textContent = v.error || (v.state === 'ready' ? `VTube Studio ${v.version || ''} · 모델: ${v.model || '없음'}` : v.enabled ? '' : '꺼져 있어요');
     $('vMsg').style.color = v.state === 'error' || v.state === 'auth' ? 'var(--warn)' : '';
     if (v.state === 'ready' && !hotkeysLoaded) loadHotkeys();

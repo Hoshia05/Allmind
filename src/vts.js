@@ -10,7 +10,7 @@ const PLUGIN = { pluginName: 'Allmind', pluginDeveloper: 'Hoshia' };
 
 export const vtsUrl = (host) => {
   let h = String(host || '').trim().replace(/^wss?:\/\//i, '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-  if (!h) h = '127.0.0.1:8001';
+  if (!h) return null; // no default: VTS runs on the main PC, never on this one
   if (!/:\d+$/.test(h)) h += ':8001';
   return `ws://${h}`;
 };
@@ -36,13 +36,14 @@ export class VTS extends EventEmitter {
   get ready() { return this.state === 'ready'; }
 
   status() {
-    return { enabled: !!this.cfg.enabled, url: this.url, state: this.state, error: this.error, model: this.model?.name || null, customItems: this.canCustomItems, version: this.version, hasToken: !!this.auth.token };
+    return { enabled: !!this.cfg.enabled, url: this.url || '', host: String(this.cfg.host || ''), state: this.state, error: this.error, model: this.model?.name || null, customItems: this.canCustomItems, version: this.version, hasToken: !!this.auth.token };
   }
 
   // (re)apply config.vts: start, stop or move to another address
   apply() {
     const want = !!this.cfg.enabled;
     if (!want) return this.stop();
+    if (!this.url) { this.stop(false); return this._set('error', '메인 PC의 VTube Studio 주소를 넣어 주세요 (예: 192.168.0.5:8001)'); }
     if (this.ws && this.wsUrl === this.url) return;
     this.stop(false);
     this._connect();
@@ -58,6 +59,7 @@ export class VTS extends EventEmitter {
 
   // forget the token (e.g. the owner revoked Allmind in VTS) and ask again
   forget() {
+    console.log('[vts] forgetting the token, asking VTube Studio again');
     this.auth = {};
     saveState('vts-auth', this.auth);
     this.stop(false);
@@ -82,22 +84,33 @@ export class VTS extends EventEmitter {
     this.retryMs = Math.min(60000, this.retryMs * 2);
   }
 
+  // "다시 연결": keep a connection that is waiting for the owner to click "allow" in VTS — a new
+  // connection would ask again and the first click would go to the closed one
+  reconnect() {
+    if (this.state === 'auth' && this.ws && this.wsUrl === this.url) return;
+    this.stop(false);
+    this.apply();
+  }
+
   _connect() {
     if (!this.cfg.enabled) return;
     const url = this.url;
+    if (!url) return this._set('error', '메인 PC의 VTube Studio 주소를 넣어 주세요 (예: 192.168.0.5:8001)');
     this.wsUrl = url;
     this._set('connecting', this.error);
     let ws;
     try { ws = new WebSocket(url); } catch (e) { this._set('error', `주소가 올바르지 않아요 (${url})`); return this._retry(); }
     this.ws = ws;
+    ws.binaryType = 'arraybuffer';
     let opened = false;
-    ws.onopen = () => { opened = true; this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); };
+    ws.onopen = () => { opened = true; console.log(`[vts] connected to ${url}`); this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); };
     ws.onmessage = (ev) => this._onMessage(ev.data);
     const end = () => {
       if (this.ws !== ws) return;
       this.ws = null;
       this._failAll('VTube Studio 연결이 끊겼어요');
       this.model = null;
+      if (opened) console.log('[vts] connection closed');
       const msg = opened ? 'VTube Studio 연결이 끊겼어요' : `${url.replace('ws://', '')}에 연결할 수 없어요 — 메인 PC에서 VTube Studio가 켜져 있고 API가 켜져 있는지 확인해 주세요`;
       this._set('error', this.state === 'error' && this.error && opened ? this.error : msg);
       this.emit('down');
@@ -109,7 +122,15 @@ export class VTS extends EventEmitter {
 
   _onMessage(raw) {
     let m;
-    try { m = JSON.parse(typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')); } catch { return; }
+    try { m = JSON.parse(typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')); } catch { console.warn('[vts] unreadable message'); return; }
+    // a token can arrive after its request was given up (connection restarted while the popup was up)
+    if (m.messageType === 'AuthenticationTokenResponse' && m.data?.authenticationToken && m.data.authenticationToken !== this.auth.token) {
+      const late = !(m.requestID && this.pending.has(m.requestID));
+      this.auth = { token: m.data.authenticationToken };
+      saveState('vts-auth', this.auth);
+      console.log('[vts] allowed in VTube Studio — token received');
+      if (late) { console.log('[vts] (late answer) reconnecting to log in with it'); setTimeout(() => { this.stop(false); this.apply(); }, 300); return; }
+    }
     const p = m.requestID && this.pending.get(m.requestID);
     if (p) {
       this.pending.delete(m.requestID); clearTimeout(p.t);
@@ -141,7 +162,8 @@ export class VTS extends EventEmitter {
     const st = await this.request('APIState');
     this.version = st.vTubeStudioVersion || null;
     if (!this.auth.token) {
-      this._set('auth', 'VTube Studio(메인 PC)에 뜬 창에서 Allmind를 허용해 주세요');
+      console.log('[vts] asking VTube Studio to allow Allmind (popup on the main PC)');
+      this._set('auth', 'VTube Studio(메인 PC)에 뜬 창에서 Allmind를 허용해 주세요 — 창이 안 보이면 VTS 설정 화면을 닫아 보거나 "허용 다시 받기"');
       const icon = iconB64();
       let r;
       try { r = await this.request('AuthenticationToken', { ...PLUGIN, ...(icon ? { pluginIcon: icon } : {}) }, 5 * 60 * 1000); }
@@ -150,6 +172,7 @@ export class VTS extends EventEmitter {
       saveState('vts-auth', this.auth);
     }
     const a = await this.request('Authentication', { ...PLUGIN, authenticationToken: this.auth.token });
+    console.log(`[vts] authentication: ${a.authenticated ? 'ok' : 'refused'}${a.reason ? ` (${a.reason})` : ''}`);
     if (!a.authenticated) {
       this.auth = {}; saveState('vts-auth', this.auth);
       throw new Error('VTube Studio에서 Allmind 허용이 취소됐어요 — 다시 연결을 눌러 주세요');
@@ -164,7 +187,8 @@ export class VTS extends EventEmitter {
         const g = await this.request('Permission', { requestedPermission: 'LoadCustomImagesAsItems' }, 5 * 60 * 1000);
         this.canCustomItems = !!g.grantSuccess;
       }
-    } catch { this.canCustomItems = false; }
+      console.log(`[vts] custom images: ${this.canCustomItems ? 'allowed' : 'not allowed'}`);
+    } catch (e) { this.canCustomItems = false; console.warn('[vts] permission request failed:', e.message); }
     await this.refreshModel().catch(() => {});
     this._set('ready', this.canCustomItems ? null : '이미지 불러오기 권한이 없어서 물건을 던질 수 없어요 — 다시 연결해서 허용해 주세요');
     this.emit('ready');

@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.35.0';
+const VERSION = '0.35.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -654,7 +654,7 @@ async function main() {
       vts.apply();
       return { vts: vts.status() };
     },
-    'POST /api/vts/reconnect': () => { vts.stop(false); vts.apply(); return { vts: vts.status() }; },
+    'POST /api/vts/reconnect': () => { vts.reconnect(); return { vts: vts.status() }; },
     'POST /api/vts/forget': () => { vts.forget(); return { vts: vts.status() }; },
     'POST /api/vts/throw-settings': (b) => ({ settings: vtsThrow.setSettings(b.settings) }),
     'POST /api/vts/test-throw': (b) => {

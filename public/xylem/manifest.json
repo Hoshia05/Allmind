@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAllmind": "0.33.0",
   "notes": "VTube Studio: 던지기 (채팅·후원으로 모델에게 물건 던지기)",
   "modules": [
@@ -30,7 +30,7 @@
     "index.html": "4d25a0d686b47dee0cf5996a3c7c9677ba5d6b6d925c731ef71a1efaf6aaa0d5",
     "roulette.html": "df20078c64169796803bffcecfb11823c46d2596da8e02f57c4103d90b1bace5",
     "roulette.panel.js": "c4d81986e093dc485ba6c9c1f4d9cb2d38b8d29ebd5dfe4ec018a54c5eb2bf0a",
-    "vts.panel.js": "a0acde82eb86a8c9d97ab8c71cbe5b1766cb85aa1545a56eed61eed63ebb7fdf",
+    "vts.panel.js": "0467802dd1f7b07552f80c2136da9f8a095f97297ea2faf656ae85d7b9055031",
     "xylem.css": "9beca687e02cd7166da271da373c22572c27410e54f457e95a96a13256c644fe",
     "xylem.js": "48d4501d3f6153799e05e50a670e111c8cfe44b38527c8ba63fd6739f644c6c5"
   }
