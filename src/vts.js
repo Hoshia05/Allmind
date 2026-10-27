@@ -3,6 +3,7 @@
 // VTS popup; the token is kept in DATA_DIR/vts-auth.json (a secret: never logged). Connected only while
 // config.vts.enabled.
 import { EventEmitter } from 'node:events';
+import WebSocket from 'ws';
 import crypto from 'node:crypto';
 import { loadState, saveState, readAsset } from './config.js';
 
@@ -99,12 +100,13 @@ export class VTS extends EventEmitter {
     this.wsUrl = url;
     this._set('connecting', this.error);
     let ws;
-    try { ws = new WebSocket(url); } catch (e) { this._set('error', `주소가 올바르지 않아요 (${url})`); return this._retry(); }
+    // the 'ws' package, not Node's built-in WebSocket: with the built-in one VTS's answer to the
+    // token request arrived as an empty message on the owner's PC (0.35.2 log). No compression either.
+    try { ws = new WebSocket(url, { perMessageDeflate: false, handshakeTimeout: 8000, maxPayload: 32 * 1024 * 1024 }); } catch (e) { this._set('error', `주소가 올바르지 않아요 (${url})`); return this._retry(); }
     this.ws = ws;
-    ws.binaryType = 'arraybuffer';
     let opened = false;
-    ws.onopen = () => { opened = true; console.log(`[vts] connected to ${url}`); this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); };
-    ws.onmessage = (ev) => this._onMessage(ev.data);
+    ws.on('open', () => { opened = true; console.log(`[vts] connected to ${url}`); this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); });
+    ws.on('message', (data, isBinary) => this._onMessage(isBinary ? data : data.toString('utf8')));
     const end = () => {
       if (this.ws !== ws) return;
       this.ws = null;
@@ -116,8 +118,8 @@ export class VTS extends EventEmitter {
       this.emit('down');
       this._retry();
     };
-    ws.onclose = end;
-    ws.onerror = end;
+    ws.on('close', end);
+    ws.on('error', (e) => { if (!opened) console.warn('[vts] connect failed:', e.code || e.message); end(); });
   }
 
   // VTS sends JSON text frames. Be lenient about what arrives (binary frames, a BOM, NULs, two objects
@@ -131,6 +133,7 @@ export class VTS extends EventEmitter {
       text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString('utf16le') : buf.toString('utf8');
     }
     text = text.replace(/^﻿/, '').replace(/\u0000/g, '').trim();
+    if (!text) { console.warn(`[vts] empty message (${typeof raw === 'string' ? 'text' : 'binary'})`); return; }
     let list = [];
     try { list = [JSON.parse(text)]; } catch {
       // several objects in one frame?
@@ -151,6 +154,7 @@ export class VTS extends EventEmitter {
 
   _handle(m) {
     if (!m || typeof m !== 'object') return;
+    if (this.state === 'auth' || this.state === 'connecting') console.log(`[vts] ← ${m.messageType || '?'}`);
     // a token can arrive after its request was given up (connection restarted while the popup was up)
     if (m.messageType === 'AuthenticationTokenResponse' && m.data?.authenticationToken && m.data.authenticationToken !== this.auth.token) {
       const late = !(m.requestID && this.pending.has(m.requestID));

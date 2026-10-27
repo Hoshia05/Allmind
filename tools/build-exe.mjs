@@ -33,6 +33,8 @@ await esbuild.build({
   format: 'cjs',
   target: 'node22',
   outfile: path.join(DIST, 'allmind.cjs'),
+  // ws (VTube Studio client) tries these optional native speedups and falls back without them
+  external: ['bufferutil', 'utf-8-validate'],
   logLevel: 'warning',
 });
 
