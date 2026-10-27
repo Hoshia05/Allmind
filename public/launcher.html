@@ -15,8 +15,12 @@
     <button class="btn ghost small-btn" id="quitBtn" title="Allmind 종료">종료</button>
   </header>
 
+  <!-- Two forms, filled from many cards: inputs point at them with form="…" -->
+  <form id="settings" autocomplete="off"></form>
+  <form id="linksForm" autocomplete="off"></form>
+
   <main class="l-main">
-    <!-- status -->
+    <!-- ================= status ================= -->
     <section class="card">
       <h2>상태</h2>
       <ul class="status">
@@ -33,7 +37,7 @@
       </div>
     </section>
 
-    <!-- update -->
+    <!-- ================= update ================= -->
     <section class="card" id="updateCard">
       <h2>업데이트</h2>
       <ul class="status">
@@ -48,171 +52,289 @@
       <div class="tip" id="updHint" hidden>방송 중이거나 녹화 중에는 설치할 수 없어요. 설치하면 Allmind가 잠시 꺼졌다가 새 버전으로 다시 켜져요. 설정은 그대로예요.</div>
     </section>
 
-    <!-- Google (YouTube archive + Drive) and CHZZK sign-ins -->
-    <section class="card" id="linksCard">
-      <details id="linksBox">
-      <summary><h2>연동 — 유튜브 아카이브 · 드라이브 · 치지직</h2><span class="muted small" id="linksHint"></span></summary>
-      <ul class="status">
-        <li><span class="sdot" id="dGoogle"></span><span class="lbl">Google</span><span class="val" id="vGoogle">…</span></li>
-        <li><span class="sdot" id="dYt"></span><span class="lbl">유튜브</span><span class="val" id="vYt">…</span></li>
-        <li><span class="sdot" id="dDrive"></span><span class="lbl">드라이브</span><span class="val" id="vDrive">…</span></li>
-        <li><span class="sdot" id="dChzzkOpen"></span><span class="lbl">치지직 연동</span><span class="val" id="vChzzkOpen">…</span></li>
-      </ul>
+    <!-- ================= 기본 ================= -->
+    <h3 class="group-h">기본 <span>Allmind가 움직이려면 필요해요 · 처음이면 위에서부터 차례로</span></h3>
 
-      <form id="linksForm" autocomplete="off">
-        <fieldset>
-          <legend>GOOGLE (유튜브 아카이브 · 드라이브 업로드)</legend>
-          <label>클라이언트 ID<input type="text" name="googleClientId" placeholder="….apps.googleusercontent.com"></label>
-          <label>클라이언트 보안 비밀번호<input type="password" name="googleClientSecret"></label>
-          <div class="row-btns tight">
-            <button class="btn accent" type="button" id="googleLogin">Google 로그인</button>
-            <button class="btn ghost" type="button" id="googleLogout" hidden>로그아웃</button>
-          </div>
-          <details class="tip">
-            <summary>처음 한 번: Google 클라우드 프로젝트 만들기 (10분)</summary>
-            <ol>
-              <li><a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud 콘솔</a>에서 새 프로젝트를 만들어요 (이름은 아무거나, 예: Allmind).</li>
-              <li><b>API 및 서비스 → 라이브러리</b>에서 <b>YouTube Data API v3</b>와 <b>Google Drive API</b>를 각각 <b>사용</b>으로.</li>
-              <li><b>OAuth 동의 화면</b>: 사용자 유형 <b>외부</b>, 앱 이름·이메일만 채우고 저장. <b>테스트 사용자</b>에 내 구글 계정을 추가.</li>
-              <li>같은 화면에서 <b>앱 게시(프로덕션으로 푸시)</b>를 눌러요. <i>테스트 상태로 두면 7일마다 다시 로그인해야 해요.</i> 검증은 안 받아도 돼요.</li>
-              <li><b>사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID</b>, 유형 <b>데스크톱 앱</b>. 나온 클라이언트 ID와 보안 비밀번호를 위에 붙여 넣어요.</li>
-              <li><b>Google 로그인</b>을 누르면 브라우저가 열려요. <b>허용 화면이 2번</b> 나와요(먼저 유튜브, 이어서 드라이브) — Google이 한 번에 못 받게 해서 나눴어요. 둘 다 같은 계정으로 하세요. "Google에서 확인하지 않은 앱" 화면이 나오면 <b>고급 → (앱 이름)(으)로 이동</b>을 누르고, 유튜브·드라이브 권한을 허용해요. 방송하는 유튜브 채널의 계정으로 로그인하세요.</li>
-            </ol>
-          </details>
-        </fieldset>
-
-        <fieldset>
-          <legend>유튜브 아카이브</legend>
-          <label class="check"><input type="checkbox" name="youtubeEnabled"> 방송마다 <b>비공개</b> 아카이브를 미리 준비하고, 방송 중에 지키기</label>
-          <span class="hint">공개로 바뀌면 바로 비공개로 되돌리고, 방송을 켰는데 유튜브가 시작되지 않으면 대시보드에 알려요.</span>
-          <label>유튜브 제목 형식 <span class="hint">{date} = 2026-10-26, {title} = 방송 제목</span><input type="text" name="titleTemplate" placeholder="{date} - {title}"></label>
-          <div class="row-btns tight">
-            <button class="btn" type="button" id="ytKey">스트림 키 만들기</button>
-            <button class="btn ghost" type="button" id="ytShowKey" hidden>키 보기</button>
-          </div>
-          <div class="keybox" id="keyBox" hidden>
-            <div class="muted small">OBS의 <b>Multi-RTMP</b> 유튜브 대상에 이 서버 주소와 키를 넣어 주세요 (한 번만). 키는 비밀번호처럼 다른 사람에게 보여 주지 마세요.</div>
-            <div class="addr-row"><code class="addr small" id="keyAddr"></code><button class="btn" type="button" data-copy="keyAddr">복사</button></div>
-            <div class="addr-row"><code class="addr small" id="keyVal"></code><button class="btn" type="button" data-copy="keyVal">복사</button></div>
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>드라이브 자동 업로드</legend>
-          <label class="check"><input type="checkbox" name="driveEnabled"> 녹화가 끝나면 영상과 ….markers.json을 드라이브에 올리기</label>
-          <span class="hint">방송·녹화 중에는 올리지 않아요. 원본 파일은 그대로 두고, 드라이브의 <b>Allmind 녹화</b> 폴더에 올려요 (폴더는 드라이브에서 원하는 곳으로 옮겨도 돼요).</span>
-          <label>파일 이름 형식 <span class="hint">{date}, {title} — 제목은 그 녹화에서 가장 오래 걸려 있던 치지직 제목</span><input type="text" name="nameTemplate" placeholder="{date} - {title}"></label>
-          <label>올릴 폴더 <span class="hint">드라이브에서 폴더를 열고 주소창의 링크를 붙여 넣으세요. 비워 두면 "Allmind 녹화" 폴더를 만들어 거기에 올려요.</span><input type="text" name="driveFolder" placeholder="https://drive.google.com/drive/folders/…" autocomplete="off"></label>
-          <div class="hint" id="driveFolderNote"></div>
-          <label>업로드 속도 제한 (Mbps) <span class="hint">0 = 제한 없음</span><input type="number" name="maxMbps" min="0" max="1000"></label>
-        </fieldset>
-
-        <fieldset>
-          <legend>치지직 연동 (방송 준비: 제목·카테고리·태그)</legend>
-          <label>Client ID<input type="text" name="chzzkClientId"></label>
-          <label>Client Secret<input type="password" name="chzzkClientSecret"></label>
-          <label>로그인 리디렉션 URL <span class="hint">앱 등록할 때 이 주소를 그대로 넣어요</span>
-            <span class="addr-row"><code class="addr small" id="chzzkRedirect"></code><button class="btn" type="button" data-copy="chzzkRedirect">복사</button></span></label>
-          <div class="row-btns tight">
-            <button class="btn accent" type="button" id="chzzkLogin">치지직 로그인</button>
-            <button class="btn ghost" type="button" id="chzzkLogout" hidden>로그아웃</button>
-          </div>
-          <details class="tip">
-            <summary>처음 한 번: 치지직 개발자 앱 등록</summary>
-            <ol>
-              <li><a href="https://developers.chzzk.naver.com/" target="_blank" rel="noopener">CHZZK Developers</a>에 방송하는 네이버 계정으로 로그인해 애플리케이션을 등록해요.</li>
-              <li>로그인 리디렉션 URL에 위 주소를 넣고, 권한(scope)은 <b>방송 설정 조회</b>, <b>방송 설정 변경</b>, <b>유저 정보 조회</b>를 골라요.</li>
-              <li>받은 Client ID와 Client Secret을 위에 붙여 넣고 <b>치지직 로그인</b>.</li>
-              <li>로그인은 30일 동안 쓰지 않으면 만료돼요. 방송할 때마다 쓰면 계속 이어져요.</li>
-            </ol>
-          </details>
-        </fieldset>
-        <div class="row-btns"><button class="btn accent" type="submit">연동 설정 저장</button></div>
-      </form>
-      </details>
-    </section>
-
-    <!-- main PC -->
-    <section class="card">
-      <h2>메인 PC에서 열기</h2>
-      <div class="addr-row">
-        <code class="addr" id="addr">…</code>
-        <button class="btn" id="copyAddr">복사</button>
-      </div>
-      <div class="muted small" id="otherAddrs"></div>
-      <div class="fw-row" id="fwRow" hidden>
-        <span class="sdot" id="dFw"></span>
-        <span id="vFw"></span>
-        <button class="btn accent" id="fwBtn" hidden>방화벽 허용</button>
-      </div>
-      <details class="tip">
-        <summary>메인 PC에 바로가기 만들기 (한 번만)</summary>
-        <ol>
-          <li>메인 PC 크롬에서 위 주소를 엽니다.</li>
-          <li>오른쪽 위 <b>⋮</b> 메뉴 → 저장/공유 메뉴 안의 <b>바로가기 만들기…</b></li>
-          <li><b>창으로 열기</b>를 체크하고 만들기.</li>
+    <details class="mod" id="m-obs" data-group="basic" data-name="OBS 연결" data-icon="🎛️">
+      <summary><span class="m-ico">🎛️</span><span class="m-t"><b>OBS 연결</b><small>Allmind의 거의 모든 기능이 OBS를 통해 움직여요</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">Allmind는 OBS에 붙어서 BGM을 틀고, 영도·채팅 화면을 대시보드에 보여 주고, 마이크·장면·녹화 상태를 읽어요. OBS에 들어 있는 <b>WebSocket 서버</b>로 연결해요 (OBS 28 이상이면 따로 설치할 건 없어요).</p>
+        <div class="uses">쓰는 곳 <i>BGM</i><i>사운드보드</i><i>영도 뷰어</i><i>방송 화면</i><i>마이크·장면</i><i>⭐ 마크</i><i>녹화 업로드</i></div>
+        <ol class="steps">
+          <li data-step="obs.server">OBS → <b>도구 → WebSocket 서버 설정</b>에서 <b>WebSocket 서버 사용</b>을 체크해요.</li>
+          <li data-step="obs.password">같은 창의 <b>연결 정보 표시</b>를 눌러 나온 비밀번호를 아래에 붙여 넣어요.</li>
+          <li data-step="obs.connected"><b>저장하고 다시 시작</b> → 위 상태에 <b>OBS 연결: 연결됨</b>이 뜨면 끝.</li>
         </ol>
-        <p>이제 바탕화면 아이콘으로 탭 없는 창이 바로 열려요.</p>
-      </details>
-    </section>
-
-    <!-- Stream Deck -->
-    <section class="card" id="deckCard">
-      <h2>스트림덱 (BGM · 사운드보드)</h2>
-      <p class="muted small">Allmind 플러그인을 깔면 스트림덱 앱에 <b>Allmind</b> 묶음이 생겨요. 키를 끌어다 놓고 곡이나 사운드를 목록에서 고르면 끝 — 지금 재생 중인 곡·사운드가 키에 보여요. 두 PC의 스트림덱이 같은 Allmind를 써요.</p>
-      <div class="deck-row">
-        <span class="small">이 PC (방송 PC)</span>
-        <button class="btn accent" id="deckInstall">플러그인 설치</button>
-      </div>
-      <div class="deck-row">
-        <span class="small">메인 PC</span>
-        <code class="small" id="deckDl">…</code>
-        <button class="btn small-btn" id="deckDlCopy">복사</button>
-      </div>
-      <p class="muted small">메인 PC 브라우저에서 위 주소를 열어 받은 파일을 더블클릭하세요. 그다음 Allmind 키 아무거나 골라 설정의 <b>연결 → Allmind 주소</b>에 <b id="deckHost">…</b> 를 넣으면 그 PC의 키 전부에 적용돼요.</p>
-      <div class="deck-row">
-        <label class="small" for="deckToken">비밀 키 (선택)</label>
-        <input id="deckToken" type="text" autocomplete="off" spellcheck="false" placeholder="비워 두면 누구나 실행할 수 있어요">
-        <button class="btn" id="deckTokenSave">저장</button>
-      </div>
-      <details class="tip" id="deckTip">
-        <summary>플러그인 없이: 웹사이트 동작에 붙일 주소</summary>
-        <ol>
-          <li>스트림덱 앱에서 <b>시스템 → 웹사이트(Website)</b> 동작을 키에 끌어다 놓아요.</li>
-          <li>아래에서 <b>복사</b>를 눌러 주소를 붙여 넣고, <b>백그라운드에서 접근(Access in background)</b>을 체크하세요. 그래야 브라우저가 열리지 않아요.</li>
-        </ol>
-        <div class="deck-row">
-          <label class="small" for="deckWhere">스트림덱이 있는 곳</label>
-          <select id="deckWhere"></select>
+        <p class="tip-line">💡 OBS는 위의 <b>OBS 시작</b> 버튼(또는 아래 "같이 켜기")으로 켜세요. 그래야 영도 화면 클릭 전달·광고 스킵이 켜져요.</p>
+        <div class="fields">
+          <label>WebSocket 비밀번호
+            <span class="pw"><input form="settings" type="password" name="obsPassword"><button type="button" class="btn ghost icon" id="pwToggle" title="보기">👁</button></span>
+          </label>
+          <label>OBS 위치 <span class="hint">보통 자동으로 찾아요</span>
+            <input form="settings" type="text" name="obsPath" placeholder="자동으로 찾아요">
+          </label>
+          <label class="check"><input form="settings" type="checkbox" name="startObs"><span>Allmind를 켤 때 OBS도 같이 켜기</span></label>
         </div>
-        <div id="deckList"><span class="muted small">불러오는 중…</span></div>
-      </details>
-    </section>
+        <div class="m-save"><button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button></div>
+      </div>
+    </details>
 
-    <!-- 치지직 리모컨 -->
-    <section class="card">
-      <h2>치지직 리모컨 (넘기기 · 알림 정지)</h2>
-      <ul class="status"><li><span class="sdot" id="dRc"></span><span class="lbl">리모컨 독</span><span class="val" id="vRc">확인 중…</span></li></ul>
-      <details class="tip" id="rcTip">
-        <summary>설정 방법 (한 번만)</summary>
-        <ol>
-          <li>OBS 메뉴 → <b>독</b> → <b>사용자 지정 브라우저 독…</b></li>
-          <li>이름: <b>치지직 리모컨</b>, URL: 아래 주소를 붙여 넣고 <b>적용</b></li>
+    <details class="mod" id="m-channel" data-group="basic" data-name="치지직 채널" data-icon="💬">
+      <summary><span class="m-ico">💬</span><span class="m-t"><b>치지직 채널</b><small>채팅·시청자·후원을 읽어 와요 (로그인 없이)</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">내 채널 주소만 있으면 로그인 없이 채팅, 후원, 방송 상태를 읽을 수 있어요. 제목·카테고리를 <i>바꾸는</i> 건 아래 <a href="#m-chzzkopen" data-goto>치지직 연동</a>이 따로 필요해요.</p>
+        <div class="uses">쓰는 곳 <i>채팅 패널</i><i>시청자 수</i><i>후원 목록</i><i>치즈 룰렛</i><i>공중전 명령어</i><i>채팅 로그 (SkyEye)</i><i>치지직 리모컨</i></div>
+        <ol class="steps">
+          <li data-step="channel.set">치지직에서 내 채널 페이지를 열고 주소창의 주소를 그대로 복사해 아래에 붙여 넣어요.</li>
+          <li data-step="channel.set"><b>저장하고 다시 시작</b>.</li>
+        </ol>
+        <div class="fields">
+          <label>채널 주소<input form="settings" type="text" name="channel" placeholder="https://chzzk.naver.com/…"></label>
+          <label class="check"><input form="settings" type="checkbox" name="saveChat"><span>채팅 로그 저장 (SkyEye용)</span></label>
+          <span class="hint">녹화하는 동안의 채팅을 영상과 같은 시간대로 ….markers.json 파일에 저장해요.</span>
+        </div>
+        <div class="m-save"><button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button></div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-bgm" data-group="basic" data-name="BGM · 사운드보드" data-icon="🎵">
+      <summary><span class="m-ico">🎵</span><span class="m-t"><b>BGM · 사운드보드</b><small>셋리스트 폴더와 효과음 폴더</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">BGM은 OBS의 미디어 소스 하나로 폴더의 노래를 차례로 틀어요. 영도가 나오면 저절로 멈췄다가 끝나면 다시 틀어요. 사운드보드는 짧은 효과음용 소스가 따로 있어요.</p>
+        <div class="uses">쓰는 곳 <i>대시보드 BGM 패널</i><i>사운드보드</i><i>영도 자동 일시정지</i><i>스트림덱</i></div>
+        <ol class="steps">
+          <li data-step="bgm.folder">음악 폴더를 골라요 → <b>저장하고 다시 시작</b>.</li>
+          <li data-step="bgm.source">대시보드 BGM 패널에서 <b>소스 만들기</b>를 눌러요 (이미 쓰는 미디어 소스가 있으면 아래에 그 이름을 넣어도 돼요).</li>
+          <li data-step="sb.folder"><i>(선택)</i> 사운드보드 폴더를 고르고, 대시보드 사운드보드 패널에서 소스를 만들어요.</li>
+        </ol>
+        <p class="tip-line">💡 BGM·사운드보드 소스는 OBS에서 <b>숨기지 마세요</b> — 숨긴 소스는 OBS가 소리를 꺼요. 안 보이게 하려면 그룹 크기를 0으로 줄이세요.</p>
+        <div class="fields">
+          <label>음악 폴더
+            <span class="folder-row"><input form="settings" type="text" name="folder"><button type="button" class="btn" id="pickFolder">찾아보기</button></span>
+            <span class="hint" id="folderCount"></span>
+          </label>
+          <label>BGM 미디어 소스 이름 <span class="hint">없으면 대시보드에서 만들 수 있어요</span><input form="settings" type="text" name="bgmSource" list="inputList"></label>
+          <label>사운드보드 폴더 <span class="hint">비워 두면 사운드보드를 안 써요</span>
+            <span class="folder-row"><input form="settings" type="text" name="sbFolder"><button type="button" class="btn" id="pickSbFolder">찾아보기</button></span>
+            <span class="hint" id="sbFolderCount"></span>
+          </label>
+        </div>
+        <div class="m-save"><button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button></div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-sources" data-group="basic" data-name="화면 소스" data-icon="🖼️">
+      <summary><span class="m-ico">🖼️</span><span class="m-t"><b>화면 소스 (영도 · 위플챗 · 알림 · 마이크)</b><small>대시보드에 보여 줄 OBS 소스 이름</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">대시보드는 이 OBS 소스들의 화면을 받아서 보여 줘요. 영도 화면은 대시보드에서 누르면 OBS 안의 영도 페이지에 그대로 클릭이 전달돼요 (광고 건너뛰기 등). 이름만 맞으면 OBS 쪽은 바꿀 게 없어요.</p>
+        <div class="uses">쓰는 곳 <i>영도 뷰어</i><i>위플챗 패널</i><i>후원 탭 알림 화면</i><i>마이크 상태</i></div>
+        <ol class="steps">
+          <li data-step="sources.donation">영도 브라우저 소스 이름을 골라요 (입력칸을 누르면 OBS 소스 목록이 나와요).</li>
+          <li data-step="sources.chat">위플챗 브라우저 소스 이름을 골라요.</li>
+          <li data-step="sources.saved"><i>(선택)</i> 알림·마이크 → <b>저장하고 다시 시작</b>.</li>
+        </ol>
+        <div class="fields">
+          <label>영도 브라우저 소스<input form="settings" type="text" name="donation" list="inputList"></label>
+          <label>위플챗 브라우저 소스<input form="settings" type="text" name="chat" list="inputList"></label>
+          <label>도네 알림 브라우저 소스 <span class="hint">선택 — 후원 탭의 "알림 화면"</span><input form="settings" type="text" name="alert" list="inputList"></label>
+          <label>마이크 소스 <span class="hint">비워 두면 OBS 오디오 설정의 마이크</span><input form="settings" type="text" name="mic" list="inputList"></label>
+          <datalist id="inputList"></datalist>
+          <p class="hint" id="inputsHint"></p>
+        </div>
+        <div class="m-save"><button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button></div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-mainpc" data-group="basic" data-name="다른 기기에서 열기" data-icon="🖥️">
+      <summary><span class="m-ico">🖥️</span><span class="m-t"><b>메인 PC · 아이패드 · 폰에서 열기</b><small>대시보드 주소와 방화벽</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">대시보드는 방송 PC가 아니라 메인 PC, 아이패드, 폰의 브라우저에서 쓰는 게 기본이에요. 같은 공유기(와이파이)에 있으면 아래 주소로 열려요. 방송 PC의 Windows 방화벽이 막고 있으면 한 번 허용해 줘야 해요.</p>
+        <div class="addr-row">
+          <code class="addr" id="addr">…</code>
+          <button class="btn" id="copyAddr">복사</button>
+        </div>
+        <div class="muted small" id="otherAddrs"></div>
+        <div class="fw-row" id="fwRow" hidden>
+          <span class="sdot" id="dFw"></span>
+          <span id="vFw"></span>
+          <button class="btn accent" id="fwBtn" hidden>방화벽 허용</button>
+        </div>
+        <ol class="steps">
+          <li data-step="fw.ok">방화벽이 막고 있으면 <b>방화벽 허용</b> (관리자 확인 창이 떠요).</li>
+          <li>메인 PC 크롬에서 위 주소를 열어요.</li>
+          <li><i>(추천)</i> 크롬 <b>⋮ → 저장 및 공유 → 바로가기 만들기…</b> → <b>창으로 열기</b> 체크 → 바탕화면 아이콘으로 탭 없는 창이 바로 열려요.</li>
+        </ol>
+        <p class="tip-line">💡 공유기에서 방송 PC의 IP를 고정해 두면 주소가 안 바뀌어요.</p>
+      </div>
+    </details>
+
+    <!-- ================= 연동 ================= -->
+    <h3 class="group-h">연동 <span>쓰고 싶은 기능만 연결하세요</span></h3>
+
+    <details class="mod" id="m-google" data-group="links" data-name="Google 계정" data-icon="🔑">
+      <summary><span class="m-ico">🔑</span><span class="m-t"><b>Google 계정</b><small>유튜브 아카이브 · 드라이브 업로드에 필요해요</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">Allmind가 내 유튜브 채널에 비공개 방송을 만들고, 드라이브에 녹화를 올리려면 Google의 허락이 필요해요. Google은 개인이 만든 프로그램에게 <b>내 Google Cloud 프로젝트</b>를 하나 만들게 하고, 그 프로젝트의 <b>클라이언트 ID</b>로 로그인하게 해요. Google 비밀번호는 Allmind가 보지 않아요.</p>
+        <div class="uses">쓰는 곳 <a href="#m-youtube" data-goto>유튜브 아카이브</a><a href="#m-drive" data-goto>드라이브 자동 업로드</a></div>
+        <ul class="status m-status"><li><span class="sdot" id="dGoogle"></span><span class="lbl">Google</span><span class="val" id="vGoogle">…</span></li></ul>
+        <details class="tip guide">
+          <summary>처음 한 번: Google Cloud 프로젝트 만들기 (10분)</summary>
+          <ol>
+            <li><a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud 콘솔</a>에서 새 프로젝트를 만들어요 (이름은 아무거나, 예: Allmind).</li>
+            <li><b>API 및 서비스 → 라이브러리</b>에서 <b>YouTube Data API v3</b>와 <b>Google Drive API</b>를 각각 <b>사용</b>으로.</li>
+            <li><b>Google 인증 플랫폼 → 브랜딩</b>: 앱 이름·지원 이메일·홈페이지·개인정보처리방침 주소를 채워요 (내 채널 주소 같은 걸 넣어도 돼요). <b>대상</b>은 <b>외부</b>.</li>
+            <li><b>대상 → 앱 게시(프로덕션으로 푸시)</b>. <i>테스트 상태로 두면 7일마다 다시 로그인해야 해요.</i> 검증은 안 받아도 돼요.</li>
+            <li><b>클라이언트 → 클라이언트 만들기</b>, 유형 <b>데스크톱 앱</b>. 나온 클라이언트 ID와 보안 비밀번호를 아래에 붙여 넣어요.</li>
+          </ol>
+        </details>
+        <ol class="steps">
+          <li data-step="google.configured">위 안내대로 만든 <b>클라이언트 ID</b>와 <b>보안 비밀번호</b>를 붙여 넣어요.</li>
+          <li data-step="google.youtube"><b>Google 로그인</b> → 첫 번째 허용 화면: <b>아카이브를 올릴 유튜브 채널</b>을 골라요 (브랜드 채널이어도 돼요).</li>
+          <li data-step="google.drive">이어서 두 번째 허용 화면: <b>녹화를 올릴 드라이브가 있는 계정</b>을 골라요.</li>
+        </ol>
+        <p class="tip-line">💡 "Google에서 확인하지 않은 앱"이 나오면 <b>고급 → (앱 이름)(으)로 이동</b>. 허용 화면이 두 번인 건 Google이 유튜브와 드라이브 권한을 한 번에 못 받게 해서예요.</p>
+        <div class="fields">
+          <label>클라이언트 ID<input form="linksForm" type="text" name="googleClientId" placeholder="….apps.googleusercontent.com"></label>
+          <label>클라이언트 보안 비밀번호<input form="linksForm" type="password" name="googleClientSecret"></label>
+        </div>
+        <div class="m-save">
+          <button class="btn accent" type="button" id="googleLogin">Google 로그인</button>
+          <button class="btn ghost" type="button" id="googleLogout" hidden>로그아웃</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-youtube" data-group="links" data-name="유튜브 아카이브" data-icon="▶️">
+      <summary><span class="m-ico">▶️</span><span class="m-t"><b>유튜브 아카이브</b><small>방송마다 비공개 다시보기를 자동으로</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">OBS의 <b>Multi-RTMP</b>로 유튜브에도 같이 송출해서 비공개 다시보기를 남겨요. Allmind는 방송마다 <b>비공개</b> 방송을 미리 만들어 두고, 방송 중에 공개로 바뀌면 바로 되돌리고, 송출했는데 유튜브가 시작되지 않으면 대시보드에 알려 줘요. 방송이 끝나면 유튜브 방송도 Allmind가 끝내 둬요.</p>
+        <div class="uses">필요한 것 <a href="#m-google" data-goto>Google 계정 (유튜브)</a> 쓰는 곳 <i>아카이브</i><i>방송 준비 (유튜브 제목)</i></div>
+        <ul class="status m-status"><li><span class="sdot" id="dYt"></span><span class="lbl">유튜브</span><span class="val" id="vYt">…</span></li></ul>
+        <ol class="steps">
+          <li data-step="google.youtube"><a href="#m-google" data-goto>Google 계정</a>을 먼저 연결해요.</li>
+          <li data-step="yt.enabled">아래 <b>비공개 아카이브 준비</b>를 켜고 저장해요.</li>
+          <li data-step="yt.key"><b>스트림 키 만들기</b>를 눌러요.</li>
+          <li data-step="yt.key">OBS의 <b>Multi-RTMP</b> 유튜브 대상에 나온 <b>서버 주소와 키</b>를 넣어요 (예전 키 대신, 한 번만).</li>
+        </ol>
+        <div class="fields">
+          <label class="check"><input form="linksForm" type="checkbox" name="youtubeEnabled"><span>방송마다 <b>비공개</b> 아카이브를 미리 준비하고, 방송 중에 지키기</span></label>
+          <label>유튜브 제목 형식 <span class="hint">{date} = 2026-10-26, {title} = 방송 제목</span><input form="linksForm" type="text" name="titleTemplate" placeholder="{date} - {title}"></label>
+        </div>
+        <div class="m-save">
+          <button class="btn accent" type="submit" form="linksForm">저장</button>
+          <button class="btn" type="button" id="ytKey">스트림 키 만들기</button>
+          <button class="btn ghost" type="button" id="ytShowKey" hidden>키 보기</button>
+        </div>
+        <div class="keybox" id="keyBox" hidden>
+          <div class="muted small">OBS의 <b>Multi-RTMP</b> 유튜브 대상에 이 서버 주소와 키를 넣어 주세요 (한 번만). 키는 비밀번호처럼 다른 사람에게 보여 주지 마세요.</div>
+          <div class="addr-row"><code class="addr small" id="keyAddr"></code><button class="btn" type="button" data-copy="keyAddr">복사</button></div>
+          <div class="addr-row"><code class="addr small" id="keyVal"></code><button class="btn" type="button" data-copy="keyVal">복사</button></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-drive" data-group="links" data-name="드라이브 업로드" data-icon="☁️">
+      <summary><span class="m-ico">☁️</span><span class="m-t"><b>드라이브 자동 업로드</b><small>녹화가 끝나면 영상과 ⭐ 마크를 드라이브에</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">방송이 끝나면 녹화 파일과 ⭐ 마크·채팅 파일(….markers.json)을 내 드라이브 폴더에 올려서 편집자와 바로 나눌 수 있어요. 방송·녹화 중에는 올리지 않아서 방송에 영향이 없고, 끊기면 이어서 올려요. 원본 파일은 그대로 둬요.</p>
+        <div class="uses">필요한 것 <a href="#m-google" data-goto>Google 계정 (드라이브)</a> 쓰는 곳 <i>편집자 공유</i><i>SkyEye</i></div>
+        <ul class="status m-status"><li><span class="sdot" id="dDrive"></span><span class="lbl">드라이브</span><span class="val" id="vDrive">…</span></li></ul>
+        <ol class="steps">
+          <li data-step="google.drive"><a href="#m-google" data-goto>Google 계정</a>을 먼저 연결해요 (두 번째 허용 화면이 드라이브예요).</li>
+          <li data-step="drive.enabled">아래 <b>자동 업로드</b>를 켜요.</li>
+          <li data-step="drive.folder"><i>(선택)</i> 드라이브에서 올릴 폴더를 열고, 주소창의 링크를 <b>올릴 폴더</b>에 붙여 넣고 저장해요. 비워 두면 "Allmind 녹화" 폴더를 만들어요.</li>
+        </ol>
+        <div class="fields">
+          <label class="check"><input form="linksForm" type="checkbox" name="driveEnabled"><span>녹화가 끝나면 영상과 ….markers.json을 드라이브에 올리기</span></label>
+          <label>올릴 폴더 <span class="hint">드라이브 폴더 링크</span><input form="linksForm" type="text" name="driveFolder" placeholder="https://drive.google.com/drive/folders/…" autocomplete="off"></label>
+          <div class="hint" id="driveFolderNote"></div>
+          <label>파일 이름 형식 <span class="hint">{date}, {title} — 그 녹화에서 가장 오래 걸려 있던 치지직 제목</span><input form="linksForm" type="text" name="nameTemplate" placeholder="{date} - {title}"></label>
+          <label>업로드 속도 제한 (Mbps) <span class="hint">0 = 제한 없음</span><input form="linksForm" type="number" name="maxMbps" min="0" max="1000"></label>
+        </div>
+        <div class="m-save"><button class="btn accent" type="submit" form="linksForm">저장</button></div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-chzzkopen" data-group="links" data-name="치지직 연동" data-icon="📝">
+      <summary><span class="m-ico">📝</span><span class="m-t"><b>치지직 연동 (방송 준비)</b><small>제목·카테고리·태그를 대시보드에서 바꾸기</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">방송 제목·카테고리·태그를 <i>바꾸는</i> 건 치지직 공식 API로만 할 수 있어서, <b>CHZZK Developers</b>에 내 앱을 등록하고 로그인해야 해요. 채팅·후원을 <i>읽는</i> 데는 필요 없어요 (그건 <a href="#m-channel" data-goto>치지직 채널</a>만으로 돼요).</p>
+        <div class="uses">쓰는 곳 <i>대시보드 방송 준비 (치지직 제목·카테고리·태그)</i></div>
+        <ul class="status m-status"><li><span class="sdot" id="dChzzkOpen"></span><span class="lbl">치지직 연동</span><span class="val" id="vChzzkOpen">…</span></li></ul>
+        <ol class="steps">
+          <li data-step="chzzk.configured"><a href="https://developers.chzzk.naver.com/" target="_blank" rel="noopener">CHZZK Developers</a>에 방송하는 네이버 계정으로 로그인해 애플리케이션을 등록해요. <b>로그인 리디렉션 URL</b>에는 아래 주소를, 권한은 <b>방송 설정 조회</b>·<b>방송 설정 변경</b>·<b>유저 정보 조회</b>를 골라요.</li>
+          <li data-step="chzzk.configured">받은 <b>Client ID</b>와 <b>Client Secret</b>을 아래에 붙여 넣어요.</li>
+          <li data-step="chzzk.loggedIn"><b>치지직 로그인</b>. 30일 동안 안 쓰면 로그인이 만료되지만, 방송할 때마다 쓰면 계속 이어져요.</li>
+        </ol>
+        <div class="fields">
+          <label>로그인 리디렉션 URL <span class="hint">앱 등록할 때 그대로 넣어요</span>
+            <span class="addr-row"><code class="addr small" id="chzzkRedirect"></code><button class="btn" type="button" data-copy="chzzkRedirect">복사</button></span></label>
+          <label>Client ID<input form="linksForm" type="text" name="chzzkClientId"></label>
+          <label>Client Secret<input form="linksForm" type="password" name="chzzkClientSecret"></label>
+        </div>
+        <div class="m-save">
+          <button class="btn accent" type="button" id="chzzkLogin">치지직 로그인</button>
+          <button class="btn ghost" type="button" id="chzzkLogout" hidden>로그아웃</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="mod" id="m-remote" data-group="links" data-name="치지직 리모컨" data-icon="⏭️">
+      <summary><span class="m-ico">⏭️</span><span class="m-t"><b>치지직 리모컨</b><small>영도 넘기기 · 알림 정지 버튼</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body">
+        <p class="why">치지직 스튜디오의 <b>리모컨</b> 페이지를 OBS 안에 독으로 열어 두면, 대시보드의 <b>넘기기</b>·<b>알림 정지</b> 버튼이 그 페이지의 버튼을 대신 눌러요. 영도가 나올 때 BGM을 멈추는 데도 이 독의 신호를 같이 써요.</p>
+        <div class="uses">필요한 것 <a href="#m-channel" data-goto>치지직 채널</a> 쓰는 곳 <i>넘기기</i><i>알림 정지</i><i>BGM 자동 일시정지</i></div>
+        <ul class="status m-status"><li><span class="sdot" id="dRc"></span><span class="lbl">리모컨 독</span><span class="val" id="vRc">확인 중…</span></li></ul>
+        <ol class="steps">
+          <li data-step="rc.connected">OBS 메뉴 → <b>독</b> → <b>사용자 지정 브라우저 독…</b> → 이름 <b>치지직 리모컨</b>, URL에 아래 주소를 붙여 넣고 <b>적용</b>.</li>
+          <li data-step="rc.login">새로 생긴 독에서 <b>네이버 로그인</b> (OBS가 기억해요).</li>
+          <li data-step="rc.login">독은 OBS 안 아무 곳에 두면 돼요. 닫지만 마세요.</li>
         </ol>
         <div class="addr-row"><code class="addr small-addr" id="rcUrl">치지직 채널을 먼저 설정해 주세요</code><button class="btn" id="copyRc">복사</button></div>
-        <ol start="3">
-          <li>새로 생긴 독에서 <b>네이버 로그인</b> (OBS가 기억해요)</li>
-          <li>독은 OBS 안 아무 곳에 두면 돼요. 닫지만 마세요.</li>
-        </ol>
-        <p>그러면 대시보드의 <b>넘기기</b>·<b>알림 정지</b> 버튼이 리모컨 버튼을 대신 눌러 줘요.</p>
-      </details>
-    </section>
+      </div>
+    </details>
 
-    <!-- settings export / import -->
-    <section class="card">
-      <details id="moveBox">
-        <summary><h2>설정 옮기기 (다른 PC로)</h2><span class="muted small">내보내기 · 가져오기</span></summary>
-        <p class="muted small">설정·로그인·셋리스트 순서·랭킹 등을 파일 하나로 만들어요. 파일은 <b>내가 정한 비밀번호</b>로 암호화돼서, 비밀번호 없이는 아무도 (Allmind도) 열 수 없어요. 비밀번호를 잊으면 복구할 수 없어요.</p>
+    <details class="mod" id="m-deck" data-group="links" data-name="스트림덱" data-icon="🎚️">
+      <summary><span class="m-ico">🎚️</span><span class="m-t"><b>스트림덱</b><small>BGM·사운드보드를 스트림덱 키로</small></span><span class="pill" data-pill></span></summary>
+      <div class="m-body" id="deckCard">
+        <p class="why">Allmind 플러그인을 깔면 스트림덱 앱에 <b>Allmind</b> 묶음이 생겨요. 키에는 지금 재생 중인 곡·사운드와 볼륨이 보여요. 메인 PC의 스트림덱도, 방송 PC의 스트림덱도 같은 Allmind를 써요. 마이크·장면 전환은 OBS의 스트림덱 기능을 쓰세요.</p>
+        <div class="uses">필요한 것 <a href="#m-bgm" data-goto>BGM · 사운드보드</a></div>
+        <ol class="steps">
+          <li data-step="deck.connected"><b>방송 PC</b>: <button class="btn accent small-btn inline-btn" id="deckInstall">플러그인 설치</button> → 스트림덱 앱이 묻는 창에서 설치.</li>
+          <li><b>메인 PC</b>: 메인 PC 브라우저에서 아래 주소를 열어 받은 파일을 더블클릭.
+            <div class="addr-row step-addr"><code class="addr small" id="deckDl">…</code><button class="btn" id="deckDlCopy">복사</button></div></li>
+          <li>메인 PC에서 Allmind 키 하나를 골라 설정의 <b>연결 → Allmind 주소</b>에 <b id="deckHost">…</b> 를 넣고 저장 (그 PC의 Allmind 키 전부에 적용돼요).</li>
+          <li data-step="deck.connected">스트림덱 앱 오른쪽 목록의 <b>Allmind</b>에서 BGM·사운드보드를 키에 끌어다 놓고, 곡이나 사운드를 목록에서 골라요.</li>
+        </ol>
+        <div class="fields">
+          <div class="deck-row">
+            <label class="small" for="deckToken">비밀 키 (선택)</label>
+            <input id="deckToken" type="text" autocomplete="off" spellcheck="false" placeholder="비워 두면 같은 네트워크 누구나 실행할 수 있어요">
+            <button class="btn" id="deckTokenSave">저장</button>
+          </div>
+        </div>
+        <details class="tip" id="deckTip">
+          <summary>플러그인 없이: 웹사이트 동작에 붙일 주소 (⭐ 마크 등)</summary>
+          <ol>
+            <li>스트림덱 앱에서 <b>시스템 → 웹사이트(Website)</b> 동작을 키에 끌어다 놓아요.</li>
+            <li>아래에서 <b>복사</b>를 눌러 주소를 붙여 넣고, <b>백그라운드에서 접근(Access in background)</b>을 체크하세요. 그래야 브라우저가 열리지 않아요.</li>
+          </ol>
+          <div class="deck-row">
+            <label class="small" for="deckWhere">스트림덱이 있는 곳</label>
+            <select id="deckWhere"></select>
+          </div>
+          <div id="deckList"><span class="muted small">불러오는 중…</span></div>
+        </details>
+      </div>
+    </details>
+
+    <!-- ================= 관리 ================= -->
+    <h3 class="group-h">관리</h3>
+
+    <details class="mod" id="m-move" data-name="설정 옮기기">
+      <summary><span class="m-ico">📦</span><span class="m-t"><b>설정 옮기기 (다른 PC로)</b><small>내보내기 · 가져오기</small></span></summary>
+      <div class="m-body" id="moveBox">
+        <p class="why">설정·로그인·셋리스트 순서·랭킹 등을 파일 하나로 만들어 새 PC로 옮겨요. 파일은 <b>내가 정한 비밀번호</b>로 암호화돼서, 비밀번호 없이는 아무도 (Allmind도) 열 수 없어요. 비밀번호를 잊으면 복구할 수 없어요.</p>
         <fieldset class="move">
           <legend>내보내기</legend>
           <label>비밀번호 (8자 이상)<input type="password" id="expPass" autocomplete="new-password"></label>
@@ -226,72 +348,29 @@
           <div class="row-btns tight"><button class="btn" type="button" id="impCheck">열어 보기</button></div>
           <div id="impSummary" class="imp-summary" hidden></div>
         </fieldset>
-      </details>
-    </section>
+      </div>
+    </details>
 
-    <!-- settings -->
-    <section class="card">
-      <details id="settingsBox">
-        <summary><h2>설정</h2><span class="muted small" id="firstRunHint"></span></summary>
-        <form id="settings" autocomplete="off">
-          <fieldset>
-            <legend>OBS</legend>
-            <label>WebSocket 비밀번호
-              <span class="hint">OBS → 도구 → WebSocket 서버 설정 → 연결 정보 표시</span>
-              <span class="pw"><input type="password" name="obsPassword"><button type="button" class="btn ghost icon" id="pwToggle" title="보기">👁</button></span>
-            </label>
-            <label>OBS 위치
-              <input type="text" name="obsPath" placeholder="자동으로 찾아요">
-            </label>
-            <label class="check"><input type="checkbox" name="startObs"> Allmind를 켤 때 OBS도 같이 켜기</label>
-            <label class="check"><input type="checkbox" name="saveChat"> 채팅 로그 저장 (SkyEye용)</label>
-            <label class="check"><input type="checkbox" name="shortcuts"> 대시보드 키보드 단축키 (Space·N·S·F·M·숫자) — 기본은 꺼짐</label>
-            <span class="hint">녹화하는 동안의 채팅을 영상과 같은 시간대로 ….markers.json 파일에 저장해요</span>
-          </fieldset>
-
-          <fieldset>
-            <legend>OBS 소스 이름</legend>
-            <label>영도 브라우저 소스<input type="text" name="donation" list="inputList"></label>
-            <label>위플챗 브라우저 소스<input type="text" name="chat" list="inputList"></label>
-            <label>도네 알림 브라우저 소스 <span class="hint">대시보드 후원 탭의 "알림 화면"에 보여요 (선택)</span><input type="text" name="alert" list="inputList"></label>
-            <label>마이크 소스 <span class="hint">비워 두면 OBS 설정 → 오디오의 마이크를 써요</span><input type="text" name="mic" list="inputList"></label>
-            <label>BGM 미디어 소스 <span class="hint">없으면 대시보드에서 만들 수 있어요</span><input type="text" name="bgmSource" list="inputList"></label>
-            <datalist id="inputList"></datalist>
-            <p class="hint" id="inputsHint"></p>
-          </fieldset>
-
-          <fieldset>
-            <legend>BGM</legend>
-            <label>음악 폴더
-              <span class="folder-row"><input type="text" name="folder"><button type="button" class="btn" id="pickFolder">찾아보기</button></span>
-              <span class="hint" id="folderCount"></span>
-            </label>
-            <label>사운드보드 폴더 <span class="hint">짧은 효과음 파일들 — 비워 두면 사운드보드를 안 써요</span>
-              <span class="folder-row"><input type="text" name="sbFolder"><button type="button" class="btn" id="pickSbFolder">찾아보기</button></span>
-              <span class="hint" id="sbFolderCount"></span>
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>치지직</legend>
-            <label>채널 주소 <span class="hint">채널 페이지 주소를 그대로 붙여 넣으세요</span><input type="text" name="channel" placeholder="https://chzzk.naver.com/…"></label>
-          </fieldset>
-
-          <fieldset>
-            <legend>기타</legend>
-            <label class="check"><input type="checkbox" name="runAtLogin"> Windows 시작 시 자동 실행 (트레이에서 조용히)</label>
-            <label>포트 <span class="hint">보통 그대로 두세요</span><input type="number" name="port" min="1024" max="65535"></label>
-          </fieldset>
-
-          <div class="row-btns">
-            <button class="btn accent" type="submit">저장하고 다시 시작</button>
-            <button class="btn ghost" type="button" id="openData">설정 폴더 열기</button>
-          </div>
-        </form>
-      </details>
-    </section>
+    <details class="mod" id="m-etc" data-name="기타">
+      <summary><span class="m-ico">⚙️</span><span class="m-t"><b>기타</b><small>자동 실행 · 단축키 · 포트 · 설정 폴더</small></span></summary>
+      <div class="m-body">
+        <div class="fields">
+          <label class="check"><input form="settings" type="checkbox" name="runAtLogin"><span>Windows 시작 시 자동 실행 (트레이에서 조용히)</span></label>
+          <label class="check"><input form="settings" type="checkbox" name="shortcuts"><span>대시보드 키보드 단축키 (Space·N·S·F·M·숫자) — 기본은 꺼짐</span></label>
+          <label>포트 <span class="hint">보통 그대로 두세요. 바꾸면 메인 PC·스트림덱 주소도 바뀌어요</span><input form="settings" type="number" name="port" min="1024" max="65535"></label>
+        </div>
+        <div class="m-save">
+          <button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button>
+          <button class="btn ghost" type="button" id="openData">설정 폴더 열기</button>
+        </div>
+      </div>
+    </details>
   </main>
 
+  <div class="savebar" id="saveBar" hidden>
+    <span>저장하지 않은 설정이 있어요</span>
+    <button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button>
+  </div>
   <div class="overlay" id="overlay" hidden><div class="spinner"></div><span id="overlayText">다시 시작 중…</span></div>
   <div class="toasts" id="toasts"></div>
   <script src="launcher.js"></script>

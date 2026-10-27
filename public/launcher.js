@@ -47,6 +47,7 @@ function renderLive() {
   const it = live.interact;
   if (it.connected) { setDot('dClick', 'ok'); $('vClick').textContent = '켜짐 (영도 연결됨)'; }
   else { setDot('dClick', 'warn'); $('vClick').textContent = it.error || '대기 중'; }
+  basicStatus();
 }
 
 async function refresh() {
@@ -71,10 +72,10 @@ async function refresh() {
     note.textContent = 'OBS가 Allmind 밖에서 켜져서 클릭 전달·광고 스킵이 꺼져 있어요. 방송 중이 아닐 때 OBS를 닫고 "OBS 시작"으로 다시 켜 주세요.';
   } else if (o.running && !o.connected) {
     note.hidden = false;
-    note.textContent = 'OBS에 연결할 수 없어요. OBS → 도구 → WebSocket 서버 설정에서 서버를 켜고, 비밀번호를 아래 설정에 넣어 주세요.';
+    note.textContent = 'OBS에 연결할 수 없어요. 아래 "OBS 연결"의 안내대로 WebSocket 서버를 켜고 비밀번호를 넣어 주세요.';
   } else if (!o.exe) {
     note.hidden = false;
-    note.textContent = 'OBS 설치 위치를 찾지 못했어요. 아래 설정의 "OBS 위치"에 obs64.exe 경로나 OBS 폴더를 넣어 주세요.';
+    note.textContent = 'OBS 설치 위치를 찾지 못했어요. 아래 "OBS 연결"의 OBS 위치에 obs64.exe 경로나 OBS 폴더를 넣어 주세요.';
   } else {
     note.hidden = true;
   }
@@ -84,7 +85,6 @@ async function refresh() {
   setDot('dRc', rc.connected ? (rc.needsLogin ? 'warn' : 'ok') : '');
   $('vRc').textContent = rc.connected ? (rc.needsLogin ? '연결됨 — 독에서 네이버 로그인이 필요해요' : `연결됨 (${[rc.skipLabel, rc.pauseLabel].filter(Boolean).join(' · ') || '버튼 확인 중'})`) : (rc.error || '연결 안 됨');
   $('rcUrl').textContent = r.remoteUrl || '치지직 채널을 먼저 설정해 주세요';
-  if (!rc.connected && !$('rcTip').dataset.touched) $('rcTip').open = true;
   const fw = r.firewall;
   $('fwRow').hidden = !fw?.checked;
   if (fw?.checked) {
@@ -100,6 +100,7 @@ async function refresh() {
   $('inputsHint').textContent = r.inputs.length ? `OBS 소스 ${r.inputs.length}개 — 입력칸을 클릭하면 목록에서 고를 수 있어요` : 'OBS에 연결되면 소스 목록에서 고를 수 있어요';
 
   if (!formFilled) fillForm(r);
+  basicStatus();
 }
 
 function escapeAttr(s) { return String(s).replace(/[&"<>]/g, (c) => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' })[c]); }
@@ -115,11 +116,8 @@ function fillForm(r) {
   form.elements.runAtLogin.checked = r.runAtLogin;
   showCount(r.musicCount);
   showSbCount(r.soundCount);
-  if (r.firstRun || !s.obsPassword && !r.obs.connected) {
-    $('settingsBox').open = true;
-    $('firstRunHint').textContent = r.firstRun ? '처음 설정이 필요해요' : '';
-  }
   if (!r.isExe) form.elements.runAtLogin.closest('label').hidden = true;
+  dirty(false);
 }
 
 function showCount(n) {
@@ -217,7 +215,6 @@ $('fwBtn').addEventListener('click', async () => {
   if (r.ok) toast('방화벽을 허용했어요 — 메인 PC에서 새로고침해 보세요');
   refresh();
 });
-$('rcTip').addEventListener('toggle', () => { $('rcTip').dataset.touched = '1'; });
 $('copyRc').addEventListener('click', async () => {
   const t = $('rcUrl').textContent;
   if (!t.startsWith('http')) return toast('치지직 채널을 먼저 설정해 주세요', true);
@@ -384,12 +381,7 @@ function renderLinks(r) {
   $('chzzkLogout').hidden = !c.loggedIn;
   $('chzzkLogin').textContent = c.loggedIn ? '다시 로그인' : '치지직 로그인';
 
-  // one-line state for the collapsed card
-  const bad = [g.error, y.error, c.error].some(Boolean) || y.alert || err || (gAny && !g.loggedIn) || c.expiresSoon;
-  const todo = !g.loggedIn || !c.loggedIn;
-  $('linksHint').textContent = bad ? '확인이 필요해요' : todo ? `Google ${g.loggedIn ? '✓' : '설정 필요'} · 치지직 ${c.loggedIn ? '✓' : '설정 필요'}` : 'Google ✓ · 치지직 ✓';
-  $('linksHint').classList.toggle('warn', !!(bad || todo));
-
+  linksStatus();
   if (!linksFilled) fillLinks(r);
 }
 
@@ -405,7 +397,7 @@ function linksValues() {
 }
 async function saveLinks(quiet) {
   const r = await call('/links-save', linksValues());
-  if (r.ok) { renderLinks(r); if (!quiet) toast('연동 설정을 저장했어요'); }
+  if (r.ok) { renderLinks(r); if (!quiet) toast('저장했어요'); }
   return r.ok;
 }
 lf.addEventListener('submit', (ev) => { ev.preventDefault(); saveLinks(); });
@@ -555,3 +547,133 @@ $('impCheck').addEventListener('click', async () => {
     else $('impApply').disabled = false;
   });
 });
+
+
+// ---------------- setting modules: status pills, step checks, open/closed ----------------
+// Each <details class="mod"> is one function. Its pill shows how far it's set up;
+// [data-step] items in its quick guide get a ✓ as the matching condition becomes true.
+const MODS = [...document.querySelectorAll('details.mod[data-group]')];
+const stepDone = {};
+const modState = {}; // id → { cls, text }
+let openPref = {};
+try { openPref = JSON.parse(localStorage.getItem('allmind.launcher.open') || '{}'); } catch {}
+const decided = new Set();
+const auto = new Set(); // ids whose next toggle event is our own default, not the user
+
+function setMod(id, cls, text) {
+  const m = $(id);
+  if (!m) return;
+  modState[id] = { cls, text };
+  const pill = m.querySelector('[data-pill]');
+  pill.className = `pill ${cls}`;
+  pill.textContent = text;
+  applySteps();
+}
+// Once per page: remembered open/closed per card; otherwise only the first basic card that still
+// needs something opens, so a first-time user is walked through them top to bottom.
+function decideDefaults() {
+  if (decideDefaults.done) return;
+  decideDefaults.done = true;
+  const firstTodo = MODS.find((m) => m.dataset.group === 'basic' && ['todo', 'bad', 'warn'].includes(modState[m.id]?.cls));
+  for (const m of document.querySelectorAll('details.mod')) {
+    if (decided.has(m.id)) continue;
+    const want = m.id in openPref ? openPref[m.id] : m === firstTodo;
+    if (m.open !== want) { auto.add(m.id); m.open = want; }
+  }
+}
+function step(key, done) { stepDone[key] = !!done; }
+function applySteps() {
+  for (const li of document.querySelectorAll('[data-step]')) li.classList.toggle('done', !!stepDone[li.dataset.step]);
+}
+
+function openMod(id) {
+  const m = $(id);
+  if (!m) return;
+  m.open = true;
+  m.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  m.classList.add('flash');
+  setTimeout(() => m.classList.remove('flash'), 1200);
+}
+document.addEventListener('click', (ev) => {
+  const o = ev.target.closest('[data-open]');
+  if (o) return openMod(o.dataset.open);
+  const g = ev.target.closest('a[data-goto]');
+  if (g) { ev.preventDefault(); openMod(g.getAttribute('href').slice(1)); }
+});
+for (const m of document.querySelectorAll('details.mod')) {
+  m.addEventListener('toggle', () => {
+    if (auto.delete(m.id)) return;
+    openPref[m.id] = m.open;
+    try { localStorage.setItem('allmind.launcher.open', JSON.stringify(openPref)); } catch {}
+  });
+  // user clicks count even before the default was decided
+  m.querySelector('summary').addEventListener('click', () => decided.add(m.id));
+}
+
+// unsaved changes in the main settings (they need a restart to apply)
+function dirty(on) { $('saveBar').hidden = !on; }
+for (const el of form.elements) {
+  if (el.type === 'submit') continue;
+  el.addEventListener('input', () => dirty(true));
+  el.addEventListener('change', () => dirty(true));
+}
+
+function basicStatus() {
+  if (!info) return;
+  const o = info.obs, s = info.settings;
+  step('obs.server', o.connected); step('obs.password', !!s.obsPassword); step('obs.connected', o.connected);
+  setMod('m-obs', o.connected ? 'ok' : !o.exe ? 'bad' : !o.running ? 'todo' : 'bad',
+    o.connected ? '연결됨' : !o.exe ? 'OBS를 못 찾음' : !o.running ? (s.obsPassword ? 'OBS 꺼짐' : '설정 필요') : (s.obsPassword ? '연결 안 됨' : '비밀번호 필요'));
+
+  const ch = live?.chzzk?.channelId || s.channel;
+  step('channel.set', !!ch);
+  setMod('m-channel', ch ? 'ok' : 'todo', ch ? (live?.chzzk?.live?.isLive ? '방송 중' : '설정됨') : '설정 필요');
+
+  const music = info.musicCount;
+  const src = live?.bgm?.sourceOk;
+  step('bgm.folder', music > 0); step('bgm.source', !!src); step('sb.folder', info.soundCount > 0);
+  setMod('m-bgm', !music ? 'todo' : src === false ? 'warn' : 'ok',
+    !music ? (s.folder ? '폴더에 음악 없음' : '설정 필요') : src === false ? '소스 만들기 필요' : `${music}곡${info.soundCount ? ` · 효과음 ${info.soundCount}` : ''}`);
+
+  const names = new Set(info.inputs.map((i) => i.name));
+  const has = (n) => !!n && (!o.connected || names.has(n));
+  step('sources.donation', has(s.donation)); step('sources.chat', has(s.chat)); step('sources.saved', has(s.donation) && has(s.chat));
+  const missing = [['영도', s.donation], ['위플챗', s.chat]].filter(([, n]) => !has(n)).map(([l]) => l);
+  if (!o.connected) setMod('m-sources', '', 'OBS 연결 후 확인');
+  else setMod('m-sources', missing.length ? 'warn' : 'ok', missing.length ? `${missing.join('·')} 소스 확인` : '영도 ✓ · 위플챗 ✓');
+
+  const fw = info.firewall;
+  step('fw.ok', fw?.ok || !fw?.checked);
+  setMod('m-mainpc', fw?.checked && !fw.ok ? 'bad' : 'ok', fw?.checked && !fw.ok ? '방화벽이 막음' : info.addresses[0] ? info.addresses[0].replace(/^https?:\/\//, '') : '네트워크 없음');
+
+  const rc = info.remote;
+  step('rc.connected', rc.connected); step('rc.login', rc.connected && !rc.needsLogin);
+  setMod('m-remote', rc.connected ? (rc.needsLogin ? 'warn' : 'ok') : 'off', rc.connected ? (rc.needsLogin ? '독에서 로그인 필요' : '연결됨') : '안 씀');
+
+  const n = info.deckPlugins || 0;
+  step('deck.connected', n > 0);
+  setMod('m-deck', n ? 'ok' : 'off', n ? `플러그인 ${n}대 연결됨` : '안 씀');
+  if (live) decideDefaults(); // channel/BGM-source states come from the live feed
+}
+
+function linksStatus() {
+  const r = links;
+  if (!r) return;
+  const g = r.google, y = r.youtube, d = r.drive, c = r.chzzk;
+  step('google.configured', g.configured); step('google.youtube', g.youtube); step('google.drive', g.drive && !d.needsReauth);
+  setMod('m-google', g.loggedIn ? 'ok' : g.youtube || g.drive ? 'warn' : g.error ? 'bad' : g.configured ? 'todo' : 'off',
+    g.loggedIn ? '로그인됨' : g.youtube ? '드라이브 허용 필요' : g.drive ? '유튜브 허용 필요' : g.error ? '오류' : g.configured ? '로그인 필요' : '안 씀');
+
+  step('yt.enabled', y.enabled); step('yt.key', y.hasKey);
+  setMod('m-youtube', !y.enabled ? 'off' : !g.youtube ? 'todo' : !y.hasKey ? 'todo' : y.error || y.alert ? 'bad' : 'ok',
+    !y.enabled ? '꺼짐' : !g.youtube ? 'Google 연결 필요' : !y.hasKey ? '스트림 키 필요' : y.alert ? '확인 필요' : y.error ? '오류' : '준비됨');
+
+  const err = d.items.find((i) => i.status === 'error');
+  step('drive.enabled', d.enabled); step('drive.folder', d.custom);
+  setMod('m-drive', !d.enabled ? 'off' : !g.drive ? 'todo' : d.needsReauth ? 'warn' : err ? 'bad' : 'ok',
+    !d.enabled ? '꺼짐' : !g.drive ? 'Google 연결 필요' : d.needsReauth ? '다시 로그인 필요' : err ? '업로드 실패' : d.custom ? (d.folderName || '내 폴더') : '켜짐');
+
+  step('chzzk.configured', c.configured); step('chzzk.loggedIn', c.loggedIn);
+  setMod('m-chzzkopen', c.loggedIn ? (c.expiresSoon ? 'warn' : 'ok') : c.error ? 'bad' : c.configured ? 'todo' : 'off',
+    c.loggedIn ? (c.expiresSoon ? '곧 만료' : '로그인됨') : c.error ? '오류' : c.configured ? '로그인 필요' : '안 씀');
+}

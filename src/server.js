@@ -30,7 +30,7 @@ import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.31.0';
+const VERSION = '0.31.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -657,6 +657,7 @@ async function main() {
         obs: { ...info, connected: obs.connected, error: obs.connected ? null : obs.lastError },
         runAtLogin: win.runAtLoginEnabled(),
         remote: remote.status(),
+        deckPlugins: deck.clients.size,
         remoteUrl: chzzk.channelId ? `https://studio.chzzk.naver.com/${chzzk.channelId}/remotecontrol` : null,
         firewall: await firewall(),
         inputs,
