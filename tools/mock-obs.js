@@ -171,6 +171,10 @@ function handle(type, d) {
     case 'GetRecordStatus': case 'GetRecordDirectory': case 'StartRecord': case 'StopRecord': case 'PauseRecord': case 'ResumeRecord': case 'CreateRecordChapter':
       return recHandle(type, d);
     case 'GetVersion': return { obsVersion: '31.0.0-mock' };
+    case 'GetProfileParameter': { // recording settings for the 방송 전 점검 (MOCK_REC_FORMAT, MOCK_REC_TRACKS = bitmask)
+      const v = { 'Output/Mode': 'Advanced', 'AdvOut/RecFormat2': process.env.MOCK_REC_FORMAT || 'hybrid_mp4', 'AdvOut/RecTracks': process.env.MOCK_REC_TRACKS || '31' }[`${d.parameterCategory}/${d.parameterName}`];
+      return { parameterValue: v ?? null, defaultParameterValue: null };
+    }
     // MOCK_OBS_STRUGGLES=1: OBS skips frames while it's busy making screenshots
     case 'GetStats': { const sec = (Date.now() - t0) / 1000; return { renderSkippedFrames: process.env.MOCK_OBS_STRUGGLES ? (statSkips += 3) : burstSkips, renderTotalFrames: Math.round(sec * 60), outputSkippedFrames: 0, outputTotalFrames: Math.round(sec * 60), activeFps: 60, cpuUsage: 7.5 }; }
     case 'GetInputList': return { inputs: [...inputs].map(([n, i]) => ({ inputName: n, inputKind: i.kind })) };

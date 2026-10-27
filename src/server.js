@@ -30,9 +30,11 @@ import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import { VTS } from './vts.js';
 import { VTSThrow } from './vtsthrow.js';
+import { runPreflight } from './preflight.js';
+import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.34.0';
+const VERSION = '0.35.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -175,6 +177,8 @@ async function main() {
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
   let obsStreaming = false;
+  let preflightLast = null;
+  let reports = null; // set once the Xylem parts exist (needs the roulette)
   const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
   const drive = new DriveUploader(google, config, { busy: () => obsStreaming || markers.status().recording });
   viewer.onUrl = (url) => interact.setSourceUrl(url);
@@ -269,6 +273,8 @@ async function main() {
     prep: { title: prep.title, category: prep.category, tags: prep.tags, appliedAt: prep.appliedAt, results: prep.results || null, ytTemplate: config.youtube?.titleTemplate || '{date} - {title}', fileTemplate: config.drive?.nameTemplate || '{date} - {title}' },
     obsStreaming,
     shortcuts: config.dashboard?.shortcuts === true,
+    preflight: preflightLast ? { at: preflightLast.at, bad: preflightLast.bad, warn: preflightLast.warn } : null,
+    reports: reports ? reports.summary() : null,
   });
   // Top-right links: built from the connected channel. (Old configs carry
   // generic placeholder links to the Chzzk front page; those are dropped.)
@@ -309,11 +315,17 @@ async function main() {
     if (active === obsStreaming) return;
     obsStreaming = active;
     youtube.onStreaming(active);
+    if (active) {
+      reports?.start().catch((e) => console.warn('[report]', e.message));
+      const t = new Date();
+      chzzk.note(`— 방송 시작 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} —`);
+    } else reports?.finish().catch((e) => console.warn('[report]', e.message));
     if (!active) setTimeout(() => drive.kick(), 3000);
     stateChanged();
   };
   obs.on('StreamStateChanged', (e) => {
     const s = String(e.outputState || '');
+    if (/STOPPING$/.test(s)) reports?.stopping();
     if (/STARTED$/.test(s)) setStreaming(true);
     else if (/STOPPED$/.test(s)) setStreaming(false);
   });
@@ -338,6 +350,10 @@ async function main() {
   const vts = new VTS(config);
   const vtsThrow = new VTSThrow(vts, chzzk);
   vts.apply();
+  // 방송 리포트 (src/report.js): one summary per stream
+  reports = new StreamReports({ obs, chzzk, youtube, markers, roulette, drive });
+  reports.on('change', () => stateChanged());
+  reports.on('ready', () => sendAll('toast', { text: '📋 방송 리포트가 준비됐어요 — 위쪽 "방송 기록"에서 볼 수 있어요', long: true }));
   // while a Xylem page is open, look for a newer pack every 3 min (one small GitHub request)
   setInterval(() => { if (xylemPage.size) xylem.check().catch(() => {}); }, 3 * 60000).unref();
   const xylemState = () => ({
@@ -507,6 +523,19 @@ async function main() {
     },
   });
 
+  // ---------- 방송 전 점검 (src/preflight.js) ----------
+  let preflightBusy = null;
+  async function preflight() {
+    if (preflightBusy) return preflightBusy;
+    preflightBusy = runPreflight({
+      obs, config, obsInfo, obsStreaming: () => obsStreaming, obsStartedAt: () => win.obsStartTime(),
+      bgm, soundboard, viewer, chatViewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, update: () => updater.state(),
+    }).then((r) => { preflightLast = r; stateChanged(); return r; }).finally(() => { preflightBusy = null; });
+    return preflightBusy;
+  }
+  obs.on('connected', () => setTimeout(() => preflight().catch(() => {}), 8000));
+  setInterval(() => { if (clients.size && !obsStreaming && obs.connected) preflight().catch(() => {}); }, 10 * 60000).unref();
+
   function countMusic(folder) {
     const exts = config.bgm.extensions.map((e) => e.toLowerCase());
     let n = 0;
@@ -608,6 +637,10 @@ async function main() {
     'POST /api/roulette/skip': () => roulette.skipAll(),
     'POST /api/roulette/clear-log': () => roulette.clearLog(),
     'POST /api/dogfight/reset': () => dogfight.reset(),
+    'POST /api/preflight': () => preflight(),
+    'POST /api/chat/clear': () => { chzzk.clearChat(); },
+    'POST /api/report': (b) => ({ report: reports.view(b.id ? String(b.id) : null), ...reports.summary() }),
+    'POST /api/report/seen': (b) => reports.markSeen(String(b.id || '')),
     'POST /api/chat/send': async (b) => {
       if (!chzzkOpen.status().loggedIn) throw new Error('채팅을 보내려면 방송 PC 설정 창에서 치지직 연동 로그인을 해 주세요');
       return chzzkOpen.sendChat(b.message);

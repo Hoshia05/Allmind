@@ -265,6 +265,20 @@ export class Chzzk extends EventEmitter {
     };
   }
 
+  // 채팅 화면 지우기: every dashboard empties its chat list (viewer info and donations stay)
+  clearChat() {
+    this.chat = [];
+    this.emit('chat-reset');
+  }
+  // a line in the chat list itself, e.g. "— 방송 시작 —" (dashboard only, not sent to Chzzk)
+  note(text) {
+    const m = { key: `note:${Date.now()}`, id: ++this.seq, time: Date.now(), uid: '', nick: '', role: '', badges: [], text: String(text), emojis: {}, kind: 'system', divider: true, amount: null, donationType: null, months: null };
+    this.chat.push(m);
+    const max = this.cfg.chatHistory || 300;
+    if (this.chat.length > max) this.chat.splice(0, this.chat.length - max);
+    this.emit('chat', [m]);
+  }
+
   _add(list) {
     if (!list.length) return;
     const fresh = list.filter((m) => (m.kind === 'donation' || m.kind === 'subscription') && !this.donations.some((d) => d.key === m.key));

@@ -56,6 +56,14 @@ export async function findObs(configured) {
   return null;
 }
 
+// when the running OBS was started (Date ms), or null
+export async function obsStartTime() {
+  if (!isWin) return process.env.MOCK_OBS_UPTIME_H ? Date.now() - Number(process.env.MOCK_OBS_UPTIME_H) * 3600000 : null;
+  const r = await powershell("$p = Get-Process obs64 -ErrorAction SilentlyContinue | Sort-Object StartTime | Select-Object -First 1; if ($p) { [Console]::Out.Write(([DateTimeOffset]$p.StartTime).ToUnixTimeMilliseconds()) }", { timeout: 8000 });
+  const n = Number(String(r.stdout || '').trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export async function isObsRunning() {
   if (!isWin) return false;
   const r = await run('tasklist.exe', ['/FI', 'IMAGENAME eq obs64.exe', '/NH']);

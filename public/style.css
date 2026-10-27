@@ -823,3 +823,32 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; color:
 .chat-send input:disabled { opacity: .6; }
 .chat-send .btn { padding: 6px 12px; }
 .chat-count { position: absolute; right: 86px; font-size: 10.5px; color: var(--muted); pointer-events: none; }
+
+/* 점검 / 방송 기록 */
+.top-badge { position: relative; }
+.top-badge b { margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; line-height: 18px; display: inline-block; text-align: center; background: var(--warn); color: #231400; }
+.top-badge b.bad { background: var(--bad); color: #fff; }
+.top-badge b.dot { min-width: 8px; width: 8px; height: 8px; padding: 0; background: var(--accent); vertical-align: 1px; }
+.sheet.wide { width: min(760px, 100%); }
+.check-sum { font-size: 14px; font-weight: 700; }
+.check-sum.ok { color: var(--ok); } .check-sum.warn { color: var(--warn); } .check-sum.bad { color: var(--bad); }
+.check-list { display: flex; flex-direction: column; gap: 12px; }
+.check-group h4 { margin: 0 0 4px; font-size: 11.5px; letter-spacing: .05em; color: var(--muted); }
+.check-row { display: grid; grid-template-columns: 22px 1fr; gap: 2px 8px; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.check-row:nth-child(odd) { background: var(--panel-2); }
+.check-row .ic { grid-row: span 2; font-size: 14px; line-height: 20px; text-align: center; }
+.check-row .lb { font-weight: 700; } .check-row .lb span { font-weight: 400; color: var(--muted); margin-left: 6px; }
+.check-row .fx { font-size: 12px; color: var(--accent-2); }
+.check-row.off { opacity: .55; }
+.rep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.rep-card { background: var(--panel-2); border-radius: 10px; padding: 10px 12px; }
+.rep-card .k { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+.rep-card .v { font-size: 20px; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.rep-card .s { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.rep-sec { margin-top: 14px; } .rep-sec h4 { margin: 0 0 6px; font-size: 12.5px; }
+.rep-sec ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+.rep-title { font-size: 15px; font-weight: 800; } .rep-when { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.rep-good { color: var(--ok); } .rep-warn { color: var(--warn); } .rep-bad { color: var(--bad); }
+#reportPick { margin-left: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; max-width: 360px; }
+.msg.divider { text-align: center; color: var(--accent-2); font-style: normal; font-weight: 700; font-size: 12px; border-top: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent); margin: 8px 0 4px; padding-top: 6px; }
+#chatPanel.show-mirror .text-only { display: none; }

@@ -35,6 +35,8 @@
     <div class="stat"><span class="stat-label">방송 시간</span><span class="stat-val mono" id="uptime">–</span></div>
     <div class="health" id="health" hidden title=""><span class="health-dot"></span><span id="healthText"></span></div>
     <div class="stat title"><span class="stat-label" id="category"></span><span class="stat-val" id="liveTitle"></span></div>
+    <button class="btn ghost small-btn top-badge" id="checkBtn" title="방송 전 점검 — OBS·녹화·유튜브·로그인 등을 한 번에 확인">점검<b id="checkBadge" hidden></b></button>
+    <button class="btn ghost small-btn top-badge" id="reportBtn" title="지난 방송들의 리포트">방송 기록<b id="reportDot" class="dot" hidden></b></button>
     <button class="btn ghost small-btn" id="prepBtn" title="방송 제목·카테고리·태그를 치지직, 유튜브 아카이브, 녹화 파일 이름에 한 번에 적용">방송 준비</button>
     <button class="btn ghost small-btn" id="remoteBtn" title="치지직 리모콘을 옆 창으로 열기">리모콘</button>
     <button class="btn ghost small-btn" id="chatToggle" title="Show / hide the chat column">채팅 숨기기</button>
@@ -103,6 +105,7 @@
             <button data-tab="donations" title="이번 방송의 후원·구독만">후원<span class="tab-count" id="donUnread"></span></button>
             <button data-tab="mirror" title="Your 위플챗 OBS source, as on stream">위플챗</button>
           </div>
+ <button class="btn ghost icon text-only" id="chatClearBtn" title="채팅 화면 지우기 (모든 기기에서) — 지난 방송 채팅과 헷갈리지 않게">🧹</button>
           <button class="btn ghost icon mirror-only" id="chatModeBtn" title="위플챗 보기 방식 바꾸기">⇄</button>
         </div>
       </div>
@@ -272,6 +275,23 @@
   </div>
 
   <!-- 방송 준비: one title for Chzzk, the YouTube archive and the Drive file name -->
+  <!-- 방송 전 점검 -->
+  <div class="sheet-wrap" id="checkWrap" hidden>
+    <div class="sheet" role="dialog" aria-label="방송 전 점검">
+      <div class="sheet-head"><b>방송 전 점검</b><span class="muted small" id="checkWhen"></span><button class="btn ghost icon" id="checkClose" title="닫기">✕</button></div>
+      <div class="check-sum" id="checkSum"></div>
+      <div id="checkList" class="check-list"></div>
+      <div class="row-btns"><button class="btn accent" id="checkRun">다시 점검</button><span class="muted small">OBS가 연결될 때와, 대시보드가 열려 있으면 10분마다 저절로 점검해요.</span></div>
+    </div>
+  </div>
+  <!-- 방송 기록 (리포트) -->
+  <div class="sheet-wrap" id="reportWrap" hidden>
+    <div class="sheet wide" role="dialog" aria-label="방송 기록">
+      <div class="sheet-head"><b>방송 기록</b><select id="reportPick"></select><button class="btn ghost icon" id="reportClose" title="닫기">✕</button></div>
+      <div id="reportBody"></div>
+    </div>
+  </div>
+
   <div class="sheet-wrap" id="prepWrap" hidden>
     <div class="sheet" id="prepSheet" role="dialog" aria-label="방송 준비">
       <div class="sheet-head"><b>방송 준비</b><span class="muted small" id="prepSrc"></span><button class="btn ghost icon" id="prepClose" title="닫기">✕</button></div>

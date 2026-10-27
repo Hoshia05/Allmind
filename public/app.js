@@ -942,7 +942,7 @@ function chatHtml(m) {
   // Emotes arrive as {:name:} plus a name → image URL map.
   const text = esc(m.text).replace(/\{:([^:{}]+):\}/g, (all, name) =>
     m.emojis?.[name] ? `<img class="emo" src="${esc(m.emojis[name])}" alt="${esc(name)}" title="${esc(name)}">` : all);
-  if (m.kind === 'system') return `<li class="msg system" data-id="${m.id}">${text}</li>`;
+  if (m.kind === 'system') return `<li class="msg system${m.divider ? ' divider' : ''}" data-id="${m.id}">${text}</li>`;
   const role = m.role ? `<span class="role ${m.role}">${m.role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
   const badges = (m.badges || []).map((u) => `<img class="badge" src="${esc(u)}" alt="">`).join('');
   let amt = '';
@@ -1084,6 +1084,7 @@ $('chatSend').addEventListener('submit', async (ev) => {
 function renderChatState() {
   if (!S) return;
   renderChatSend();
+  renderTopChecks();
   const { channelId, chat } = S.chzzk;
   $('channelForm').hidden = !!channelId || chatTab === 'mirror';
   if (!channelId && chatTab === 'donations') $('donList').innerHTML = '<li class="don-empty">치지직 채널을 연결하면 후원이 여기에 모여요</li>';
@@ -1684,3 +1685,84 @@ $('sbMsg').addEventListener('click', async (ev) => {
 $('sbStop').addEventListener('click', () => api('sb/stop'));
 $('sbVol').addEventListener('input', () => { $('sbVolVal').textContent = `${$('sbVol').value} dB`; });
 $('sbVol').addEventListener('change', () => api('sb/volume', { db: Number($('sbVol').value) }));
+
+
+// ---------------- 채팅 화면 지우기 · 방송 전 점검 · 방송 기록 ----------------
+$('chatClearBtn').addEventListener('click', async () => {
+  if (!confirm('채팅 화면을 지울까요? (모든 기기에서 지워져요. 후원 목록과 시청자 정보는 그대로예요)')) return;
+  await api('chat/clear');
+});
+
+function renderTopChecks() {
+  const p = S?.preflight;
+  const b = $('checkBadge');
+  const n = p ? p.bad + p.warn : 0;
+  b.hidden = !n;
+  b.textContent = n;
+  b.className = p?.bad ? 'bad' : '';
+  $('checkBtn').title = p ? (n ? `방송 전 점검: 문제 ${p.bad}개, 확인할 것 ${p.warn}개` : '방송 전 점검: 모두 괜찮아요') : '방송 전 점검';
+  const r = S?.reports;
+  $('reportDot').hidden = !r?.unseen;
+}
+
+const CHECK_IC = { ok: '✅', warn: '⚠️', bad: '❌', info: 'ℹ️', off: '–' };
+async function runCheck() {
+  $('checkRun').disabled = true;
+  $('checkSum').textContent = '점검하는 중…'; $('checkSum').className = 'check-sum';
+  const r = await api('preflight');
+  $('checkRun').disabled = false;
+  if (!r.ok) return;
+  const t = new Date(r.at);
+  $('checkWhen').textContent = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} 점검`;
+  $('checkSum').className = `check-sum ${r.bad ? 'bad' : r.warn ? 'warn' : 'ok'}`;
+  $('checkSum').textContent = r.bad ? `❌ 방송 전에 고쳐야 할 것 ${r.bad}개${r.warn ? ` · 확인할 것 ${r.warn}개` : ''}` : r.warn ? `⚠️ 확인할 것 ${r.warn}개 — 나머지는 괜찮아요` : '✅ 모두 괜찮아요 — 방송 준비 끝!';
+  const groups = [];
+  for (const it of r.items) { let g = groups.find((x) => x.name === it.group); if (!g) groups.push(g = { name: it.group, items: [] }); g.items.push(it); }
+  $('checkList').innerHTML = groups.map((g) => `<div class="check-group"><h4>${esc(g.name)}</h4>${g.items.map((it) => `<div class="check-row ${it.status}"><span class="ic">${CHECK_IC[it.status] || ''}</span><span class="lb">${esc(it.label)}<span>${esc(it.detail)}</span></span>${it.fix ? `<span class="fx">→ ${esc(it.fix)}</span>` : '<span></span>'}</div>`).join('')}</div>`).join('');
+}
+$('checkBtn').addEventListener('click', () => { $('checkWrap').hidden = false; runCheck(); });
+$('checkRun').addEventListener('click', runCheck);
+$('checkClose').addEventListener('click', () => { $('checkWrap').hidden = true; });
+$('checkWrap').addEventListener('click', (ev) => { if (ev.target === $('checkWrap')) $('checkWrap').hidden = true; });
+
+const fmtDur = (ms) => { const m = Math.round(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`; };
+const fmtWhen = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+async function showReport(id) {
+  const r = await api('report', id ? { id } : {});
+  if (!r.ok) return;
+  $('reportPick').innerHTML = r.list.map((x) => `<option value="${esc(x.id)}">${esc(fmtWhen(x.startedAt))} · ${esc(x.title || '제목 없음').slice(0, 30)}</option>`).join('') || '<option>아직 없어요</option>';
+  const p = r.report;
+  if (!p) { $('reportBody').innerHTML = `<p class="muted">${r.live ? '지금 방송 중이에요 — 방송이 끝나면 리포트가 생겨요.' : '아직 리포트가 없어요. OBS로 방송을 켰다가 끄면 저절로 만들어져요.'}</p>`; return; }
+  $('reportPick').value = p.id;
+  if (!p.stale && r.latest?.id === p.id) api('report/seen', { id: p.id });
+  const h = p.health || {};
+  const q = (v, warn, bad) => (v == null ? '<span class="muted">–</span>' : `<span class="${v >= bad ? 'rep-bad' : v >= warn ? 'rep-warn' : 'rep-good'}">${v}%</span>`);
+  const card = (k, v, sub = '') => `<div class="rep-card"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+  const up = p.uploads || [];
+  const upHtml = up.length ? up.map((u) => `<li>${esc(u.name)} — ${u.status === 'done' ? `<span class="rep-good">올림</span>${u.url ? ` · <a href="${esc(u.url)}" target="_blank" rel="noopener">열기</a>` : ''}` : u.status === 'uploading' ? `올리는 중 ${u.pct}%` : u.status === 'error' ? `<span class="rep-bad">실패</span> ${esc(u.error || '')}` : '대기 중'}</li>`).join('') : '<li class="muted">이 방송의 녹화 업로드가 없어요</li>';
+  $('reportBody').innerHTML = `
+    <div class="rep-title">${esc(p.title || '제목 없음')}</div>
+    <div class="rep-when">${esc(fmtWhen(p.startedAt))} – ${esc(fmtWhen(p.endedAt))}${p.category ? ` · ${esc(p.category)}` : ''}${p.stale ? ' · Allmind가 꺼져 있어서 끝 부분은 빠졌을 수 있어요' : ''}</div>
+    <div class="rep-grid">
+      ${card('방송 시간', fmtDur(p.endedAt - p.startedAt))}
+      ${card('최고 시청자', p.peak.toLocaleString())}
+      ${card('채팅', p.chats.toLocaleString(), `${p.chatters}명 참여 · 처음 온 ${p.newChatters}명`)}
+      ${card('후원', `${p.cheese.toLocaleString()} 치즈`, `${p.donations}건${p.videos ? ` · 영도 ${p.videos}` : ''}`)}
+      ${card('구독', p.subs)}
+      ${card('⭐ 마크', p.marks)}
+      ${card('룰렛', `${p.roulette.spins}회`, p.roulette.todo.length ? `<span class="rep-warn">남은 결과 ${p.roulette.todo.length}개</span>` : '')}
+      ${card('방송 품질', h.dropPct == null ? '–' : `${h.dropPct}%`, `드롭 ${h.dropFrames ?? '–'}프레임 · 렌더 ${h.renderPct ?? '–'}% · 인코딩 ${h.encodePct ?? '–'}%`)}
+    </div>
+    <div class="rep-sec"><h4>방송 품질</h4><ul>
+      <li>네트워크 드롭: ${q(h.dropPct, 0.5, 2)} · 렌더 지연: ${q(h.renderPct, 0.5, 2)} · 인코딩 지연: ${q(h.encodePct, 0.5, 2)}</li>
+    </ul></div>
+    <div class="rep-sec"><h4>유튜브 아카이브</h4><ul><li>${!p.yt?.enabled ? '<span class="muted">안 씀</span>' : p.yt.live ? `<span class="rep-good">비공개로 올라갔어요</span> · ${esc(p.yt.title || '')}${p.yt.id ? ` · <a href="https://studio.youtube.com/video/${esc(p.yt.id)}/edit" target="_blank" rel="noopener">유튜브 스튜디오</a>` : ''}` : '<span class="rep-bad">유튜브 방송이 시작되지 않았어요</span>'}</li></ul></div>
+    <div class="rep-sec"><h4>녹화 업로드</h4><ul>${upHtml}</ul></div>
+    ${p.roulette.todo.length ? `<div class="rep-sec"><h4>아직 안 한 룰렛 결과</h4><ul>${p.roulette.todo.slice(0, 10).map((t) => `<li>${esc(t.nick)} — ${esc(t.result)}</li>`).join('')}${p.roulette.todo.length > 10 ? `<li class="muted">외 ${p.roulette.todo.length - 10}개 — Xylem 창의 룰렛 기록에서 완료 체크</li>` : ''}</ul></div>` : ''}
+    <div class="rep-sec"><h4>방송 중 생긴 문제</h4><ul>${p.problems.length ? p.problems.map((x) => `<li>${esc(new Date(x.at).toTimeString().slice(0, 5))} ${esc(x.text)}</li>`).join('') : '<li class="rep-good">없었어요</li>'}</ul></div>`;
+}
+$('reportBtn').addEventListener('click', () => { $('reportWrap').hidden = false; showReport(); });
+$('reportPick').addEventListener('change', () => showReport($('reportPick').value));
+$('reportClose').addEventListener('click', () => { $('reportWrap').hidden = true; });
+$('reportWrap').addEventListener('click', (ev) => { if (ev.target === $('reportWrap')) $('reportWrap').hidden = true; });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { $('checkWrap').hidden = true; $('reportWrap').hidden = true; } });
