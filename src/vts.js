@@ -120,9 +120,37 @@ export class VTS extends EventEmitter {
     ws.onerror = end;
   }
 
+  // VTS sends JSON text frames. Be lenient about what arrives (binary frames, a BOM, NULs, two objects
+  // in one frame): a token answer that couldn't be read left Allmind waiting forever (0.35.1 log).
   _onMessage(raw) {
-    let m;
-    try { m = JSON.parse(typeof raw === 'string' ? raw : Buffer.from(raw).toString('utf8')); } catch { console.warn('[vts] unreadable message'); return; }
+    if (typeof Blob !== 'undefined' && raw instanceof Blob) { raw.arrayBuffer().then((ab) => this._onMessage(ab), () => {}); return; }
+    let text;
+    if (typeof raw === 'string') text = raw;
+    else {
+      const buf = raw instanceof ArrayBuffer ? Buffer.from(raw) : ArrayBuffer.isView(raw) ? Buffer.from(raw.buffer, raw.byteOffset, raw.byteLength) : Buffer.from(String(raw));
+      text = buf[0] === 0xff && buf[1] === 0xfe ? buf.toString('utf16le') : buf.toString('utf8');
+    }
+    text = text.replace(/^﻿/, '').replace(/\u0000/g, '').trim();
+    let list = [];
+    try { list = [JSON.parse(text)]; } catch {
+      // several objects in one frame?
+      try { list = text.replace(/}\s*{/g, '}\n{').split('\n').map((x) => JSON.parse(x)); } catch { list = []; }
+    }
+    if (!list.length) {
+      // last resort: pull the token (and which request it answers) out of the text
+      const tok = /"authenticationToken"\s*:\s*"([^"]{8,})"/.exec(text);
+      const rid = /"requestID"\s*:\s*"([^"]*)"/.exec(text);
+      const type = /"messageType"\s*:\s*"([^"]*)"/.exec(text);
+      const preview = text.slice(0, 160).replace(/[0-9a-f]{24,}/gi, '…');
+      console.warn(`[vts] unreadable message (${typeof raw === 'string' ? 'text' : 'binary'}, ${text.length} chars, type ${type?.[1] || '?'}): ${preview}`);
+      if (tok) list = [{ messageType: 'AuthenticationTokenResponse', requestID: rid?.[1], data: { authenticationToken: tok[1] } }];
+      else return;
+    }
+    for (const m of list) this._handle(m);
+  }
+
+  _handle(m) {
+    if (!m || typeof m !== 'object') return;
     // a token can arrive after its request was given up (connection restarted while the popup was up)
     if (m.messageType === 'AuthenticationTokenResponse' && m.data?.authenticationToken && m.data.authenticationToken !== this.auth.token) {
       const late = !(m.requestID && this.pending.has(m.requestID));
@@ -138,6 +166,7 @@ export class VTS extends EventEmitter {
       else p.resolve(m.data || {});
       return;
     }
+    if (m.messageType === 'APIError') console.warn(`[vts] error from VTube Studio: ${m.data?.errorID} ${m.data?.message || ''}`);
     if (m.messageType?.endsWith('Event')) this.emit('event', m.messageType, m.data || {});
   }
 

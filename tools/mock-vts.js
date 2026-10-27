@@ -39,7 +39,15 @@ wss.on('connection', (ws) => {
       log('  popup: allow "Allmind"?', d.pluginIcon ? `(icon ${Buffer.from(d.pluginIcon, 'base64').length} bytes)` : '(no icon)');
       return setTimeout(() => {
         if (process.env.MOCK_VTS_DENY) return err(m, 50, 'User has denied API access for your plugin.');
-        const tok = crypto.randomBytes(16).toString('hex'); tokens.add(tok);
+        const tok = crypto.randomBytes(32).toString('hex'); tokens.add(tok);
+        const w = process.env.MOCK_VTS_WEIRD; // bom | double | binary | garbage: odd frames real VTS might send
+        if (w) {
+          const j = JSON.stringify({ apiName: 'VTubeStudioPublicAPI', apiVersion: '1.0', timestamp: Date.now(), requestID: m.requestID, messageType: 'AuthenticationTokenResponse', data: { authenticationToken: tok } });
+          if (w === 'bom') return ws.send('\uFEFF' + j);
+          if (w === 'double') return ws.send(j + JSON.stringify({ messageType: 'TestEvent', data: {} }));
+          if (w === 'binary') return ws.send(Buffer.from(j), { binary: true });
+          if (w === 'garbage') return ws.send(j.slice(0, -1) + ',}\u0000');
+        }
         reply(m, 'AuthenticationTokenResponse', { authenticationToken: tok });
       }, 400);
     }
