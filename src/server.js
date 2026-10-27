@@ -30,7 +30,7 @@ import { Roulette } from './roulette.js';
 import { Deck } from './deck.js';
 import * as win from './win.js';
 
-const VERSION = '0.30.1';
+const VERSION = '0.31.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -706,6 +706,16 @@ async function main() {
       return { restarting: true, newUrl: portChanged ? `http://127.0.0.1:${Number(s.port)}/launcher` : null };
     },
     'GET /api/launcher/deck': () => ({ addresses: lanAddresses(), token: deck.token, ...deck.catalog() }),
+    // the bundled Stream Deck plugin → a temp file, opened with Stream Deck (it asks to install)
+    'POST /api/launcher/deck-plugin': () => {
+      const buf = readAsset('public/streamdeck/Allmind.streamDeckPlugin');
+      if (!buf) throw new Error('플러그인 파일이 이 버전에 없어요');
+      if (process.platform !== 'win32') return { dryRun: true, bytes: buf.length };
+      const f = path.join(os.tmpdir(), 'Allmind.streamDeckPlugin');
+      fs.writeFileSync(f, buf);
+      win.openInDefaultBrowser(f);
+      return { opened: true };
+    },
     'POST /api/launcher/deck-save': (b) => {
       const token = String(b.token || '').replace(/[^\w-]/g, '').slice(0, 64);
       saveConfig({ deck: { token } });
@@ -854,6 +864,11 @@ async function main() {
     if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
     if (key === 'POST /api/dogfight/cmd') { dogfight.inject(await readBody(req)); return json(res, 200, { ok: true }); }
 
+    // Allmind Stream Deck plugin: live BGM/soundboard state + lists
+    if (key === 'GET /deck/events') {
+      if (!deck.authorized(url.searchParams)) return json(res, 403, { ok: false, error: '키(key)가 맞지 않아요' });
+      return deck.attach(req, res, VERSION);
+    }
     // Stream Deck: GET (or POST) /deck/<action>[?name=…&key=…]
     if (url.pathname.startsWith('/deck/') && (req.method === 'GET' || req.method === 'POST')) {
       const r = await deck.run(decodeURIComponent(url.pathname.slice(6)), url.searchParams);
@@ -961,7 +976,8 @@ async function main() {
       if (!rel.includes('..')) {
         const body = readAsset(path.posix.join('public', rel));
         if (body) {
-          res.writeHead(200, { 'Content-Type': MIME[path.extname(rel)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+          const dl = rel.endsWith('.streamDeckPlugin') ? { 'Content-Disposition': 'attachment; filename="Allmind.streamDeckPlugin"' } : {};
+          res.writeHead(200, { 'Content-Type': MIME[path.extname(rel)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ...dl });
           res.end(body);
           return;
         }

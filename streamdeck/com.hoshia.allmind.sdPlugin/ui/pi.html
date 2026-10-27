@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Allmind</title>
+<style>
+  /* Stream Deck property inspector look (dark, 12px, label column on the left) */
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 4px 8px 12px 0; background: #2d2d2d; color: #d8d8d8; font: 12px/1.4 "Malgun Gothic", "Segoe UI", system-ui, sans-serif; }
+  .row { display: flex; align-items: center; min-height: 32px; margin: 2px 0; }
+  .row > label:first-child { flex: 0 0 96px; text-align: right; padding-right: 12px; color: #a8a8a8; }
+  .row > .grow { flex: 1; min-width: 0; }
+  select, input { width: 100%; box-sizing: border-box; height: 26px; padding: 0 6px; background: #3d3d3d; color: #e8e8e8; border: 1px solid #3d3d3d; border-radius: 3px; font: inherit; outline: none; }
+  select:focus, input:focus { border-color: #5a8dee; }
+  input[type=number] { width: 70px; }
+  button { height: 26px; padding: 0 12px; background: #4a4a4a; color: #eee; border: 0; border-radius: 3px; font: inherit; cursor: pointer; }
+  button:hover { background: #575757; }
+  .hide { display: none !important; }
+  .hint { margin: 0 0 6px 96px; color: #8c8c8c; font-size: 11px; }
+  .status { margin: 2px 0 4px 96px; font-size: 11px; }
+  .status.ok { color: #57c47d; } .status.bad { color: #ff8a7a; }
+  details { margin-top: 10px; border-top: 1px solid #3a3a3a; padding-top: 6px; }
+  summary { cursor: pointer; color: #bbb; padding: 4px 0 4px 96px; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '▸ '; } details[open] summary::before { content: '▾ '; }
+</style>
+</head>
+<body>
+  <div class="row"><label for="op">동작</label><div class="grow"><select id="op"></select></div></div>
+
+  <div id="trackBox" class="hide">
+    <div class="row"><label for="find">곡 찾기</label><div class="grow"><input id="find" placeholder="제목 일부를 입력하면 목록이 줄어요"></div></div>
+    <div class="row"><label for="track">곡</label><div class="grow"><select id="track"></select></div></div>
+    <div class="hint">누르면 이 곡을 재생해요. 이미 재생 중이면 일시정지.</div>
+  </div>
+
+  <div id="soundBox" class="hide">
+    <div class="row"><label for="sound">사운드</label><div class="grow"><select id="sound"></select></div></div>
+    <div class="hint">재생 중에 한 번 더 누르면 멈춰요.</div>
+  </div>
+
+  <div id="stepBox" class="hide">
+    <div class="row"><label for="step">한 번에</label><input id="step" type="number" min="1" max="20" step="1" placeholder="3"><span style="margin-left:6px">dB</span></div>
+  </div>
+
+  <div class="status" id="status">연결 확인 중…</div>
+
+  <details id="conn">
+    <summary>연결 (이 PC의 모든 Allmind 키에 적용)</summary>
+    <div class="row"><label for="host">Allmind 주소</label><div class="grow"><input id="host" placeholder="127.0.0.1:8080" spellcheck="false"></div></div>
+    <div class="hint">방송 PC의 스트림덱은 비워 두세요. 메인 PC에서는 방송 PC 주소 (예: 192.168.0.10:8080) — Allmind 설정 창의 스트림덱 칸에 나와 있어요.</div>
+    <div class="row"><label for="key">비밀 키</label><div class="grow"><input id="key" placeholder="Allmind에서 정했을 때만" spellcheck="false" autocomplete="off"></div></div>
+    <div class="row"><label></label><button id="save">저장하고 다시 연결</button></div>
+  </details>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const OPS = {
+  'com.hoshia.allmind.bgm': [['toggle', '재생 / 일시정지'], ['track', '이 곡 재생'], ['next', '다음 곡'], ['prev', '이전 곡'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기']],
+  'com.hoshia.allmind.sb': [['play', '사운드 재생'], ['stop', '정지'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기']],
+};
+let ws, uuid, action, settings = {}, info = { tracks: [], sounds: [] };
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const save = () => ws.send(JSON.stringify({ event: 'setSettings', context: uuid, payload: settings }));
+const toPlugin = (payload) => ws.send(JSON.stringify({ event: 'sendToPlugin', action, context: uuid, payload }));
+
+function show() {
+  const op = settings.op || OPS[action][0][0];
+  $('trackBox').classList.toggle('hide', op !== 'track');
+  $('soundBox').classList.toggle('hide', !(action.endsWith('.sb') && op === 'play'));
+  $('stepBox').classList.toggle('hide', !op.startsWith('vol-'));
+}
+
+function fillTracks() {
+  const q = $('find').value.trim().toLowerCase();
+  const all = info.tracks || [];
+  let list = q ? all.filter((t) => t.title.toLowerCase().includes(q) || (t.folder || '').toLowerCase().includes(q)) : all;
+  const cur = all.find((t) => t.id === settings.track);
+  if (cur && !list.includes(cur)) list = [cur, ...list];
+  const groups = new Map();
+  for (const t of list) { const f = t.folder || ''; if (!groups.has(f)) groups.set(f, []); groups.get(f).push(t); }
+  let html = settings.track ? '' : '<option value="">— 곡을 고르세요 —</option>';
+  if (settings.track && !cur) html += `<option value="${esc(settings.track)}">(셋리스트에 없음) ${esc(settings.track)}</option>`;
+  for (const [f, ts] of groups) {
+    const opts = ts.map((t) => `<option value="${esc(t.id)}">${esc(t.title)}</option>`).join('');
+    html += groups.size > 1 || f ? `<optgroup label="${esc(f || '(최상위)')}">${opts}</optgroup>` : opts;
+  }
+  if (!all.length) html = '<option value="">셋리스트가 비어 있거나 연결 안 됨</option>';
+  $('track').innerHTML = html;
+  $('track').value = settings.track || '';
+}
+function fillSounds() {
+  const all = info.sounds || [];
+  let html = settings.sound ? '' : '<option value="">— 사운드를 고르세요 —</option>';
+  if (settings.sound && !all.some((s) => s.id === settings.sound)) html += `<option value="${esc(settings.sound)}">(폴더에 없음) ${esc(settings.sound)}</option>`;
+  html += all.map((s) => `<option value="${esc(s.id)}">${esc(s.title)}</option>`).join('');
+  if (!all.length && !settings.sound) html = '<option value="">사운드가 없거나 연결 안 됨</option>';
+  $('sound').innerHTML = html;
+  $('sound').value = settings.sound || '';
+}
+
+function status() {
+  const el = $('status');
+  if (info.up && info.old) { el.className = 'status bad'; el.textContent = `Allmind ${info.version} — ${info.need} 이상으로 업데이트해 주세요`; }
+  else if (info.up) { el.className = 'status ok'; el.textContent = `● 연결됨 · Allmind ${info.version} (${info.base.replace('http://', '')})`; }
+  else { el.className = 'status bad'; const where = (info.base || '').replace('http://', ''); const e = info.error || '연결 안 됨'; el.textContent = `● ${e}${e.includes(where) ? '' : ` (${where})`}`; $('conn').open = true; }
+}
+
+function onInfo(p) {
+  info = { ...info, ...p };
+  if (document.activeElement !== $('host')) $('host').value = p.host || '';
+  if (document.activeElement !== $('key')) $('key').value = p.key || '';
+  if (p.tracks) fillTracks();
+  if (p.sounds) fillSounds();
+  status();
+}
+
+// Stream Deck calls this when the inspector opens.
+window.connectElgatoStreamDeckSocket = (port, inUUID, registerEvent, inInfo, actionInfo) => {
+  uuid = inUUID;
+  const a = JSON.parse(actionInfo);
+  action = a.action;
+  settings = a.payload?.settings || {};
+  $('op').innerHTML = OPS[action].map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+  $('op').value = settings.op || OPS[action][0][0];
+  $('step').value = settings.step || '';
+  show();
+  ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  ws.onopen = () => { ws.send(JSON.stringify({ event: registerEvent, uuid })); toPlugin({ type: 'hello' }); };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.event === 'sendToPropertyInspector' && m.payload?.type === 'info') onInfo(m.payload);
+    if (m.event === 'didReceiveSettings') { settings = m.payload?.settings || {}; show(); }
+  };
+};
+
+$('op').addEventListener('change', () => { settings.op = $('op').value; show(); save(); if (settings.op === 'track') fillTracks(); });
+$('find').addEventListener('input', fillTracks);
+$('track').addEventListener('change', () => { settings.track = $('track').value; save(); });
+$('sound').addEventListener('change', () => { settings.sound = $('sound').value; save(); });
+$('step').addEventListener('change', () => { const n = Number($('step').value); if (n > 0) settings.step = n; else delete settings.step; save(); });
+$('save').addEventListener('click', () => toPlugin({ type: 'global', host: $('host').value.trim(), key: $('key').value.trim() }));
+</script>
+</body>
+</html>

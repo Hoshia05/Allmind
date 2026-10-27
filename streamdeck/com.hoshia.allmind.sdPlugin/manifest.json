@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "Allmind",
+  "Version": "1.0.0.0",
+  "Author": "Hoshia",
+  "UUID": "com.hoshia.allmind",
+  "Description": "Allmind의 BGM과 사운드보드를 스트림덱 키로 — 지금 재생 중인 곡과 사운드가 키에 보여요.",
+  "Icon": "imgs/plugin",
+  "Category": "Allmind",
+  "CategoryIcon": "imgs/category",
+  "CodePath": "bin/plugin.js",
+  "Nodejs": {
+    "Version": "20"
+  },
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.5"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Actions": [
+    {
+      "UUID": "com.hoshia.allmind.bgm",
+      "Name": "BGM",
+      "Tooltip": "재생/일시정지, 특정 곡 재생, 다음/이전 곡, 볼륨",
+      "Icon": "imgs/action-bgm",
+      "PropertyInspectorPath": "ui/pi.html",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": true,
+      "States": [
+        {
+          "Image": "imgs/key-bgm",
+          "TitleAlignment": "bottom",
+          "FontSize": 11
+        }
+      ]
+    },
+    {
+      "UUID": "com.hoshia.allmind.sb",
+      "Name": "사운드보드",
+      "Tooltip": "사운드 재생 (다시 누르면 정지), 정지, 볼륨",
+      "Icon": "imgs/action-sb",
+      "PropertyInspectorPath": "ui/pi.html",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": true,
+      "States": [
+        {
+          "Image": "imgs/key-sb",
+          "TitleAlignment": "bottom",
+          "FontSize": 11
+        }
+      ]
+    }
+  ]
+}

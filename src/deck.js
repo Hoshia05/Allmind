@@ -18,12 +18,21 @@ export class Deck {
     this.bgm = bgm;
     this.sb = soundboard;
     this.markers = markers;
+    // Live state for the Allmind Stream Deck plugin (GET /deck/events). Separate from the dashboard's
+    // SSE on purpose: a deck plugin is always connected, and must not count as "a dashboard is open".
+    this.clients = new Set();
+    this.sent = { state: '', lists: '' };
+    this.timer = null;
+    const changed = () => this.clients.size && this._schedule();
+    bgm.on('change', changed);
+    soundboard.on('change', changed);
     // name → { label, args?, run(params) }
     this.actions = {
       'bgm-toggle': { label: 'BGM 재생/일시정지', run: async () => { await this.bgm.toggle(); } },
       'bgm-play': { label: 'BGM 재생', run: async () => { await this.bgm.play(); } },
       'bgm-pause': { label: 'BGM 일시정지', run: async () => { await this.bgm.pause(); } },
       'bgm-next': { label: 'BGM 다음 곡', run: async () => { await this.bgm.next(); } },
+      'bgm-select': { label: 'BGM 이 곡 재생 (재생 중인 곡이면 일시정지)', run: (p) => this._bgmSelect(p.get('id')) },
       'bgm-prev': { label: 'BGM 이전 곡 (3초 넘으면 처음부터)', run: async () => { await this.bgm.prev(); } },
       'bgm-vol-up': { label: 'BGM 볼륨 +3dB', run: (p) => this._vol(this.bgm, num(p.get('step'), 3)) },
       'bgm-vol-down': { label: 'BGM 볼륨 −3dB', run: (p) => this._vol(this.bgm, -num(p.get('step'), 3)) },
@@ -59,6 +68,50 @@ export class Deck {
     if (hit.length === 1) return hit[0];
     if (!hit.length) throw new Error(`"${name}" 사운드를 찾지 못했어요`);
     throw new Error(`"${name}" 와 맞는 사운드가 ${hit.length}개예요 — 이름을 더 정확히 써 주세요`);
+  }
+
+  async _bgmSelect(id) {
+    id = String(id || '');
+    if (!this.bgm.tracks.has(id)) throw new Error('그 곡이 셋리스트에 없어요');
+    if (this.bgm.currentId === id && this.bgm.media.playing) await this.bgm.pause();
+    else if (this.bgm.currentId === id) await this.bgm.play();
+    else await this.bgm.select(id);
+    return { track: this.bgm.tracks.get(id).title };
+  }
+
+  // ---------- live state for the plugin ----------
+  summary() {
+    const b = this.bgm, sb = this.sb;
+    return {
+      bgm: { ok: !!b.sourceOk, playing: !!b.media.playing, currentId: b.currentId, title: b.tracks.get(b.currentId)?.title || '', volumeDb: b.volumeDb },
+      sb: { ok: !!sb.sourceOk, playing: sb.playing, volumeDb: sb.volumeDb },
+    };
+  }
+  lists() {
+    return {
+      tracks: this.bgm.order.map((id) => this.bgm.tracks.get(id)).filter(Boolean).map((t) => ({ id: t.id, title: t.title, folder: t.folder || '' })),
+      sounds: this.sb.sounds.map((s) => ({ id: s.id, title: s.title })),
+    };
+  }
+  _schedule() {
+    if (this.timer) return;
+    this.timer = setTimeout(() => { this.timer = null; this._push(); }, 60);
+  }
+  _push(only) {
+    for (const [ev, data] of [['lists', this.lists()], ['state', this.summary()]]) {
+      const j = JSON.stringify(data);
+      if (!only && j === this.sent[ev]) continue;
+      this.sent[ev] = j;
+      for (const res of only ? [only] : this.clients) res.write(`event: ${ev}\ndata: ${j}\n\n`);
+    }
+  }
+  attach(req, res, version) {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.write(`retry: 3000\nevent: hello\ndata: ${JSON.stringify({ app: 'allmind', version })}\n\n`);
+    for (const [ev, data] of [['lists', this.lists()], ['state', this.summary()]]) res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`);
+    this.clients.add(res);
+    const ping = setInterval(() => res.write(': ping\n\n'), 15000);
+    req.on('close', () => { clearInterval(ping); this.clients.delete(res); });
   }
 
   async _sbPlay(name) {

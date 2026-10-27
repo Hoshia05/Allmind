@@ -7,3 +7,5 @@ dist/
 
 # settings-import safety copies (dev runs keep config next to the code)
 가져오기 전 백업*/
+streamdeck/com.hoshia.allmind.sdPlugin/bin/
+.build-sd-*/

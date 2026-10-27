@@ -462,6 +462,9 @@ function renderDeck() {
   $('deckWhere').innerHTML = opts.map((o) => `<option value="${escapeAttr(o.v)}">${escapeAttr(o.t)}</option>`).join('');
   if (cur && opts.some((o) => o.v === cur)) $('deckWhere').value = cur;
   if (document.activeElement !== $('deckToken')) $('deckToken').value = d.token || '';
+  const lan = d.addresses[0] || location.origin;
+  $('deckDl').textContent = `${lan}/streamdeck/Allmind.streamDeckPlugin`;
+  $('deckHost').textContent = lan.replace(/^https?:\/\//, '');
   $('deckList').innerHTML = d.groups.map((g) => {
     const rows = g.items.map((it) => `<div class="deck-item"><span>${escapeAttr(it.label)}</span><button class="btn small-btn" data-path="${escapeAttr(it.path)}">복사</button></div>`).join('');
     const empty = g.title === '사운드보드' && !d.groups.find((x) => x.title === g.title).items.some((it) => it.label.startsWith('▶'))
@@ -484,12 +487,21 @@ $('deckList').addEventListener('click', async (ev) => {
   try { await navigator.clipboard.writeText(url); toast('주소를 복사했어요'); }
   catch { prompt('주소를 복사하세요 (Ctrl+C)', url); }
 });
+$('deckInstall').addEventListener('click', async () => {
+  const r = await call('/deck-plugin', {});
+  if (r.ok) toast(r.dryRun ? `개발 모드: 플러그인 ${r.bytes} bytes (설치는 Windows에서만)` : '스트림덱 앱에서 설치를 눌러 주세요');
+});
+$('deckDlCopy').addEventListener('click', async () => {
+  const url = $('deckDl').textContent;
+  try { await navigator.clipboard.writeText(url); toast('주소를 복사했어요'); }
+  catch { prompt('주소를 복사하세요 (Ctrl+C)', url); }
+});
 $('deckTokenSave').addEventListener('click', async () => {
   const r = await call('/deck-save', { token: $('deckToken').value.trim() });
   if (!r.ok) return;
   deck.data = r;
   renderDeck();
-  toast(r.hasToken ? '비밀 키를 저장했어요 — 키에 붙인 주소는 다시 복사해서 바꿔 주세요' : '비밀 키를 껐어요');
+  toast(r.hasToken ? '비밀 키를 저장했어요 — 플러그인의 연결 설정에도 같은 키를 넣어 주세요' : '비밀 키를 껐어요');
 });
 loadDeck(); // token + addresses (the URL list itself is only shown when the details are opened)
 
