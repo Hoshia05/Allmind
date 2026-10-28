@@ -509,6 +509,17 @@ const chzzkHttp = http.createServer((req, res) => {
     return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
   }
   if (req.url.startsWith('/nng_main/v1/chats/access-token')) return send({ accessToken: 'mock-token', extraToken: 'x' });
+  // POST /mock/chat {nick, text, amount?, type?} → a viewer chat (or donation when amount is set) in the fake chat
+  if (req.url === '/mock/chat' && req.method === 'POST') {
+    let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+      const j = JSON.parse(b || '{}'); const nick = j.nick || '테스터';
+      const x = { uid: 'u_' + nick, msgTime: Date.now(), profile: JSON.stringify({ nickname: nick, userRoleCode: 'common_user', activityBadges: [] }), msgTypeCode: j.amount ? 10 : 1, msg: j.text || '', extras: JSON.stringify({ emojis: {}, ...(j.amount ? { payAmount: j.amount, donationType: j.type || 'CHAT' } : {}) }) };
+      if (!j.amount) recent.push(x);
+      for (const push of chatPushers) push(j.amount ? 93102 : 93101, [x]);
+      res.writeHead(200).end('{}');
+    });
+    return;
+  }
   if (req.url.startsWith('/g/') || req.url.startsWith('/c/') || req.url.startsWith('/xylem-pack/')) return mockApis(req, res);
   res.writeHead(404).end();
 });

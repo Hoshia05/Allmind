@@ -9,7 +9,8 @@
   reports back when it has been shown, so a reload mid-spin replays the same spin.
   Rarity (from Allmind, per result): 일반 · 희귀 (slower stop, gold glow, sparkles) · 전설 (long crawl,
   flash, confetti, banner). A donation worth `fastFrom`+ spins plays fast, then shows a summary card.
-  무료 룰렛 (wheels the streamer spins) use the same overlay with their own title and items.
+  Several donation roulettes (each its own price) and 무료 룰렛 (wheels the streamer spins) share this overlay;
+  each spin shows its own roulette's title and items. The odds for viewers are on /roulette-board.
   Options: ?sound=0 (no tick/chime) · ?demo=1 (spins on its own, for positioning in OBS)
 -->
 <style>
@@ -31,7 +32,7 @@ let W = 0, H = 0, DPR = 1;
 function resize() { DPR = window.devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR; g.setTransform(DPR, 0, 0, DPR, 0, 0); }
 addEventListener('resize', resize); resize();
 
-let cfg = { title: '치즈 룰렛', items: [], spinSec: 6, holdSec: 5, fastFrom: 3, wheels: [] };
+let cfg = { roulettes: [], spinSec: 6, holdSec: 5, fastFrom: 3, wheels: [] };
 let queue = [];
 let cur = null;      // { row, sl, from, to, phase: 'in'|'spin'|'hold'|'next'|'summary'|'out', t0, fast, spinSec, holdSec }
 let rot = 0;         // current wheel rotation (rad)
@@ -74,7 +75,8 @@ function slices(items) {
   return items.filter((it) => it.weight > 0).map((it) => { const span = (it.weight / total) * Math.PI * 2; const s = { ...it, a0: a, a1: a + span }; a += span; return s; });
 }
 const easeOut = (t, p = 4) => 1 - Math.pow(1 - t, p);
-const wheelOf = (row) => (row.wheel ? cfg.wheels.find((w) => w.id === row.wheel) : null);
+// the roulette (or 무료 룰렛) a spin belongs to: { title, items } — null if it's gone from the settings
+const wheelOf = (row) => (row.wheel ? cfg.wheels.find((w) => w.id === row.wheel) : cfg.roulettes.find((r) => r.id === row.rid) || null);
 const isFast = (row) => cfg.fastFrom > 0 && row.of >= cfg.fastFrom;
 
 function startNext() {
@@ -82,10 +84,11 @@ function startNext() {
   if (!row) return;
   const wheel = wheelOf(row);
   // the result must be on the wheel even if the settings changed since it was decided (removed, or weight 0)
-  const src = wheel ? wheel.items : cfg.items;
-  const small = (src.reduce((a, b) => a + Math.max(0, b.weight), 0) || 1) * 0.08;
+  const src = wheel ? wheel.items : [];
+  const small = (src.reduce((a, b) => a + Math.max(0, b.weight), 0) || 12) * 0.08;
   let items = src.map((it) => (it.id === row.itemId && !(it.weight > 0) ? { ...it, weight: small } : it));
   if (!items.some((it) => it.id === row.itemId)) items.push({ id: row.itemId, name: row.result, weight: small, color: row.color || '#888' });
+  if (items.length < 2) items.push({ id: '_', name: '', weight: small * 11, color: '#33424a' }); // the roulette was deleted: still spin onto the result
   const sl = slices(items);
   const hit = sl.find((s) => s.id === row.itemId);
   const span = hit.a1 - hit.a0;
@@ -189,7 +192,7 @@ function drawWheel(now) {
   const R = radius();
   const cx = W / 2, cy = H * 0.46;
   const row = cur.row;
-  const title = cur.wheel ? cur.wheel.title : row.wheelTitle || cfg.title;
+  const title = cur.wheel ? cur.wheel.title : row.wheelTitle || row.rtitle || '치즈 룰렛';
   const head = row.wheel ? (row.of > 1 ? `${row.idx} / ${row.of}` : '') : `${row.nick}${row.of > 1 ? `  ·  ${row.idx}/${row.of}` : ''}`;
   text(title, cx, cy - R - 64, Math.max(18, R * 0.12), '#ffd34d', 900);
   if (head) text(head, cx, cy - R - 26, fit(head, W * 0.9, Math.max(16, R * 0.11)), '#ffffff', 800);
@@ -290,7 +293,7 @@ if (!DEMO) {
   let ver = null;
   es.addEventListener('hello', (e) => { const v = JSON.parse(e.data).pack; if (ver && v !== ver) location.reload(); ver = v; });
   es.addEventListener('reload', () => location.reload());
-  es.addEventListener('config', (e) => { try { cfg = { fastFrom: 3, wheels: [], ...JSON.parse(e.data) }; } catch {} });
+  es.addEventListener('config', (e) => { try { cfg = { fastFrom: 3, wheels: [], roulettes: [], ...JSON.parse(e.data) }; } catch {} });
   es.addEventListener('queue', (e) => {
     try {
       queue = JSON.parse(e.data) || [];
@@ -305,13 +308,14 @@ if (!DEMO) {
     { id: 'a', name: '꽝', weight: 40, color: '#ff6b6b' }, { id: 'b', name: '애교 한 번', weight: 25, color: '#ffd34d' },
     { id: 'c', name: '노래 한 소절', weight: 20, color: '#5be37d' }, { id: 'd', name: '벌칙 게임', weight: 10, color: '#4fc3f7' }, { id: 'e', name: '소원 들어주기', weight: 5, color: '#b388ff' }];
   const total = 100;
-  cfg = { title: '치즈 룰렛 (미리보기)', spinSec: 5, holdSec: 3, fastFrom: 3, wheels: [], items: items.map((it) => ({ ...it, tierEff: it.weight / total <= 0.05 ? 'legend' : it.weight / total <= 0.15 ? 'rare' : 'normal' })) };
+  cfg = { spinSec: 5, holdSec: 3, fastFrom: 3, wheels: [], roulettes: [{ id: 'demo', title: '치즈 룰렛 (미리보기)', price: 1000, items: items.map((it) => ({ ...it, tierEff: it.weight / total <= 0.05 ? 'legend' : it.weight / total <= 0.15 ? 'rare' : 'normal' })) }] };
   let n = 0;
   const add = () => {
     const of = Math.random() < 0.3 ? 5 : 1, group = 'g' + (++n);
     for (let i = 0; i < of; i++) {
-      const r = Math.random() * 100; let acc = 0; const it = cfg.items.find((x) => (acc += x.weight) > r) || cfg.items[0];
-      queue.push({ id: `${group}-${i}`, group, nick: '미리보기', idx: i + 1, of, itemId: it.id, result: it.name, color: it.color, tier: it.tierEff });
+      const list = cfg.roulettes[0].items;
+      const r = Math.random() * 100; let acc = 0; const it = list.find((x) => (acc += x.weight) > r) || list[0];
+      queue.push({ id: `${group}-${i}`, group, rid: 'demo', rtitle: cfg.roulettes[0].title, nick: '미리보기', idx: i + 1, of, itemId: it.id, result: it.name, color: it.color, tier: it.tierEff });
     }
   };
   add(); setInterval(() => { if (!queue.length) add(); }, 2000);

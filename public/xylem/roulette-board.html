@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>룰렛 안내 · Xylem</title>
+<!--
+  룰렛 안내판 — OBS browser source http://localhost:8080/roulette-board (suggested 520×760, transparent).
+  Shows every donation roulette's price and its items with chance (%) and rarity, so viewers know what
+  an exact-price donation spins. One page per roulette when there are several.
+  When it shows is set on the Xylem page: always / every N minutes for S seconds / off, plus on the
+  `!룰렛` chat command; hidden while a spin is on screen (optional).
+  Options: ?always=1 (always visible, e.g. for positioning in OBS) · ?demo=1 (sample roulettes)
+-->
+<style>
+  :root { --text: #eef7f6; --muted: #9db8b6; --accent: #2fd8c8; --gold: #ffd34d; }
+  html, body { margin: 0; background: transparent; overflow: hidden; height: 100%; }
+  body { font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; color: var(--text); }
+  #wrap { position: absolute; left: 0; top: 0; width: 520px; transform-origin: top left; opacity: 0; transition: opacity .5s ease, translate .5s ease; translate: 0 14px; }
+  #wrap.on { opacity: 1; translate: 0 0; }
+  .card { margin: 10px; padding: 20px 22px 16px; border-radius: 22px; background: rgba(8, 14, 16, .9); border: 2px solid rgba(47, 216, 200, .75); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  .head { display: flex; align-items: center; gap: 10px; }
+  .title { font-size: 30px; font-weight: 900; color: var(--gold); line-height: 1.15; flex: 1; text-shadow: 0 2px 0 #0008; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: #ffffff33; }
+  .dots i.on { background: var(--accent); }
+  .price { margin-top: 8px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .price b { font-size: 26px; font-weight: 900; padding: 3px 12px; border-radius: 12px; background: var(--accent); color: #031a18; }
+  .price span { font-size: 16px; color: var(--muted); font-weight: 700; }
+  ul { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 7px; }
+  li { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,.06); overflow: hidden; }
+  li .bar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.07); }
+  li .sw { width: 16px; height: 16px; border-radius: 5px; flex: none; position: relative; }
+  li .nm { flex: 1; font-size: 21px; font-weight: 800; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  li .tg { font-size: 15px; font-weight: 900; position: relative; padding: 1px 8px; border-radius: 8px; }
+  li .pc { font-size: 21px; font-weight: 900; position: relative; font-variant-numeric: tabular-nums; min-width: 66px; text-align: right; }
+  li.rare { box-shadow: inset 0 0 0 2px rgba(255, 211, 77, .7); }
+  li.rare .tg { color: #1d1500; background: var(--gold); }
+  li.legend { box-shadow: inset 0 0 0 2px #ff7ad9; animation: glow 2.4s linear infinite; }
+  li.legend .tg { color: #fff; background: linear-gradient(90deg, #ff5f9e, #ffb347, #7cf29a, #4fc3f7, #b388ff); }
+  @keyframes glow { 0%, 100% { box-shadow: inset 0 0 0 2px #ff7ad9; } 50% { box-shadow: inset 0 0 0 2px #7cf2ff; } }
+  .foot { margin-top: 14px; font-size: 16px; color: var(--muted); font-weight: 700; line-height: 1.45; }
+  .foot b { color: var(--text); }
+</style>
+</head>
+<body>
+<div id="wrap"><div class="card" id="card"></div></div>
+<script>
+'use strict';
+const Q = new URLSearchParams(location.search);
+const ALWAYS = Q.get('always') === '1';
+const DEMO = Q.get('demo') === '1';
+const PAGE_SEC = 9;
+let cfg = { roulettes: [], board: { mode: 'every', hideWhileSpinning: true }, maxSpins: 10, command: '!룰렛', enabled: true };
+let busy = false;
+let showUntil = 0;
+let page = 0, pageAt = 0;
+const wrap = document.getElementById('wrap');
+const card = document.getElementById('card');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pct = (it, items) => {
+  const total = items.reduce((a, x) => a + Math.max(0, x.weight), 0) || 1;
+  const p = (Math.max(0, it.weight) / total) * 100;
+  return { p, text: `${p < 10 ? Number(p.toFixed(1)) : Math.round(p)}%` };
+};
+
+function render() {
+  const list = cfg.roulettes || [];
+  if (!list.length) { card.innerHTML = '<div class="title">룰렛 준비 중</div>'; return; }
+  page %= list.length;
+  const r = list[page];
+  const items = r.items.filter((it) => it.weight > 0);
+  const max = Math.max(...items.map((it) => pct(it, r.items).p), 1);
+  card.innerHTML = `
+    <div class="head"><div class="title">🎡 ${esc(r.title)}</div>${list.length > 1 ? `<div class="dots">${list.map((_, i) => `<i class="${i === page ? 'on' : ''}"></i>`).join('')}</div>` : ''}</div>
+    <div class="price"><b>${r.price.toLocaleString()} 치즈</b><span>= 1회 · ${(r.price * 2).toLocaleString()} 치즈 = 2회 …</span></div>
+    <ul>${items.map((it) => {
+      const t = it.tierEff || 'normal', q = pct(it, r.items);
+      return `<li class="${t}"><div class="bar" style="width:${(q.p / max) * 100}%"></div><span class="sw" style="background:${esc(it.color)}"></span><span class="nm">${esc(it.name)}</span>${t === 'legend' ? '<span class="tg">★ 전설</span>' : t === 'rare' ? '<span class="tg">✦ 희귀</span>' : ''}<span class="pc">${q.text}</span></li>`;
+    }).join('')}</ul>
+    <div class="foot"><b>정확히 이 금액</b>(또는 2배·3배… 최대 ${cfg.maxSpins}배)으로 후원하면 돌아가요. 다른 금액은 일반 후원이에요.${cfg.command ? ` 채팅에 <b>${esc(cfg.command)}</b>을 치면 다시 볼 수 있어요.` : ''}</div>`;
+  fit();
+}
+// scale the 520-px-wide card to the browser source (width first, then height if the list is long)
+function fit() {
+  const h = wrap.scrollHeight || 1;
+  const k = Math.min(innerWidth / 520, innerHeight / h);
+  wrap.style.transform = `scale(${k})`;
+}
+addEventListener('resize', fit);
+
+function visible() {
+  if (!cfg.enabled || !(cfg.roulettes || []).length) return false;
+  if (busy && cfg.board?.hideWhileSpinning && !ALWAYS && !DEMO) return false;
+  return ALWAYS || DEMO || cfg.board?.mode === 'always' || Date.now() < showUntil;
+}
+let wasOn = false;
+setInterval(() => {
+  const on = visible();
+  const n = (cfg.roulettes || []).length;
+  if (on && n > 1 && Date.now() - pageAt > PAGE_SEC * 1000) { page = (page + 1) % n; pageAt = Date.now(); render(); }
+  if (on && !wasOn) { page = 0; pageAt = Date.now(); render(); }
+  wrap.classList.toggle('on', on);
+  wasOn = on;
+}, 250);
+
+if (DEMO) {
+  const it = (id, name, weight, color, tierEff) => ({ id, name, weight, color, tierEff });
+  cfg = { ...cfg, roulettes: [
+    { id: 'a', title: '치즈 룰렛', price: 1000, items: [it('a', '꽝', 40, '#ff6b6b', 'normal'), it('b', '애교 한 번', 25, '#ffd34d', 'normal'), it('c', '노래 한 소절', 20, '#5be37d', 'normal'), it('d', '벌칙 게임', 10, '#4fc3f7', 'rare'), it('e', '소원 들어주기', 5, '#b388ff', 'legend')] },
+    { id: 'b', title: '큰 룰렛', price: 10000, items: [it('a', '노래 한 곡', 60, '#ff9f43', 'normal'), it('b', '게임 정하기', 37, '#2fd8c8', 'normal'), it('c', '코스프레', 3, '#f06292', 'legend')] },
+  ] };
+  render();
+} else {
+  const es = new EventSource('/api/roulette/board-events');
+  let ver = null;
+  es.addEventListener('hello', (e) => { const v = JSON.parse(e.data).pack; if (ver && v !== ver) location.reload(); ver = v; });
+  es.addEventListener('reload', () => location.reload());
+  es.addEventListener('config', (e) => { try { cfg = { ...cfg, ...JSON.parse(e.data) }; render(); } catch {} });
+  es.addEventListener('busy', (e) => { try { busy = !!JSON.parse(e.data); } catch {} });
+  es.addEventListener('show', (e) => { try { showUntil = Date.now() + (JSON.parse(e.data).sec || 15) * 1000; page = 0; pageAt = Date.now(); render(); } catch {} });
+}
+</script>
+</body>
+</html>

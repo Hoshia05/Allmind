@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
-  "minAllmind": "0.33.0",
-  "notes": "VTube Studio: 던지기 (채팅·후원으로 모델에게 물건 던지기)",
+  "version": "1.3.0",
+  "minAllmind": "0.36.0",
+  "notes": "치즈 룰렛: 룰렛마다 가격(정확한 금액만 돌아감), 여러 개, 안내판 오버레이, !룰렛 채팅 명령어",
   "modules": [
     {
       "id": "roulette",
@@ -28,8 +28,9 @@
     "dogfight.html": "b1d951d52023e463b6a083b531112d070fe9731e72d6f0581a9bb0c2d3dcaac8",
     "dogfight.panel.js": "41331d690be4a59914095516bce18c1ef8024dfc43575d354d2df3db4d34b486",
     "index.html": "4d25a0d686b47dee0cf5996a3c7c9677ba5d6b6d925c731ef71a1efaf6aaa0d5",
-    "roulette.html": "df20078c64169796803bffcecfb11823c46d2596da8e02f57c4103d90b1bace5",
-    "roulette.panel.js": "c4d81986e093dc485ba6c9c1f4d9cb2d38b8d29ebd5dfe4ec018a54c5eb2bf0a",
+    "roulette-board.html": "fe0bc20b3ff7e8a20b8625a7bcd6389d038a560978d6858bd968a2db7f58d3af",
+    "roulette.html": "468984d7068994780976cd5abfb3212ea5f58dbbe39d17e93e067fcc9debd6ce",
+    "roulette.panel.js": "c41fa55ed79ca67489156866c5a7ca2097c150caebd03be5249e59d467f3077d",
     "vts.panel.js": "0467802dd1f7b07552f80c2136da9f8a095f97297ea2faf656ae85d7b9055031",
     "xylem.css": "9beca687e02cd7166da271da373c22572c27410e54f457e95a96a13256c644fe",
     "xylem.js": "48d4501d3f6153799e05e50a670e111c8cfe44b38527c8ba63fd6739f644c6c5"

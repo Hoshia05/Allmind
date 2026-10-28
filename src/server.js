@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.35.5';
+const VERSION = '0.36.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -345,7 +345,7 @@ async function main() {
   const xylem = new XylemPack(config, VERSION);
   const xylemPage = xylem.channel(); // open /xylem pages: told to reload on a pack switch
   const dogfight = new Dogfight(chzzk, xylem);
-  const roulette = new Roulette(chzzk, xylem);
+  const roulette = new Roulette(chzzk, xylem, chzzkOpen);
   // VTube Studio on the main PC (docs/plans/vts.md): 던지기 now, expression changes later
   const vts = new VTS(config);
   const vtsThrow = new VTSThrow(vts, chzzk);
@@ -360,7 +360,7 @@ async function main() {
     allmind: VERSION,
     pack: xylem.status(),
     chat: chzzk.chatState,
-    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size },
+    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size, rouletteBoard: roulette.boardCh.size },
     roulette: roulette.status(),
     board: dogfight.board(),
     dogfight: dogfight.status(),
@@ -636,7 +636,8 @@ async function main() {
     'POST /api/xylem/apply': async () => ({ pack: await xylem.apply() }),
     'POST /api/xylem/use': (b) => ({ pack: xylem.use(b.version || null) }),
     'POST /api/roulette/settings': (b) => ({ settings: roulette.setSettings(b.settings) }),
-    'POST /api/roulette/test': (b) => ({ spins: roulette.test(b.spins) }),
+    'POST /api/roulette/test': (b) => ({ spins: roulette.test(b.spins, b.rid ? String(b.rid) : null) }),
+    'POST /api/roulette/board-show': () => { roulette.showBoard(); return { boards: roulette.boardCh.size }; },
     'POST /api/roulette/done': (b) => roulette.setDone(String(b.id), b.done),
     'POST /api/roulette/skip': () => roulette.skipAll(),
     'POST /api/roulette/clear-log': () => roulette.clearLog(),
@@ -926,7 +927,7 @@ async function main() {
 
     // 공중전 overlay (OBS browser source: http://localhost:<port>/dogfight)
     // Xylem pack files: the page, overlays (OBS browser sources) and panel scripts — from the active pack
-    if (req.method === 'GET' && (url.pathname === '/xylem' || url.pathname.startsWith('/xylem/') || url.pathname === '/dogfight' || url.pathname === '/roulette')) {
+    if (req.method === 'GET' && (url.pathname === '/xylem' || url.pathname.startsWith('/xylem/') || url.pathname === '/dogfight' || url.pathname === '/roulette' || url.pathname === '/roulette-board')) {
       const name = url.pathname === '/xylem' || url.pathname === '/xylem/' ? 'index.html' : url.pathname.startsWith('/xylem/') ? decodeURIComponent(url.pathname.slice(7)) : `${url.pathname.slice(1)}.html`;
       const body = xylem.file(name);
       if (!body) return json(res, 404, { error: 'Not found' });
@@ -936,6 +937,7 @@ async function main() {
     if (key === 'GET /api/xylem/state') return json(res, 200, { ok: true, ...xylemState() }); // polled by the Xylem page; no dashboard broadcast
     if (key === 'GET /api/xylem/events') return xylemPage.attach(req, res);
     if (key === 'GET /api/roulette/events') return roulette.attach(req, res);
+    if (key === 'GET /api/roulette/board-events') return roulette.attachBoard(req, res);
     if (key === 'POST /api/roulette/shown') { roulette.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
     if (key === 'GET /api/dogfight/events') return dogfight.attach(req, res);
     if (key === 'GET /api/vts/item') {
