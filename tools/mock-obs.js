@@ -649,6 +649,7 @@ async function mockApis(req, res) {
   if (p === '/g/youtube/v3/liveStreams') return out(200, { items: [yt.streams.get(u.searchParams.get('id'))].filter(Boolean) });
   if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'GET') {
     if (u.searchParams.get('broadcastStatus') === 'active') return out(200, { items: [...yt.broadcasts.values()].filter((b) => ['live', 'liveStarting', 'testing'].includes(b.status.lifeCycleStatus)) });
+    if (u.searchParams.get('broadcastStatus') === 'upcoming') return out(200, { items: [...yt.broadcasts.values()].filter((b) => ['created', 'ready'].includes(b.status.lifeCycleStatus)) });
     return out(200, { items: [yt.broadcasts.get(u.searchParams.get('id'))].filter(Boolean) });
   }
   if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'POST') {
@@ -657,6 +658,11 @@ async function mockApis(req, res) {
     yt.broadcasts.set(id, b);
     log('yt broadcast created', id, b.status.privacyStatus, JSON.stringify(b.snippet.title));
     return out(200, b);
+  }
+  if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'DELETE') {
+    if (!yt.broadcasts.delete(u.searchParams.get('id'))) return out(404, { error: { message: 'Broadcast not found' } });
+    log('yt broadcast deleted', u.searchParams.get('id'));
+    res.writeHead(204); return res.end();
   }
   if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'PUT') {
     const b = yt.broadcasts.get(j.id);
@@ -680,6 +686,8 @@ async function mockApis(req, res) {
     b.status.lifeCycleStatus = u.searchParams.get('broadcastStatus') === 'complete' ? 'complete' : b.status.lifeCycleStatus;
     return out(200, b);
   }
+  // test helper: POST /g/_yt/set {id, status?, contentDetails?} → change a broadcast as YouTube would
+  if (p === '/g/_yt/set') { const b = yt.broadcasts.get(j.id); if (!b) return out(404, {}); Object.assign(b.status, j.status || {}); Object.assign(b.contentDetails, j.contentDetails || {}); return out(200, b); }
   // test helper: GET /g/_yt → everything
   if (p === '/g/_yt') return out(200, { streams: [...yt.streams.values()], broadcasts: [...yt.broadcasts.values()] });
 

@@ -13,6 +13,8 @@ const CHECK_MS = Number(process.env.ALLMIND_YT_CHECK_MS) || 60 * 1000; // env on
 const NOT_LIVE_AFTER_MS = CHECK_MS * 1.5;
 const AFTER_STREAM_MS = CHECK_MS * 2;
 const READY = new Set(['created', 'ready', 'testStarting', 'testing']);
+const MARK = '[allmind]'; // start of the description of every broadcast Allmind makes — only those are ever reused or deleted
+const isOurs = (b) => String(b?.snippet?.description || '').startsWith(MARK);
 
 const p2 = (n) => String(n).padStart(2, '0');
 export const ymd = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
@@ -128,10 +130,24 @@ export class YouTubeGuard extends EventEmitter {
         if (READY.has(life) && b.contentDetails?.boundStreamId !== this.st.streamId) await this._bind(b.id);
         if (READY.has(life) && b.snippet?.title !== this.title()) b = await this._retitle(b, this.title());
       } else {
-        b = await this._create();
-        console.log(`[youtube] new private broadcast ready (${why}): ${b.id}`);
+        // lost track of it (or it's used up): reuse one of our waiting broadcasts before making another
+        const spare = await this._upcomingOurs().then((l) => l.find((x) => x.contentDetails?.boundStreamId === this.st.streamId) || l.find((x) => !x.contentDetails?.boundStreamId)).catch(() => null);
+        if (spare) {
+          b = spare;
+          this.st.broadcastId = b.id;
+          this._save();
+          if (b.status?.privacyStatus !== 'private') b = await this._makePrivate(b);
+          if (b.contentDetails?.boundStreamId !== this.st.streamId) await this._bind(b.id);
+          if (b.snippet?.title !== this.title()) b = await this._retitle(b, this.title());
+          console.log(`[youtube] reusing waiting broadcast (${why}): ${b.id}`);
+        } else {
+          b = await this._create();
+          console.log(`[youtube] new private broadcast ready (${why}): ${b.id}`);
+        }
       }
       this._set({ b: this._summary(b), error: null });
+      // not while a stream is starting: one of them might be the broadcast YouTube is about to start
+      if (!this.streaming) this._tidy(b.id).catch((e) => console.log(`[youtube] tidy: ${e.message}`));
       return b;
     } catch (e) {
       // the saved key isn't on the logged-in channel (deleted, or another channel/account)
@@ -139,6 +155,24 @@ export class YouTubeGuard extends EventEmitter {
       this._set({ error: e.message });
       console.log(`[youtube] ensureReady failed: ${e.message}`);
       throw e;
+    }
+  }
+
+  // Allmind's broadcasts that are still waiting to go live (never the owner's own)
+  async _upcomingOurs() {
+    const r = await this.g.api('GET', '/youtube/v3/liveBroadcasts', { query: { part: 'id,snippet,status,contentDetails', broadcastStatus: 'upcoming', broadcastType: 'all', maxResults: 50 } });
+    return (r.items || []).filter(isOurs);
+  }
+  // exactly one waiting broadcast on our key: the extra ones (left behind by a lost broadcast id …) only
+  // confuse YouTube about which one to start, so delete them — they never went live, nothing is lost.
+  // Ones on another key stay: OBS may still be sending to that key, and they'd be its only archive.
+  async _tidy(keepId) {
+    for (const b of await this._upcomingOurs()) {
+      if (b.id === keepId) continue;
+      const on = b.contentDetails?.boundStreamId;
+      if (on && on !== this.st.streamId) continue;
+      await this.g.api('DELETE', '/youtube/v3/liveBroadcasts', { query: { id: b.id } });
+      console.log(`[youtube] deleted extra waiting broadcast ${b.id} ("${b.snippet?.title || ''}")`);
     }
   }
 
@@ -228,8 +262,16 @@ export class YouTubeGuard extends EventEmitter {
       } catch {}
       // Nothing on our key — is OBS sending to another key of this channel (YouTube's default "Stream now"
       // key, or an older key from before a new one was made)? Then the archive IS running, just not on ours.
-      const other = fed ? null : await this._liveElsewhere().catch((e) => { console.log(`[youtube] active broadcasts: ${e.message}`); return null; });
-      if (other) {
+      const other = await this._liveElsewhere().catch((e) => { console.log(`[youtube] active broadcasts: ${e.message}`); return null; });
+      if (other && isOurs(other.b) && (other.streamId === this.st.streamId || !fed)) {
+        // one of Allmind's own broadcasts is the live one (an extra one YouTube picked): follow it
+        console.log(`[youtube] following our live broadcast ${other.b.id} (was watching ${this.st.broadcastId})`);
+        this.st.broadcastId = other.b.id;
+        if (other.streamId) this.st.streamId = other.streamId;
+        this._save();
+        cur = other.b.status?.privacyStatus === 'private' ? other.b : await this._makePrivate(other.b);
+        this._tidy(cur.id).catch(() => {});
+      } else if (other && !fed) {
         if (other.b.status?.privacyStatus !== 'private') {
           await this._makePrivate(other.b).catch((e) => console.log(`[youtube] couldn't make ${other.b.id} private: ${e.message}`));
           this.emit('toast', { text: `🔒 유튜브에 나가는 방송이 '${other.b.status.privacyStatus === 'public' ? '공개' : '일부 공개'}'로 되어 있어서 비공개로 바꿨어요`, bad: true });
@@ -257,7 +299,9 @@ export class YouTubeGuard extends EventEmitter {
   // a broadcast that is live on the logged-in channel but isn't ours, and the key it runs on
   async _liveElsewhere() {
     const r = await this.g.api('GET', '/youtube/v3/liveBroadcasts', { query: { part: 'id,snippet,status,contentDetails', broadcastStatus: 'active', broadcastType: 'all', maxResults: 5 } });
-    const b = (r.items || []).find((x) => x.id !== this.st.broadcastId && x.status?.lifeCycleStatus === 'live');
+    const live = (r.items || []).filter((x) => x.id !== this.st.broadcastId && x.status?.lifeCycleStatus === 'live');
+    // ours on our key first (an extra one YouTube picked), then ours on another key, then anything
+    const b = live.find((x) => isOurs(x) && x.contentDetails?.boundStreamId === this.st.streamId) || live.find(isOurs) || live[0];
     if (!b) return null;
     const streamId = b.contentDetails?.boundStreamId || '';
     let keyName = '';
