@@ -219,21 +219,68 @@ export class YouTubeGuard extends EventEmitter {
       this.emit('toast', { text: `🔒 유튜브 아카이브가 '${b.status.privacyStatus === 'public' ? '공개' : '일부 공개'}'로 되어 있어서 비공개로 바꿨어요`, bad: true });
     }
     const life = cur.status.lifeCycleStatus;
+    this.elsewhere = null;
     if (life !== 'live' && Date.now() - this.liveSince > NOT_LIVE_AFTER_MS) {
       let fed = null;
       try {
         const r = await this.g.api('GET', '/youtube/v3/liveStreams', { query: { part: 'status', id: this.st.streamId } });
         fed = r.items?.[0]?.status?.streamStatus === 'active';
       } catch {}
-      alert = {
-        level: 'bad',
-        text: fed === false
-          ? '유튜브 아카이브에 영상이 들어가지 않고 있어요 — OBS의 유튜브 송출(Multi-RTMP)과 스트림 키를 확인해 주세요'
-          : '유튜브 아카이브 방송이 아직 시작되지 않았어요 — YouTube 스튜디오에서 확인해 주세요',
-        url: this._summary(cur).url,
-      };
+      // Nothing on our key — is OBS sending to another key of this channel (YouTube's default "Stream now"
+      // key, or an older key from before a new one was made)? Then the archive IS running, just not on ours.
+      const other = fed ? null : await this._liveElsewhere().catch((e) => { console.log(`[youtube] active broadcasts: ${e.message}`); return null; });
+      if (other) {
+        if (other.b.status?.privacyStatus !== 'private') {
+          await this._makePrivate(other.b).catch((e) => console.log(`[youtube] couldn't make ${other.b.id} private: ${e.message}`));
+          this.emit('toast', { text: `🔒 유튜브에 나가는 방송이 '${other.b.status.privacyStatus === 'public' ? '공개' : '일부 공개'}'로 되어 있어서 비공개로 바꿨어요`, bad: true });
+        }
+        this.elsewhere = { broadcastId: other.b.id, streamId: other.streamId, keyName: other.keyName };
+        alert = {
+          level: 'warn',
+          text: `유튜브 아카이브는 나가고 있지만 OBS가 Allmind 키가 아닌 다른 스트림 키${other.keyName ? ` ('${other.keyName}')` : ''}로 보내고 있어요 — 비공개는 지켜 드려요. 옆의 버튼으로 그 키를 Allmind가 쓰게 하거나, OBS Multi-RTMP의 키를 설정 창의 Allmind 키로 바꿔 주세요`,
+          url: `https://studio.youtube.com/video/${other.b.id}/livestreaming`,
+          adopt: !!other.streamId,
+        };
+      } else {
+        alert = {
+          level: 'bad',
+          text: fed === false
+            ? `유튜브 아카이브에 영상이 들어가지 않고 있어요 — 로그인한 채널${this.g.auth?.account ? ` (${this.g.auth.account})` : ''}에 지금 나가는 방송이 없어요. OBS의 유튜브 송출(Multi-RTMP)이 켜져 있는지, 키가 이 채널 것인지 확인해 주세요`
+            : '유튜브 아카이브 방송이 아직 시작되지 않았어요 — YouTube 스튜디오에서 확인해 주세요',
+          url: this._summary(cur).url,
+        };
+      }
     }
     this._set({ b: this._summary(cur), alert, error: null });
+  }
+
+  // a broadcast that is live on the logged-in channel but isn't ours, and the key it runs on
+  async _liveElsewhere() {
+    const r = await this.g.api('GET', '/youtube/v3/liveBroadcasts', { query: { part: 'id,snippet,status,contentDetails', broadcastStatus: 'active', broadcastType: 'all', maxResults: 5 } });
+    const b = (r.items || []).find((x) => x.id !== this.st.broadcastId && x.status?.lifeCycleStatus === 'live');
+    if (!b) return null;
+    const streamId = b.contentDetails?.boundStreamId || '';
+    let keyName = '';
+    if (streamId) {
+      try { keyName = (await this.g.api('GET', '/youtube/v3/liveStreams', { query: { part: 'snippet', id: streamId } })).items?.[0]?.snippet?.title || ''; } catch {}
+    }
+    console.log(`[youtube] our key ${this.st.streamId} is idle; live instead: broadcast ${b.id} on key ${streamId || '?'} ${keyName ? `("${keyName}")` : ''}`);
+    return { b, streamId, keyName };
+  }
+
+  // "이 키 쓰기": take over the key OBS is really sending to, and its live broadcast
+  adoptLive() {
+    const e = this.elsewhere;
+    if (!e?.streamId) throw new Error('지금 다른 키로 나가는 방송이 없어요');
+    console.log(`[youtube] adopting stream key ${e.streamId}${e.keyName ? ` ("${e.keyName}")` : ''} and broadcast ${e.broadcastId} (was ${this.st.streamId})`);
+    this.st.streamId = e.streamId;
+    this.st.broadcastId = e.broadcastId;
+    this.st.channelId = this.g.auth?.channelId || this.st.channelId || '';
+    this._save();
+    this.elsewhere = null;
+    this._set({ alert: null });
+    this.check().catch(() => {});
+    return { keyName: e.keyName };
   }
 
   async _afterStream() {

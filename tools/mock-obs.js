@@ -578,17 +578,24 @@ function fakeProgram() {
 // Uploaded files land in MOCK_DRIVE_DIR (default /tmp/mock-drive).
 const chzzkSetting = { defaultLiveTitle: '[테스트] 아머드코어 6 하면서 수다', category: { categoryType: 'GAME', categoryId: 'ARMORED_CORE_VI', categoryValue: 'ARMORED CORE VI', posterImageUrl: '' }, tags: ['아머드코어'] };
 const yt = { streams: new Map(), broadcasts: new Map(), n: 0 };
+// MOCK_YT_OTHERKEY=1: OBS's Multi-RTMP sends to YouTube's own default key ("Stream now"), not to Allmind's
+const OTHERKEY = !!process.env.MOCK_YT_OTHERKEY;
+if (OTHERKEY) {
+  yt.streams.set('default', { id: 'default', snippet: { title: '기본 스트림 키' }, cdn: { ingestionInfo: { ingestionAddress: 'rtmp://a.rtmp.youtube.com/live2', streamName: 'mock-default-key' } }, contentDetails: { isReusable: true }, status: { streamStatus: 'inactive' } });
+  yt.broadcasts.set('bcdefault', { id: 'bcdefault', snippet: { title: '호시아 라이브 (Stream now)' }, status: { privacyStatus: 'unlisted', lifeCycleStatus: 'ready' }, contentDetails: { boundStreamId: 'default', enableAutoStart: true, enableAutoStop: true } });
+}
+const fedKey = (id) => (OTHERKEY ? id === 'default' : true); // which key OBS really sends to
 const drv = { files: new Map(), sessions: new Map(), n: 0, puts: 0, failAt: Number(process.env.MOCK_DRIVE_FAIL || 0) };
 const DRIVE_DIR = process.env.MOCK_DRIVE_DIR || '/tmp/mock-drive';
 const codes = new Map();
 const scopes = new Map();
 function mockYouTubeStreaming(on) {
-  for (const s of yt.streams.values()) s.status.streamStatus = on && !process.env.MOCK_YT_NOFEED ? 'active' : 'inactive';
+  for (const s of yt.streams.values()) s.status.streamStatus = on && !process.env.MOCK_YT_NOFEED && fedKey(s.id) ? 'active' : 'inactive';
   for (const b of yt.broadcasts.values()) {
-    if (on && b.contentDetails.boundStreamId && ['ready', 'created'].includes(b.status.lifeCycleStatus) && b.contentDetails.enableAutoStart && !process.env.MOCK_YT_NOSTART && !process.env.MOCK_YT_NOFEED) {
+    if (on && b.contentDetails.boundStreamId && fedKey(b.contentDetails.boundStreamId) && ['ready', 'created'].includes(b.status.lifeCycleStatus) && b.contentDetails.enableAutoStart && !process.env.MOCK_YT_NOSTART && !process.env.MOCK_YT_NOFEED) {
       setTimeout(() => { b.status.lifeCycleStatus = 'live'; if (process.env.MOCK_YT_PUBLIC) b.status.privacyStatus = 'public'; log('yt broadcast live', b.id, b.status.privacyStatus); }, 3000);
     }
-    if (!on && b.status.lifeCycleStatus === 'live' && b.contentDetails.enableAutoStop) { b.status.lifeCycleStatus = 'complete'; log('yt broadcast complete', b.id); }
+    if (!on && b.status.lifeCycleStatus === 'live' && b.contentDetails.enableAutoStop && b.id !== 'bcdefault') { b.status.lifeCycleStatus = 'complete'; log('yt broadcast complete', b.id); }
   }
 }
 function readReq(req) {
@@ -634,13 +641,16 @@ async function mockApis(req, res) {
   if (p === '/g/youtube/v3/channels') return out(200, { items: [{ id: 'UCmock', snippet: { title: 'Hoshia Archive Ch.' } }] });
   if (p === '/g/youtube/v3/liveStreams' && req.method === 'POST') {
     const id = 'stream' + (++yt.n);
-    const s = { id, snippet: j.snippet, cdn: { ...j.cdn, ingestionInfo: { ingestionAddress: 'rtmp://a.rtmp.youtube.com/live2', streamName: 'mock-' + id + '-key' } }, contentDetails: j.contentDetails, status: { streamStatus: stream.active && !process.env.MOCK_YT_NOFEED ? 'active' : 'inactive' } };
+    const s = { id, snippet: j.snippet, cdn: { ...j.cdn, ingestionInfo: { ingestionAddress: 'rtmp://a.rtmp.youtube.com/live2', streamName: 'mock-' + id + '-key' } }, contentDetails: j.contentDetails, status: { streamStatus: stream.active && !process.env.MOCK_YT_NOFEED && !OTHERKEY ? 'active' : 'inactive' } };
     yt.streams.set(id, s);
     log('yt stream key created', id);
     return out(200, s);
   }
   if (p === '/g/youtube/v3/liveStreams') return out(200, { items: [yt.streams.get(u.searchParams.get('id'))].filter(Boolean) });
-  if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'GET') return out(200, { items: [yt.broadcasts.get(u.searchParams.get('id'))].filter(Boolean) });
+  if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'GET') {
+    if (u.searchParams.get('broadcastStatus') === 'active') return out(200, { items: [...yt.broadcasts.values()].filter((b) => ['live', 'liveStarting', 'testing'].includes(b.status.lifeCycleStatus)) });
+    return out(200, { items: [yt.broadcasts.get(u.searchParams.get('id'))].filter(Boolean) });
+  }
   if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'POST') {
     const id = 'bc' + (++yt.n);
     const b = { id, snippet: j.snippet, status: { ...j.status, lifeCycleStatus: 'created' }, contentDetails: { ...j.contentDetails } };

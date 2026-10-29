@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.1';
+const VERSION = '0.36.2';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -656,6 +656,7 @@ async function main() {
     'POST /api/roulette/clear-log': () => roulette.clearLog(),
     'POST /api/dogfight/reset': () => dogfight.reset(),
     'POST /api/preflight': () => preflight(),
+    'POST /api/youtube/adopt': () => youtube.adoptLive(),
     'POST /api/chat/clear': () => { chzzk.clearChat(); },
     'POST /api/report': (b) => ({ report: reports.view(b.id ? String(b.id) : null), ...reports.summary() }),
     'POST /api/report/seen': (b) => reports.markSeen(String(b.id || '')),

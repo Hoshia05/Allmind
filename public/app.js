@@ -137,7 +137,7 @@ function renderBanners() {
   }
   if (S.chzzk.error) out.push(`<div class="banner">${esc(S.chzzk.error)}</div>`);
   // YouTube archive guard: shown on every device (phone too) while OBS streams
-  if (S.youtube?.alert) out.push(`<div class="banner bad">📺 ${esc(S.youtube.alert.text)}${S.youtube.alert.url ? ` <a class="btn" href="${esc(S.youtube.alert.url)}" target="_blank" rel="noopener">YouTube 스튜디오</a>` : ''}</div>`);
+  if (S.youtube?.alert) out.push(`<div class="banner ${S.youtube.alert.level === 'warn' ? '' : 'bad'}">📺 ${esc(S.youtube.alert.text)}${S.youtube.alert.adopt ? ' <button class="btn" data-act="yt-adopt">이 키를 Allmind가 쓰기</button>' : ''}${S.youtube.alert.url ? ` <a class="btn" href="${esc(S.youtube.alert.url)}" target="_blank" rel="noopener">YouTube 스튜디오</a>` : ''}</div>`);
   if (S.google?.error) out.push(`<div class="banner bad">${esc(S.google.error)}</div>`);
   if (S.chzzkOpen?.error) out.push(`<div class="banner">${esc(S.chzzkOpen.error)}</div>`);
   else if (S.chzzkOpen?.expiresSoon) out.push('<div class="banner">치지직 연동이 곧 만료돼요 — 방송 PC의 설정 창에서 다시 로그인해 주세요</div>');
@@ -862,6 +862,11 @@ $('banners').addEventListener('click', async (ev) => {
     updDismissed = UPD?.latest || '';
     try { localStorage.setItem('sd.updDismissed', updDismissed); } catch {}
     renderBanners();
+  }
+  if (btn.dataset.act === 'yt-adopt') {
+    if (!confirm('OBS가 지금 보내고 있는 유튜브 스트림 키를 Allmind가 관리하게 할까요?\n다음 방송부터는 이 키에 비공개 방송을 미리 만들어 둬요. OBS 설정은 그대로 두면 돼요.')) return;
+    const r = await api('youtube/adopt');
+    if (r.ok) toast(`유튜브 키를 바꿨어요${r.keyName ? `: ${r.keyName}` : ''}`);
   }
   if (btn.dataset.act === 'create-bgm') {
     const r = await api('bgm/create-source');
