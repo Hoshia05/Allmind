@@ -247,12 +247,18 @@ public static class AllmindWin {
     PV v = new PV(); v.vt = 31; v.p = Marshal.StringToCoTaskMemUni(s);
     ps.SetValue(ref k, ref v);
   }
-  static HashSet<long> done = new HashSet<long>();
+  static string GetStr(IPropertyStore ps, uint pid) {
+    PKEY k = new PKEY(); k.fmt = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"); k.pid = pid;
+    PV v;
+    if (ps.GetValue(ref k, out v) != 0 || v.vt != 31 || v.p == IntPtr.Zero) return "";
+    return Marshal.PtrToStringUni(v.p) ?? "";
+  }
   // Windows titled exactly "Allmind" that belong to Edge/Chrome (a normal tab would be "Allmind - Microsoft Edge").
+  // Only (re)stamps a window whose identity isn't ours yet — Edge may reset it after we set it.
   public static int Stamp(string id, string cmd, string name, string icon) {
     int n = 0;
     EnumWindows(delegate (IntPtr h, IntPtr l) {
-      if (!IsWindowVisible(h) || done.Contains(h.ToInt64())) return true;
+      if (!IsWindowVisible(h)) return true;
       StringBuilder sb = new StringBuilder(256); GetWindowText(h, sb, 256);
       if (!sb.ToString().Equals("Allmind", StringComparison.OrdinalIgnoreCase)) return true;
       uint pid; GetWindowThreadProcessId(h, out pid);
@@ -261,8 +267,9 @@ public static class AllmindWin {
       Guid iid = new Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99");
       IPropertyStore ps;
       if (SHGetPropertyStoreForWindow(h, ref iid, out ps) != 0 || ps == null) return true;
+      if (GetStr(ps, 5) == id) return true;
       SetStr(ps, 5, id); SetStr(ps, 2, cmd); SetStr(ps, 4, name); SetStr(ps, 3, icon);
-      ps.Commit(); done.Add(h.ToInt64()); n++;
+      ps.Commit(); n++;
       return true;
     }, IntPtr.Zero);
     return n;
@@ -279,13 +286,18 @@ for ($i = 0; $i -lt 30; $i++) {
 [Console]::Out.Write("stamped $total")
 `;
 let stamping = false;
-function stampAppWindows() {
+let lastStamp = 0;
+// also called by the settings page when it loads or gets focus (POST /api/launcher/taskbar): the window may
+// appear later than the 15 s after we open it (slow Edge start, Edge restoring it) or Edge may reset it
+export function stampAppWindows() {
   const exe = stableLauncherPath();
-  if (!isWin || !exe || !fs.existsSync(exe) || stamping) return;
+  if (!isWin || !exe || !fs.existsSync(exe) || stamping || Date.now() - lastStamp < 5000) return;
   stamping = true;
+  lastStamp = Date.now();
   powershell(STAMP_SCRIPT, { timeout: 40000, env: { ...process.env, SD_EXE: exe } }).then((r) => {
     stamping = false;
-    console.log(`[window] taskbar identity: ${r.ok ? r.stdout.trim() : `failed — ${(r.stderr || r.err?.message || '').trim().slice(0, 300)}`}`);
+    const out = r.ok ? r.stdout.trim() : `failed — ${(r.stderr || r.err?.message || '').trim().slice(0, 300)}`;
+    if (out !== 'stamped 0') console.log(`[window] taskbar identity: ${out}`);
   });
 }
 

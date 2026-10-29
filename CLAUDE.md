@@ -128,6 +128,12 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   (owner's bug, fixed 0.36.1). `obs.js` now emits `connected` only after `GetSceneList`/`GetInputList` succeed
   (`_whenReady`), re-emits it on `SceneCollectionChanged`, and `server.js` re-checks missing sources every 10 s while a
   dashboard is open. Mock: `MOCK_OBS_LOADING_MS=6000`. Request errors carry `err.code` (600 = not found).
+- **Taskbar identity** (`win.js` `stampAppWindows`, 0.20.2): the settings/dashboard window is Edge `--app`, tagged by
+  PowerShell/C# with AppUserModelID `Hoshia.Allmind` + relaunch command (`%LOCALAPPDATA%\Allmind\Allmind.exe`) so it groups
+  under the pinned icon. It used to tag only during the 15 s after Allmind opened the window, once per window; the owner
+  saw two icons again (0.36.5): now the tag is re-checked (read, set only if not ours) whenever the settings page loads or
+  gets focus (`POST /api/launcher/taskbar`, throttled 5 s). Windows-only, can't be tested here. A pin of the exe file
+  itself has another identity — unpin it and pin the running window instead.
 - Real OBS sends `RecordStateChanged STOPPED` only after the file is finished (seconds
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.
 - OBS's own state isn't reset between streams unless it restarts; the owner's frame drops

@@ -677,3 +677,9 @@ function linksStatus() {
   setMod('m-chzzkopen', c.loggedIn ? (c.expiresSoon ? 'warn' : 'ok') : c.error ? 'bad' : c.configured ? 'todo' : 'off',
     c.loggedIn ? (c.expiresSoon ? '곧 만료' : '로그인됨') : c.error ? '오류' : c.configured ? '로그인 필요' : '안 씀');
 }
+
+// Keep this window grouped under the pinned Allmind icon: Windows only knows it's Allmind (not Edge) once
+// Allmind has tagged it, which can miss a window that opened late or that Edge reset (win.js stampAppWindows)
+const taskbar = () => fetch('/api/launcher/taskbar', { method: 'POST' }).catch(() => {});
+taskbar();
+addEventListener('focus', taskbar);

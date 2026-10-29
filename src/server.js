@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.4';
+const VERSION = '0.36.5';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -847,6 +847,7 @@ async function main() {
     'POST /api/launcher/folder-count': (b) => ({ count: countMusic(b.path) }),
     'POST /api/launcher/open-dashboard': () => openDashboardHere(),
     'POST /api/launcher/open-data': () => win.openFolder(CONFIG_DIR),
+    'POST /api/launcher/taskbar': () => { win.stampAppWindows(); }, // the settings window checks its taskbar identity
 
     // ---------- Google / CHZZK sign-ins (secrets stay on this PC) ----------
     'GET /api/launcher/links': () => linksView(),
