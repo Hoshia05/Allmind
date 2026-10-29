@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "minAllmind": "0.36.0",
   "notes": "치즈 룰렛: 룰렛마다 가격(정확한 금액만 돌아감), 여러 개, 안내판 오버레이, !룰렛 채팅 명령어",
   "modules": [
@@ -33,6 +33,6 @@
     "roulette.panel.js": "c41fa55ed79ca67489156866c5a7ca2097c150caebd03be5249e59d467f3077d",
     "vts.panel.js": "0467802dd1f7b07552f80c2136da9f8a095f97297ea2faf656ae85d7b9055031",
     "xylem.css": "9beca687e02cd7166da271da373c22572c27410e54f457e95a96a13256c644fe",
-    "xylem.js": "48d4501d3f6153799e05e50a670e111c8cfe44b38527c8ba63fd6739f644c6c5"
+    "xylem.js": "fbb957a47f82396cef1eed8e1e408679aaad04008bbdeae4f31f100122b69e21"
   }
 }

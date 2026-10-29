@@ -134,3 +134,11 @@ listen();
 poll(true);
 setInterval(poll, 2000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(true); });
+
+// On the stream PC this page is an Allmind app window: keep it grouped under the pinned Allmind taskbar icon
+// (Allmind ≥ 0.36.6 tags windows titled "Xylem"; older ones just answer 404, which is fine)
+if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
+  const taskbar = () => fetch('/api/launcher/taskbar', { method: 'POST' }).catch(() => {});
+  taskbar();
+  addEventListener('focus', taskbar);
+}

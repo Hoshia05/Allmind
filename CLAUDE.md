@@ -132,7 +132,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   PowerShell/C# with AppUserModelID `Hoshia.Allmind` + relaunch command (`%LOCALAPPDATA%\Allmind\Allmind.exe`) so it groups
   under the pinned icon. It used to tag only during the 15 s after Allmind opened the window, once per window; the owner
   saw two icons again (0.36.5): now the tag is re-checked (read, set only if not ours) whenever the settings page loads or
-  gets focus (`POST /api/launcher/taskbar`, throttled 5 s). Windows-only, can't be tested here. A pin of the exe file
+  gets focus (`POST /api/launcher/taskbar`, throttled 5 s). The second icon in the owner's screenshot was the **Xylem** window (title "Xylem", same favicon, never tagged) — 0.36.6 tags titles `Allmind|Xylem`, and the Xylem page asks for the check too when opened on 127.0.0.1. Windows-only, can't be tested here. A pin of the exe file
   itself has another identity — unpin it and pin the running window instead.
 - Real OBS sends `RecordStateChanged STOPPED` only after the file is finished (seconds
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.

@@ -105,7 +105,7 @@ export class VTS extends EventEmitter {
     try { ws = new WebSocket(url, { perMessageDeflate: false, handshakeTimeout: 8000, maxPayload: 32 * 1024 * 1024 }); } catch (e) { this._set('error', `주소가 올바르지 않아요 (${url})`); return this._retry(); }
     this.ws = ws;
     let opened = false;
-    ws.on('open', () => { opened = true; console.log(`[vts] connected to ${url}`); this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); });
+    ws.on('open', () => { opened = true; this.lastFail = null; console.log(`[vts] connected to ${url}`); this._handshake().catch((e) => { this._set('error', e.message); try { ws.close(); } catch {} }); });
     ws.on('message', (data) => this._onMessage(data));
     const end = () => {
       if (this.ws !== ws) return;
@@ -119,7 +119,15 @@ export class VTS extends EventEmitter {
       this._retry();
     };
     ws.on('close', end);
-    ws.on('error', (e) => { if (!opened) console.warn('[vts] connect failed:', e.code || e.message); end(); });
+    ws.on('error', (e) => {
+      // VTS is often simply closed on the main PC: log a failed connect only when the reason changes, or hourly
+      const why = e.code || e.message;
+      if (!opened && (why !== this.lastFail?.why || Date.now() - this.lastFail.at > 3600000)) {
+        console.warn(`[vts] connect failed: ${why}${this.lastFail?.why === why ? ' (still)' : ''} — retrying quietly`);
+        this.lastFail = { why, at: Date.now() };
+      }
+      end();
+    });
   }
 
   // VTS sends one JSON object per frame (text or binary — both arrive as a Buffer from 'ws')

@@ -253,14 +253,17 @@ public static class AllmindWin {
     if (ps.GetValue(ref k, out v) != 0 || v.vt != 31 || v.p == IntPtr.Zero) return "";
     return Marshal.PtrToStringUni(v.p) ?? "";
   }
-  // Windows titled exactly "Allmind" that belong to Edge/Chrome (a normal tab would be "Allmind - Microsoft Edge").
+  // Allmind's own app windows: titled exactly "Allmind" (settings, dashboard) or "Xylem", owned by Edge/Chrome
+  // (a normal browser tab's window would be "Allmind - Microsoft Edge").
   // Only (re)stamps a window whose identity isn't ours yet — Edge may reset it after we set it.
-  public static int Stamp(string id, string cmd, string name, string icon) {
+  public static int Stamp(string id, string cmd, string name, string icon, string titles) {
+    string[] want = titles.Split('|');
     int n = 0;
     EnumWindows(delegate (IntPtr h, IntPtr l) {
       if (!IsWindowVisible(h)) return true;
       StringBuilder sb = new StringBuilder(256); GetWindowText(h, sb, 256);
-      if (!sb.ToString().Equals("Allmind", StringComparison.OrdinalIgnoreCase)) return true;
+      string title = sb.ToString();
+      if (Array.FindIndex(want, t => t.Equals(title, StringComparison.OrdinalIgnoreCase)) < 0) return true;
       uint pid; GetWindowThreadProcessId(h, out pid);
       string pn = ""; try { pn = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant(); } catch {}
       if (pn != "msedge" && pn != "chrome") return true;
@@ -280,7 +283,7 @@ public static class AllmindWin {
 $exe = $env:SD_EXE
 $total = 0
 for ($i = 0; $i -lt 30; $i++) {
-  $total += [AllmindWin]::Stamp('Hoshia.Allmind', ('"' + $exe + '"'), 'Allmind', ($exe + ',0'))
+  $total += [AllmindWin]::Stamp('Hoshia.Allmind', ('"' + $exe + '"'), 'Allmind', ($exe + ',0'), 'Allmind|Xylem')
   Start-Sleep -Milliseconds 500
 }
 [Console]::Out.Write("stamped $total")
