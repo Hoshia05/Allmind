@@ -86,8 +86,11 @@ export class BGM extends EventEmitter {
       this.media = { state: 'unknown', cursor: 0, duration: 0, playing: false };
       this._changed();
     });
+    // made or renamed in OBS later (or OBS loaded it late): pick it up
+    obs.on('InputCreated', ({ inputName }) => { if (inputName === this.sourceName && !this.sourceOk) this._onConnected(); });
+    obs.on('InputNameChanged', ({ inputName }) => { if (inputName === this.sourceName && !this.sourceOk) this._onConnected(); });
     obs.on('InputRemoved', ({ inputName }) => {
-      if (inputName === this.sourceName) { this.sourceOk = false; this.sourceError = 'BGM source was removed in OBS'; this._changed(); }
+      if (inputName === this.sourceName) { this.sourceOk = false; this.sourceError = `OBS에서 "${this.sourceName}" 소스가 삭제됐어요`; this._changed(); }
     });
 
     // Song changes and endings arrive as OBS events; the poll only moves the
@@ -342,17 +345,20 @@ export class BGM extends EventEmitter {
   async _onConnected() {
     try {
       const { inputKind } = await this.obs.call('GetInputSettings', { inputName: this.sourceName });
+      this.sourceMissing = false;
       if (inputKind !== 'ffmpeg_source') {
         this.sourceOk = false;
-        this.sourceError = `"${this.sourceName}" exists but is a ${inputKind}, not a Media Source`;
+        this.sourceError = `"${this.sourceName}"이(가) 미디어 소스가 아니에요 (${inputKind})`;
       } else {
         this.sourceOk = true;
         this.sourceError = null;
         await this._applyVolume(this.volumeDb);
       }
-    } catch {
+    } catch (e) {
       this.sourceOk = false;
-      this.sourceError = `No Media Source named "${this.sourceName}" in OBS yet`;
+      // 600 = no such input; anything else (OBS busy, timeout) is retried by the server's re-check
+      this.sourceMissing = e.code === 600;
+      this.sourceError = this.sourceMissing ? `OBS에 "${this.sourceName}" 미디어 소스가 아직 없어요` : `OBS에서 "${this.sourceName}" 소스를 확인하지 못했어요 — 다시 확인하는 중 (${e.message})`;
     }
     this._changed();
   }
@@ -521,6 +527,7 @@ export class BGM extends EventEmitter {
       sourceName: this.sourceName,
       sourceOk: this.sourceOk,
       sourceError: this.sourceError,
+      sourceMissing: !!this.sourceMissing,
       folder: this.cfg.folder,
       folderError: this.folderError,
       tracks: this.order.map((id) => this.tracks.get(id)),

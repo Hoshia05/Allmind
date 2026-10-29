@@ -9,6 +9,7 @@ import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
 const DONATION = process.env.MOCK_DONATION || '영도';
+const MOCK_START = Date.now();
 const BGM = process.env.MOCK_BGM || 'BGM Player';
 const PASSWORD = process.env.MOCK_OBS_PASSWORD || '';
 const TRACK_MS = Number(process.env.MOCK_TRACK_MS || 20000);
@@ -78,6 +79,11 @@ wss.on('connection', (ws) => {
       clients.add(c);
       ws.send(JSON.stringify({ op: 2, d: { negotiatedRpcVersion: 1 } }));
       log('client identified');
+    }
+    // MOCK_OBS_LOADING_MS=8000: like real OBS right after it starts — the WebSocket accepts connections
+    // but every request fails with 207 "not ready" until the scene collection has loaded
+    if (op === 6 && c.identified && Date.now() - MOCK_START < Number(process.env.MOCK_OBS_LOADING_MS || 0)) {
+      return ws.send(JSON.stringify({ op: 7, d: { requestType: d.requestType, requestId: d.requestId, requestStatus: { result: false, code: 207, comment: 'OBS is not ready to perform the request.' } } }));
     }
     if (op === 6 && d.requestType === 'GetSourceScreenshot') shotCount++;
     if (op === 6 && c.identified && d.requestType === 'GetSourceScreenshot' && FRAMES_DIR && inputs.has(d.requestData.sourceName)) {

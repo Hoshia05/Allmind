@@ -57,10 +57,10 @@ export class OBSClient extends EventEmitter {
       this.connected = false;
       for (const { reject } of this.pending.values()) reject(new Error('OBS disconnected'));
       this.pending.clear();
-      if (code === 4009) this.lastError = 'OBS rejected the password — check the OBS password in Allmind settings';
-      else if (!wasConnected && !this.lastError?.startsWith('OBS rejected')) this.lastError = `Can't reach OBS at ${this.url} — is OBS open with the WebSocket server enabled?`;
+      if (code === 4009) this.lastError = 'OBS가 비밀번호를 거절했어요 — Allmind 설정의 OBS 비밀번호를 확인해 주세요';
+      else if (!wasConnected && code !== 4009 && !this.lastError?.startsWith('OBS가 비밀번호')) this.lastError = `OBS(${this.url})에 연결할 수 없어요 — OBS가 켜져 있고 WebSocket 서버가 켜져 있는지 확인해 주세요`;
       if (wasConnected) {
-        this.lastError = 'Lost the connection to OBS; reconnecting…';
+        this.lastError = 'OBS 연결이 끊겼어요 — 다시 연결하는 중…';
         this.emit('disconnected');
       }
       this.emit('status');
@@ -100,13 +100,21 @@ export class OBSClient extends EventEmitter {
         break;
       }
       case OP.Identified:
-        this.connected = true;
-        this.lastError = null;
         this.retryMs = 1000;
-        this.emit('connected');
-        this.emit('status');
+        // OBS accepts the connection while it is still loading its scene collection; requests then fail
+        // (code 207 "not ready") and every module would conclude its source doesn't exist. So only
+        // announce 'connected' once OBS really answers.
+        this._whenReady(this.ws).then((ok) => {
+          if (!ok) return;
+          this.connected = true;
+          this.lastError = null;
+          this.emit('connected');
+          this.emit('status');
+        });
         break;
       case OP.Event:
+        // another scene collection = other sources: let every module look again
+        if (d.eventType === 'SceneCollectionChanged' && this.connected) setTimeout(() => this.connected && this.emit('connected'), 500);
         this.emit('event', d.eventType, d.eventData || {});
         this.emit(d.eventType, d.eventData || {});
         break;
@@ -115,7 +123,7 @@ export class OBSClient extends EventEmitter {
         if (!p) return;
         this.pending.delete(d.requestId);
         if (d.requestStatus.result) p.resolve(d.responseData || {});
-        else p.reject(new Error(`${d.requestType}: ${d.requestStatus.comment || 'code ' + d.requestStatus.code}`));
+        else { const e = new Error(`${d.requestType}: ${d.requestStatus.comment || 'code ' + d.requestStatus.code}`); e.code = d.requestStatus.code; p.reject(e); }
         break;
       }
     }
@@ -123,6 +131,29 @@ export class OBSClient extends EventEmitter {
 
   call(requestType, requestData = {}) {
     if (!this.connected) return Promise.reject(new Error('Not connected to OBS'));
+    return this._call(requestType, requestData);
+  }
+
+  // Polls until OBS has loaded its scene collection (max 2 min, then carries on anyway).
+  // false = this connection ended meanwhile.
+  async _whenReady(ws) {
+    const t0 = Date.now();
+    for (let n = 0; ; n++) {
+      if (this.ws !== ws || ws.readyState !== 1) return false;
+      try {
+        await this._call('GetSceneList');
+        await this._call('GetInputList');
+        if (n) console.log(`[obs] OBS finished loading after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+        return true;
+      } catch (e) {
+        if (Date.now() - t0 > 120000) { console.warn(`[obs] OBS still not ready after 2 min (${e.message}); carrying on`); return true; }
+        if (!n) { console.log(`[obs] connected, waiting for OBS to finish loading (${e.message})`); this.lastError = 'OBS가 아직 장면을 불러오는 중이에요…'; this.emit('status'); }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  _call(requestType, requestData = {}) {
     const requestId = String(this.nextId++);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

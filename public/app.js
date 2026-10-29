@@ -130,8 +130,8 @@ function renderBanners() {
     out.push(`<div class="banner bad">OBS에 연결할 수 없음 — ${esc(obs.error || obs.url)}. OBS에서 도구 → WebSocket 서버 설정을 켜고, 비밀번호를 방송 PC의 Allmind 설정에 넣어 주세요.</div>`);
   } else {
     if (bgm.sourceError) {
-      const canCreate = bgm.sourceError.startsWith('No Media Source');
-      out.push(`<div class="banner">${esc(bgm.sourceError)}.${canCreate ? ' <button class="btn" data-act="create-bgm">현재 장면에 만들기</button>' : ''}</div>`);
+      const canCreate = bgm.sourceMissing;
+      out.push(`<div class="banner">${esc(bgm.sourceError)}${canCreate ? ' <button class="btn" data-act="create-bgm">현재 장면에 만들기</button>' : ''}</div>`);
     }
     if (donation.error) out.push(`<div class="banner">${esc(donation.error)}</div>`);
   }

@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.0';
+const VERSION = '0.36.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -384,6 +384,19 @@ async function main() {
   interact.on('skipped', (sel) => sendAll('toast', { text: '광고 스킵 완료', detail: sel }));
   setInterval(() => clients.size && sendAll('level', { db: bgm.levelDb(), active: bgm.autoActive, mic: studio.micDb() }), 100);
   setInterval(() => clients.size && sendAll('ping', Date.now()), 15000);
+  // Safety net: anything still "not found" is looked up again every 10 s while a dashboard is open —
+  // OBS can finish loading after it said it was ready, or the owner adds/renames a source in OBS.
+  // Costs nothing while everything is found.
+  setInterval(() => {
+    if (!clients.size || !obs.connected) return;
+    let n = 0;
+    if (bgm.sourceName && !bgm.sourceOk) { n++; bgm._onConnected().catch(() => {}); }
+    if (soundboard.sourceName && !soundboard.sourceOk) { n++; soundboard._onConnected().catch?.(() => {}); }
+    for (const v of [viewer, chatViewer, alertViewer]) if (v.sourceName && !v.sourceOk) { n++; v.refreshInfo().catch(() => {}); }
+    if (!studio.mic.ok) { n++; studio._loadMic().catch(() => {}); }
+    if (!studio.scenes.length) { n++; studio._loadScenes().catch(() => {}); }
+    if (n) setTimeout(stateChanged, 1500);
+  }, 10000).unref?.();
   setInterval(() => {
     let now = isDonationActive();
     // Same rule as the BGM auto-pause: a 영도 starts with a short alert, then a

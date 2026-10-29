@@ -123,6 +123,11 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   `dock.js` only moves nodes when needed; tabs hide with a class, never by moving.
 - A hidden scene item is "inactive": OBS stops its audio. The BGM/Soundboard sources
   must stay visible (the owner scales their group to 0 instead of hiding).
+- **OBS accepts the WebSocket before it has loaded its scene collection** (Allmind usually starts OBS itself and
+  connects within a second); requests then fail with code 207 and every module concluded "source not found" for good
+  (owner's bug, fixed 0.36.1). `obs.js` now emits `connected` only after `GetSceneList`/`GetInputList` succeed
+  (`_whenReady`), re-emits it on `SceneCollectionChanged`, and `server.js` re-checks missing sources every 10 s while a
+  dashboard is open. Mock: `MOCK_OBS_LOADING_MS=6000`. Request errors carry `err.code` (600 = not found).
 - Real OBS sends `RecordStateChanged STOPPED` only after the file is finished (seconds
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.
 - OBS's own state isn't reset between streams unless it restarts; the owner's frame drops

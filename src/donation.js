@@ -35,6 +35,7 @@ export class DonationViewer {
     obs.on('InputSettingsChanged', ({ inputName }) => {
       if (inputName === this.sourceName) this.refreshInfo();
     });
+    for (const ev of ['InputCreated', 'InputNameChanged']) obs.on(ev, ({ inputName }) => { if (inputName === this.sourceName && !this.sourceOk) this.refreshInfo(); });
   }
 
   async refreshInfo() {
@@ -53,10 +54,10 @@ export class DonationViewer {
       this.url = s.url || (s.is_local_file && s.local_file ? 'file:///' + String(s.local_file).replace(/\\/g, '/') : '');
       this.onUrl?.(this.url);
       this.sourceOk = true;
-      this.error = inputKind === 'browser_source' || this.key !== 'donation' ? null : `"${this.sourceName}" is a ${inputKind}; clicks need a Browser source`;
+      this.error = inputKind === 'browser_source' || this.key !== 'donation' ? null : `"${this.sourceName}"이(가) 브라우저 소스가 아니라서 클릭 전달이 안 돼요 (${inputKind})`;
     } catch {
       this.sourceOk = false;
-      this.error = `No source named "${this.sourceName}" in OBS — check the source name in Allmind settings`;
+      this.error = `OBS에 "${this.sourceName}" 소스가 없어요 — Allmind 설정의 소스 이름을 확인해 주세요`;
     }
   }
 
@@ -249,7 +250,7 @@ export class Interact extends EventEmitter {
         for (const p of this.pending.values()) p.reject(new Error('DevTools connection closed'));
         this.pending.clear();
         if (was) {
-          this.error = 'Lost the connection to the 영도 browser source; reconnecting…';
+          this.error = '영도 브라우저 소스와 연결이 끊겼어요 — 다시 연결하는 중…';
           this.emit('change');
         }
       };
