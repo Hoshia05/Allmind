@@ -120,40 +120,51 @@ async function loadUpdate() {
   } catch {}
 }
 
+// ✕ on a banner hides it on this device for 6 hours — or until its message changes (a new problem shows again)
+const BANNER_HIDE_MS = 6 * 3600000;
+let bannerHidden = {};
+try { bannerHidden = JSON.parse(localStorage.getItem('allmind.bannersHidden') || '{}') || {}; } catch {}
+function hideBanner(key) {
+  const now = Date.now();
+  for (const [k, t] of Object.entries(bannerHidden)) if (t < now) delete bannerHidden[k];
+  bannerHidden[key] = now + BANNER_HIDE_MS;
+  try { localStorage.setItem('allmind.bannersHidden', JSON.stringify(bannerHidden)); } catch {}
+}
+
 function renderBanners() {
   const { obs, bgm, donation, interact } = S;
   const out = [];
+  // key: what the banner is about + its message, so the same problem stays hidden but a different one doesn't
+  const B = (key, cls, inner) => { if (!((bannerHidden[key] || 0) > Date.now())) out.push(`<div class="banner ${cls}" data-key="${esc(key)}"><span class="banner-text">${inner}</span><button class="banner-x" data-act="hide-banner" title="닫기 — 이 기기에서 6시간 동안 안 보여요 (내용이 바뀌면 다시 보여요)" aria-label="닫기">✕</button></div>`); };
   if (UPD?.available && UPD.latest !== updDismissed) {
     out.push(`<div class="banner info">Allmind ${esc(UPD.latest)} 업데이트가 있어요 (지금 ${esc(UPD.current)}) — 방송 PC의 Allmind 설정 창에서 설치할 수 있어요. <button class="btn" data-act="dismiss-update">나중에</button></div>`);
   }
   if (!obs.connected) {
-    out.push(`<div class="banner bad">OBS에 연결할 수 없음 — ${esc(obs.error || obs.url)}. OBS에서 도구 → WebSocket 서버 설정을 켜고, 비밀번호를 방송 PC의 Allmind 설정에 넣어 주세요.</div>`);
+    B(`obs:${obs.error || ''}`, 'bad', `OBS에 연결할 수 없음 — ${esc(obs.error || obs.url)}. OBS에서 도구 → WebSocket 서버 설정을 켜고, 비밀번호를 방송 PC의 Allmind 설정에 넣어 주세요.`);
   } else {
-    if (bgm.sourceError) {
-      const canCreate = bgm.sourceMissing;
-      out.push(`<div class="banner">${esc(bgm.sourceError)}${canCreate ? ' <button class="btn" data-act="create-bgm">현재 장면에 만들기</button>' : ''}</div>`);
-    }
-    if (donation.error) out.push(`<div class="banner">${esc(donation.error)}</div>`);
+    if (bgm.sourceError) B(`bgm:${bgm.sourceError}`, '', `${esc(bgm.sourceError)}${bgm.sourceMissing ? ' <button class="btn" data-act="create-bgm">현재 장면에 만들기</button>' : ''}`);
+    if (donation.error) B(`donation:${donation.error}`, '', esc(donation.error));
   }
-  if (S.chzzk.error) out.push(`<div class="banner">${esc(S.chzzk.error)}</div>`);
+  if (S.chzzk.error) B(`chzzk:${S.chzzk.error}`, '', esc(S.chzzk.error));
   // YouTube archive guard: shown on every device (phone too) while OBS streams
-  if (S.youtube?.alert) out.push(`<div class="banner ${S.youtube.alert.level === 'warn' ? '' : 'bad'}">📺 ${esc(S.youtube.alert.text)}${S.youtube.alert.adopt ? ' <button class="btn" data-act="yt-adopt">이 키를 Allmind가 쓰기</button>' : ''}${S.youtube.alert.url ? ` <a class="btn" href="${esc(S.youtube.alert.url)}" target="_blank" rel="noopener">YouTube 스튜디오</a>` : ''}</div>`);
-  if (S.google?.error) out.push(`<div class="banner bad">${esc(S.google.error)}</div>`);
-  if (S.chzzkOpen?.error) out.push(`<div class="banner">${esc(S.chzzkOpen.error)}</div>`);
-  else if (S.chzzkOpen?.expiresSoon) out.push('<div class="banner">치지직 연동이 곧 만료돼요 — 방송 PC의 설정 창에서 다시 로그인해 주세요</div>');
+  const ya = S.youtube?.alert;
+  if (ya) B(`yt:${ya.text}`, ya.level === 'warn' ? '' : 'bad', `📺 ${esc(ya.text)}${ya.adopt ? ' <button class="btn" data-act="yt-adopt">이 키를 Allmind가 쓰기</button>' : ''}${ya.url ? ` <a class="btn" href="${esc(ya.url)}" target="_blank" rel="noopener">YouTube 스튜디오</a>` : ''}`);
+  if (S.google?.error) B(`google:${S.google.error}`, 'bad', esc(S.google.error));
+  if (S.chzzkOpen?.error) B(`chzzkopen:${S.chzzkOpen.error}`, '', esc(S.chzzkOpen.error));
+  else if (S.chzzkOpen?.expiresSoon) B('chzzkopen:expires', '', '치지직 연동이 곧 만료돼요 — 방송 PC의 설정 창에서 다시 로그인해 주세요');
   const up = S.drive?.items?.find((i) => i.status === 'uploading');
-  if (up) out.push(`<div class="banner info">☁️ 드라이브에 올리는 중 ${pct(up)}% · ${esc(up.name)}${S.drive.speed ? ` · ${S.drive.speed} Mbps` : ''}</div>`);
+  if (up) B(`drive-up:${up.id}`, 'info', `☁️ 드라이브에 올리는 중 ${pct(up)}% · ${esc(up.name)}${S.drive.speed ? ` · ${S.drive.speed} Mbps` : ''}`);
   const failed = S.drive?.items?.find((i) => i.status === 'error');
-  if (failed) out.push(`<div class="banner bad">☁️ 드라이브 업로드 실패: ${esc(failed.name)} — ${esc(failed.error || '')} <button class="btn" data-act="drive-retry" data-id="${esc(failed.id.replace(/m$/, ''))}">다시 시도</button></div>`);
-  if (bgm.folderError) out.push(`<div class="banner">${esc(bgm.folderError)}</div>`);
+  if (failed) B(`drive-fail:${failed.id}:${failed.error || ''}`, 'bad', `☁️ 드라이브 업로드 실패: ${esc(failed.name)} — ${esc(failed.error || '')} <button class="btn" data-act="drive-retry" data-id="${esc(failed.id.replace(/m$/, ''))}">다시 시도</button>`);
+  if (bgm.folderError) B(`bgmfolder:${bgm.folderError}`, '', esc(bgm.folderError));
   if (interact.enabled && !interact.connected && interact.error) {
-    let html = `<div class="banner">클릭 전달: ${esc(interact.error)}`;
+    let html = `클릭 전달: ${esc(interact.error)}`;
     if (interact.candidates?.length) {
       html += ' ' + interact.candidates
         .map((c) => `<button class="btn" data-act="pick-target" data-url="${esc(c.url)}" title="${esc(c.url)}">${esc(shortUrl(c.url))}</button>`)
         .join(' ');
     }
-    out.push(html + '</div>');
+    B(`interact:${interact.error}`, '', html);
   }
   const html = out.join('');
   if ($('banners').innerHTML !== html) $('banners').innerHTML = html;
@@ -858,6 +869,11 @@ $('upList').addEventListener('change', async (ev) => {
 $('banners').addEventListener('click', async (ev) => {
   const btn = ev.target.closest('button[data-act]');
   if (!btn) return;
+  if (btn.dataset.act === 'hide-banner') {
+    const key = btn.closest('.banner')?.dataset.key;
+    if (key) { hideBanner(key); renderBanners(); }
+    return;
+  }
   if (btn.dataset.act === 'dismiss-update') {
     updDismissed = UPD?.latest || '';
     try { localStorage.setItem('sd.updDismissed', updDismissed); } catch {}
