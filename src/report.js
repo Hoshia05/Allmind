@@ -96,6 +96,23 @@ export class StreamReports extends EventEmitter {
   async start() {
     if (this.cur && Date.now() - (this.cur.lastAt || this.cur.startedAt) < 10 * 60000) return; // Allmind restarted mid-stream: keep counting
     if (this.cur) await this.finish(true); // a stream we never saw end (Allmind was off): close it as it was
+    // restarted within 10 min (OBS restarted, settings fixed, network…): it's the same stream — keep one report
+    if (this.recent && Date.now() - this.recent.at < 10 * 60000) {
+      const { r, rep } = this.recent;
+      this.recent = null;
+      const i = this.list.findIndex((x) => x.id === rep.id);
+      if (i >= 0) { this.list.splice(i, 1); saveState('reports', this.list); }
+      const gapS = Math.round((Date.now() - rep.endedAt) / 1000);
+      const gap = gapS < 60 ? `${gapS}초` : `${Math.round(gapS / 60)}분`;
+      r.endedAt = null; r.statsEnd = null; r.restarts = (r.restarts || 0) + 1;
+      r.statsStart = await this._stats(); // OBS counts again from zero for the new output: health is the latest part
+      r.problems.push({ key: `restart:${Date.now()}`, text: `방송이 꺼졌다가 ${gap} 뒤 다시 시작됐어요`, at: Date.now() });
+      this.cur = r;
+      this._dirty(true);
+      this.emit('change');
+      console.log(`[report] stream restarted after ${gapS} s — continuing the same report`);
+      return;
+    }
     this.cur = {
       id: Date.now().toString(36) + crypto.randomBytes(2).toString('hex'),
       startedAt: Date.now(), endedAt: null, peak: 0, titles: [], category: '',
@@ -138,6 +155,7 @@ export class StreamReports extends EventEmitter {
       yt: r.yt, problems: r.problems,
     };
     this.list.push(rep);
+    if (!stale) this.recent = { r, rep, at: Date.now() };
     if (this.list.length > KEEP) this.list.splice(0, this.list.length - KEEP);
     saveState('reports', this.list);
     console.log(`[report] stream ended: ${Math.round((rep.endedAt - rep.startedAt) / 60000)} min, peak ${rep.peak}, ${rep.chats} chats, ${rep.donations} donations`);

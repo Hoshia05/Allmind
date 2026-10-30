@@ -177,6 +177,8 @@ function handle(type, d) {
     case 'GetRecordStatus': case 'GetRecordDirectory': case 'StartRecord': case 'StopRecord': case 'PauseRecord': case 'ResumeRecord': case 'CreateRecordChapter':
       return recHandle(type, d);
     case 'GetVersion': return { obsVersion: '31.0.0-mock' };
+    // test helper: node tools/dev/obs.mjs MockEmit '{"eventType":"StreamStateChanged","eventData":{…}}' sends any event
+    case 'MockEmit': broadcast(d.eventType, d.eventData || {}, 0x7ff); return {};
     case 'GetProfileParameter': { // recording settings for the 방송 전 점검 (MOCK_REC_FORMAT, MOCK_REC_TRACKS = bitmask)
       const v = { 'Output/Mode': 'Advanced', 'AdvOut/RecFormat2': process.env.MOCK_REC_FORMAT || 'hybrid_mp4', 'AdvOut/RecTracks': process.env.MOCK_REC_TRACKS || '31' }[`${d.parameterCategory}/${d.parameterName}`];
       return { parameterValue: v ?? null, defaultParameterValue: null };

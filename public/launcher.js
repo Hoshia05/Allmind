@@ -695,8 +695,14 @@ $('rmAll').addEventListener('click', async () => {
   const typed = prompt('이 PC에서 Allmind의 설정·로그인·기록을 모두 지우고 Allmind를 꺼요.\n되돌릴 수 없어요. 계속하려면 "지우기"라고 입력해 주세요.');
   if (typed === null) return;
   if (typed.trim() !== '지우기') return toast('"지우기"라고 입력해야 지워져요', true);
-  const r = await call('/remove-all', { confirm: '지우기', exe: $('rmExe').checked });
+  let r = await call('/remove-all', { confirm: '지우기', exe: $('rmExe').checked });
   if (!r.ok) return;
+  if (r.pendingUploads) {
+    const list = r.pendingUploads.slice(0, 5).map((n) => `· ${n}`).join('\n');
+    if (!confirm(`아직 드라이브에 안 올라간 녹화가 있어요:\n${list}${r.pendingUploads.length > 5 ? `\n외 ${r.pendingUploads.length - 5}개` : ''}\n\n지우면 업로드가 멈추고 녹화 파일은 이 PC에만 남아요 (OBS 녹화 폴더). USB 등으로 직접 옮겼다면 [확인], 업로드를 기다리려면 [취소].`)) return;
+    r = await call('/remove-all', { confirm: '지우기', exe: $('rmExe').checked, ignoreUploads: true });
+    if (!r.ok) return;
+  }
   $('overlay').querySelector('.spinner').hidden = true;
   $('overlayText').textContent = r.dryRun ? `(소스 실행 — 실제로는 안 지움) ${r.paths.join(', ')}` : 'Allmind를 지웠어요. 이 창을 닫으면 끝이에요.';
   $('overlay').hidden = false;

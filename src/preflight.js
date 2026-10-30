@@ -99,6 +99,8 @@ export async function runPreflight(c) {
   } else out.push(item('drive', '유튜브 · 드라이브', '드라이브 업로드', 'off', '안 씀'));
 
   // ---------- 기타 ----------
+  const au = c.obsAudio?.status();
+  if (au?.warn) out.push(item('obsaudio', '화면 · 소리', 'OBS 소리 지연', 'bad', `OBS가 소리를 ${au.ms}ms 늦게 내보내고 있어요${au.source ? ` (${au.source} 때문)` : ''}`, '방송 전이면 OBS를 다시 켜기 (방송 중엔 줄일 수 없어요)'));
   const v = c.vts.status();
   if (v.enabled) {
     // settings brought from a two-PC setup point at the old main PC; on one PC VTS is on 127.0.0.1

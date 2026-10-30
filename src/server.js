@@ -27,6 +27,7 @@ import { Updater } from './update.js';
 import { Dogfight } from './dogfight.js';
 import { XylemPack } from './xylem.js';
 import { Roulette } from './roulette.js';
+import { ObsLogWatch } from './obslog.js';
 import { Deck } from './deck.js';
 import { VTS } from './vts.js';
 import { VTSThrow } from './vtsthrow.js';
@@ -34,7 +35,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.8';
+const VERSION = '0.36.9';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -177,10 +178,18 @@ async function main() {
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
   let obsStreaming = false;
+  let streamEndedAt = 0;      // a stream often restarts within minutes (studio 2026-10-30: 3 starts in 8 min)
+  let streamReconnect = null; // { since } while OBS's stream output is reconnecting
+  const obsAudio = new ObsLogWatch(obs); // audio buffering from OBS's own log (stream audio delay)
+  obsAudio.on('change', (st) => {
+    if (st.warn) reports?.problem('obsaudio', `OBS 소리가 ${st.ms}ms 늦게 나갔어요${st.source ? ` (${st.source} 때문)` : ''} — OBS를 다시 켜면 돌아와요`);
+    stateChanged();
+  });
   let preflightLast = null;
   let reports = null; // set once the Xylem parts exist (needs the roulette)
   const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
-  const drive = new DriveUploader(google, config, { busy: () => obsStreaming || markers.status().recording });
+  // uploads wait while OBS streams or records, and 5 min after a stream ends (it may be restarted)
+  const drive = new DriveUploader(google, config, { busy: () => obsStreaming || markers.status().recording || Date.now() - streamEndedAt < 5 * 60000 });
   viewer.onUrl = (url) => interact.setSourceUrl(url);
   // Clicks need the 영도 source's URL from OBS. If it hasn't arrived (asked too
   // early, or OBS has nothing to give), ask again and say what's wrong.
@@ -272,6 +281,8 @@ async function main() {
     chzzkOpen: chzzkOpen.status(),
     prep: { title: prep.title, category: prep.category, tags: prep.tags, appliedAt: prep.appliedAt, results: prep.results || null, ytTemplate: config.youtube?.titleTemplate || '{date} - {title}', fileTemplate: config.drive?.nameTemplate || '{date} - {title}' },
     obsStreaming,
+    streamReconnect,
+    obsAudio: obsAudio.status(),
     shortcuts: config.dashboard?.shortcuts === true,
     preflight: preflightLast ? { at: preflightLast.at, bad: preflightLast.bad, warn: preflightLast.warn } : null,
     reports: reports ? reports.summary() : null,
@@ -320,12 +331,27 @@ async function main() {
       const t = new Date();
       chzzk.note(`— 방송 시작 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} —`);
     } else reports?.finish().catch((e) => console.warn('[report]', e.message));
-    if (!active) setTimeout(() => drive.kick(), 3000);
+    if (!active) { streamEndedAt = Date.now(); streamReconnect = null; setTimeout(() => drive.kick(), 5 * 60000 + 3000); }
     stateChanged();
   };
   obs.on('StreamStateChanged', (e) => {
     const s = String(e.outputState || '');
     if (/STOPPING$/.test(s)) reports?.stopping();
+    // the network dropped: OBS keeps retrying on its own — say so everywhere, and note it in the report
+    if (/RECONNECTING$/.test(s) && !streamReconnect) {
+      streamReconnect = { since: Date.now() };
+      console.log('[stream] connection lost — OBS is reconnecting');
+      sendAll('toast', { text: '📡 방송 연결이 끊겨서 OBS가 다시 연결하는 중이에요', bad: true, long: true });
+      stateChanged();
+    }
+    if (/RECONNECTED$/.test(s) && streamReconnect) {
+      const sec = Math.round((Date.now() - streamReconnect.since) / 1000);
+      streamReconnect = null;
+      console.log(`[stream] reconnected after ${sec} s`);
+      reports?.problem(`reconnect:${Date.now()}`, `방송 연결이 끊겼다가 ${sec}초 만에 다시 연결됐어요 (인터넷)`);
+      sendAll('toast', { text: `📡 방송이 다시 연결됐어요 (${sec}초 끊김)`, long: true });
+      stateChanged();
+    }
     if (/STARTED$/.test(s)) setStreaming(true);
     else if (/STOPPED$/.test(s)) setStreaming(false);
   });
@@ -546,7 +572,7 @@ async function main() {
     if (preflightBusy) return preflightBusy;
     preflightBusy = runPreflight({
       obs, config, obsInfo, obsStreaming: () => obsStreaming, obsStartedAt,
-      bgm, soundboard, viewer, chatViewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, update: () => updater.state(),
+      bgm, soundboard, viewer, chatViewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, obsAudio, update: () => updater.state(),
     }).then((r) => { preflightLast = r; stateChanged(); return r; }).finally(() => { preflightBusy = null; });
     return preflightBusy;
   }
@@ -923,6 +949,9 @@ async function main() {
     'POST /api/launcher/remove-all': async (b) => {
       if (b.confirm !== '지우기') throw new Error('확인 문구가 달라요');
       await updater.assertIdle().catch(() => { throw new Error('방송이나 녹화가 끝난 뒤에 지워 주세요'); });
+      // recordings not on Drive yet: their queue goes with the settings — the files would stay behind on this PC
+      const pending = drive.status().items.filter((i) => i.kind !== 'markers' && (i.status === 'waiting' || i.status === 'uploading' || i.status === 'error')).map((i) => i.name);
+      if (pending.length && !b.ignoreUploads) return { pendingUploads: pending };
       const local = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Allmind') : null; // launcher copy, unpacked app, updates
       const paths = [CONFIG_DIR, local, b.exe ? process.env.ALLMIND_ORIGIN : null].filter(Boolean);
       // only our own folders: never a source checkout or anything not named Allmind

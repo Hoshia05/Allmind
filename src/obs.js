@@ -57,10 +57,14 @@ export class OBSClient extends EventEmitter {
       this.connected = false;
       for (const { reject } of this.pending.values()) reject(new Error('OBS disconnected'));
       this.pending.clear();
-      if (code === 4009) this.lastError = 'OBS가 비밀번호를 거절했어요 — Allmind 설정의 OBS 비밀번호를 확인해 주세요';
+      if (code === 4009) {
+        if (!this.lastError?.startsWith('OBS가 비밀번호')) console.warn('[obs] OBS rejected the password (Allmind settings → OBS 비밀번호 vs. OBS → 도구 → WebSocket 서버 설정)');
+        this.lastError = 'OBS가 비밀번호를 거절했어요 — Allmind 설정의 OBS 비밀번호를 확인해 주세요';
+      }
       else if (!wasConnected && code !== 4009 && !this.lastError?.startsWith('OBS가 비밀번호')) this.lastError = `OBS(${this.url})에 연결할 수 없어요 — OBS가 켜져 있고 WebSocket 서버가 켜져 있는지 확인해 주세요`;
       if (wasConnected) {
         this.lastError = 'OBS 연결이 끊겼어요 — 다시 연결하는 중…';
+        console.log(`[obs] disconnected${code ? ` (code ${code})` : ''}`);
         this.emit('disconnected');
       }
       this.emit('status');
@@ -108,6 +112,7 @@ export class OBSClient extends EventEmitter {
           if (!ok) return;
           this.connected = true;
           this.lastError = null;
+          console.log(`[obs] connected (obs-websocket ${this.version || '?'})`);
           this.emit('connected');
           this.emit('status');
         });

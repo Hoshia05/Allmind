@@ -90,7 +90,9 @@ try {
     { timeout: 120000, env: { ...process.env, SD_OBS: exe, SD_DIR: dir } },
   );
   const out = (r.stdout || '').trim();
-  console.log(`[obs] Start-Process -> ${out || '(no output)'} ${r.stderr ? 'stderr: ' + r.stderr.trim() : ''}`);
+  // PowerShell writes its progress bar to stderr as CLIXML ("#< CLIXML …") — noise, not an error
+  const err = String(r.stderr || '').trim();
+  console.log(`[obs] Start-Process -> ${out || '(no output)'}${err && !err.startsWith('#< CLIXML') ? ` stderr: ${err.slice(0, 300)}` : ''}`);
   if (out === 'ok') return;
   // Rare: PowerShell itself unavailable. Fall back to a direct launch.
   if (!out.startsWith('ERR:')) {

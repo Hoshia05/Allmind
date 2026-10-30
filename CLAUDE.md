@@ -140,6 +140,13 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   saw two icons again (0.36.5): now the tag is re-checked (read, set only if not ours) whenever the settings page loads or
   gets focus (`POST /api/launcher/taskbar`, throttled 5 s). The second icon in the owner's screenshot was the **Xylem** window (title "Xylem", same favicon, never tagged) — 0.36.6 tags titles `Allmind|Xylem`, and the Xylem page asks for the check too when opened on 127.0.0.1. Windows-only, can't be tested here. A pin of the exe file
   itself has another identity — unpin it and pin the running window instead.
+- **Studio stream 2026-10-30 (one PC + Warudo on another PC via NDI)**, fixed in 0.36.9: network drops → OBS output
+  `RECONNECTING`/`RECONNECTED` (`streamReconnect` in the snapshot, banner, report problem); after the drop OBS hit
+  "Max audio buffering" (960 ms, source NDI) — audio stays late until OBS restarts: `src/obslog.js` tails the newest OBS
+  log (`ALLMIND_OBS_LOG_DIR` for tests) for `total audio buffering is now N ms` → `obsAudio` (≥300 ms = warn, banner, 점검,
+  report). 3 stream starts in 8 min → `report.js` reopens the last report if a stream starts within 10 min (`recent`);
+  Drive waits 5 min after a stream ends. Multi-RTMP there had 0 audio configs and never started (YouTube archive missing).
+  Mock: `node tools/dev/obs.mjs MockEmit '{"eventType":…,"eventData":…}'` sends any OBS event.
 - Real OBS sends `RecordStateChanged STOPPED` only after the file is finished (seconds
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.
 - OBS's own state isn't reset between streams unless it restarts; the owner's frame drops

@@ -69,7 +69,12 @@ export class YouTubeGuard extends EventEmitter {
   _remember(id) { this.st.made = [...(this.st.made || []).filter((x) => x !== id), id].slice(-50); this._save(); }
   // "2026년 10월 29일 방송" for our broadcasts (old "[allmind] …" ones get it too); someone else's stays as it is
   _desc(b) { const cur = b?.snippet?.description || ''; return !cur || this._ours(b) ? descFor(new Date()) : cur; }
-  _set(patch) { Object.assign(this, patch); this.emit('change'); }
+  _set(patch) {
+    // the dashboard alert is only on screen while it lasts — keep it in the log too
+    if ('alert' in patch && (patch.alert?.text || null) !== (this.alert?.text || null)) console.log(patch.alert ? `[youtube] alert: ${patch.alert.text}` : '[youtube] alert cleared');
+    Object.assign(this, patch);
+    this.emit('change');
+  }
 
   title() {
     const full = (this.getFullTitle() || '').trim();

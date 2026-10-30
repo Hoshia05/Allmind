@@ -145,6 +145,8 @@ function renderBanners() {
     if (bgm.sourceError) B(`bgm:${bgm.sourceError}`, '', `${esc(bgm.sourceError)}${bgm.sourceMissing ? ' <button class="btn" data-act="create-bgm">현재 장면에 만들기</button>' : ''}`);
     if (donation.error) B(`donation:${donation.error}`, '', esc(donation.error));
   }
+  if (S.streamReconnect) B('reconnect', 'bad', `📡 방송 연결이 끊겨서 OBS가 다시 연결하는 중이에요 (${Math.max(1, Math.round((Date.now() - S.streamReconnect.since) / 1000))}초째) — 인터넷(공유기·랜선)을 확인해 주세요. 다시 연결되면 저절로 사라져요`);
+  if (S.obsAudio?.warn) B(`obsaudio:${S.obsAudio.ms}`, 'bad', `🔊 OBS가 소리를 <b>${S.obsAudio.ms}ms</b> 늦게 내보내고 있어요${S.obsAudio.source ? ` (${esc(S.obsAudio.source)} 때문)` : ''} — 방송 중에는 줄일 수 없어요. 방송이 끝나면(또는 쉬는 시간에) OBS를 다시 켜면 돌아와요`);
   if (S.chzzk.error) B(`chzzk:${S.chzzk.error}`, '', esc(S.chzzk.error));
   // YouTube archive guard: shown on every device (phone too) while OBS streams
   const ya = S.youtube?.alert;
