@@ -34,7 +34,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.7';
+const VERSION = '0.36.8';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -759,6 +759,7 @@ async function main() {
           obsPort: Number(/:(\d+)/.exec(config.obs.url.replace(/^ws:\/\//, ''))?.[1] || 4455),
           obsPath: config.obs.path || info.exe || '',
           startObs: config.app.startObs,
+          lanAccess: !['127.0.0.1', 'localhost', '::1'].includes(String(config.server.host || '0.0.0.0')),
           saveChat: config.markers?.saveChat !== false,
           shortcuts: config.dashboard?.shortcuts === true,
           donation: config.sources.donation,
@@ -787,7 +788,8 @@ async function main() {
         bgm: { folder: s.folder || '' },
         soundboard: { folder: s.sbFolder || '' },
         chzzk: { channelId: parseChannelId(s.channel) || '' },
-        server: { port: Number(s.port) || 8080 },
+        // 다른 기기에서 열기 off = listen on this PC only (a borrowed PC on a shared studio network)
+        server: { port: Number(s.port) || 8080, host: s.lanAccess === false ? '127.0.0.1' : '0.0.0.0' },
       });
       if (s.channel && parseChannelId(s.channel) !== chzzk.channelId) chzzk.setChannel(s.channel);
       if (typeof s.runAtLogin === 'boolean' && s.runAtLogin !== win.runAtLoginEnabled()) {
@@ -916,6 +918,28 @@ async function main() {
       return { file: r.file, name: path.basename(r.file) };
     },
     'POST /api/launcher/quit': () => quit(),
+    // "이 PC에서 Allmind 지우기" — for a borrowed PC (e.g. a studio): sign out, delete everything of ours, quit
+    'GET /api/launcher/remove-all-info': () => ({ exe: process.env.ALLMIND_ORIGIN || '' }),
+    'POST /api/launcher/remove-all': async (b) => {
+      if (b.confirm !== '지우기') throw new Error('확인 문구가 달라요');
+      await updater.assertIdle().catch(() => { throw new Error('방송이나 녹화가 끝난 뒤에 지워 주세요'); });
+      const local = process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Allmind') : null; // launcher copy, unpacked app, updates
+      const paths = [CONFIG_DIR, local, b.exe ? process.env.ALLMIND_ORIGIN : null].filter(Boolean);
+      // only our own folders: never a source checkout or anything not named Allmind
+      if (!IS_EXE || paths.slice(0, 2).some((p) => path.basename(p).toLowerCase() !== 'allmind')) {
+        console.log(`[app] remove-all (dry run): ${paths.join(', ')}`);
+        return { dryRun: true, paths };
+      }
+      console.log('[app] removing Allmind from this PC');
+      await Promise.allSettled([google.logout(), chzzkOpen.logout()]);
+      vts.stop();
+      await win.setRunAtLogin(false).catch(() => {});
+      await new Promise((r) => setTimeout(r, 1500)); // let the token revocations go out
+      freezeState(); // nothing may write settings again
+      win.removeAfterExit(paths);
+      setTimeout(quit, 300);
+      return { paths };
+    },
     'POST /api/update/check': () => updater.check(),
     'POST /api/update/install': () => updater.install(),
   };

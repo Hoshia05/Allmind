@@ -149,7 +149,9 @@
       <summary><span class="m-ico">🖥️</span><span class="m-t"><b>메인 PC · 아이패드 · 폰에서 열기</b><small>대시보드 주소와 방화벽</small></span><span class="pill" data-pill></span></summary>
       <div class="m-body">
         <p class="why">대시보드는 방송 PC가 아니라 메인 PC, 아이패드, 폰의 브라우저에서 쓰는 게 기본이에요. 같은 공유기(와이파이)에 있으면 아래 주소로 열려요. 방송 PC의 Windows 방화벽이 막고 있으면 한 번 허용해 줘야 해요.</p>
-        <div class="addr-row">
+        <label class="check"><input form="settings" type="checkbox" name="lanAccess"><span><b>다른 기기에서 대시보드 열기 허용</b> — 끄면 이 PC에서만 열려요. 남의 스튜디오처럼 <b>다른 사람과 같은 와이파이·네트워크</b>를 쓸 때는 꺼 두세요 (켜져 있으면 같은 네트워크의 누구나 주소만 알면 대시보드를 조작할 수 있어요)</span></label>
+        <div id="lanOff" class="tip-line" hidden>🔒 지금은 <b>이 PC에서만</b> 열려요 — 대시보드: <code>http://127.0.0.1:<span id="lanOffPort">8080</span>/</code></div>
+        <div class="addr-row" id="addrRow">
           <code class="addr" id="addr">…</code>
           <button class="btn" id="copyAddr">복사</button>
         </div>
@@ -347,6 +349,13 @@
           <label>비밀번호<input type="password" id="impPass" autocomplete="off"></label>
           <div class="row-btns tight"><button class="btn" type="button" id="impCheck">열어 보기</button></div>
           <div id="impSummary" class="imp-summary" hidden></div>
+        </fieldset>
+        <fieldset class="move">
+          <legend>이 PC에서 Allmind 지우기 (남의 PC를 빌렸을 때)</legend>
+          <p class="hint" style="margin:0">방송이 끝나고 PC를 돌려주기 전에 눌러 주세요. <b>구글·치지직 로그인을 해제</b>하고 (이 PC에 남은 로그인으로는 더 이상 아무것도 못 해요), Allmind의 <b>설정·로그인 정보·기록·로그</b>, 작업 표시줄용 사본, Windows 시작 시 자동 실행을 지운 뒤 Allmind를 꺼요. <b>OBS 설정과 녹화 파일은 그대로</b>예요. 드라이브에 아직 안 올라간 녹화는 이 PC에만 남아 있으니 먼저 확인하세요.</p>
+          <label class="check"><input type="checkbox" id="rmExe" checked><span>내려받은 Allmind 실행 파일도 지우기 <span class="hint" id="rmExePath"></span></span></label>
+          <div class="row-btns tight"><button class="btn danger" type="button" id="rmAll">이 PC에서 지우기</button></div>
+          <p class="hint" style="margin:0">내보낸 설정 파일(.allmind)은 직접 지워 주세요 — 비밀번호 없이는 열 수 없지만, 남겨 둘 필요는 없어요.</p>
         </fieldset>
       </div>
     </details>

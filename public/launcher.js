@@ -86,7 +86,7 @@ async function refresh() {
   $('vRc').textContent = rc.connected ? (rc.needsLogin ? '연결됨 — 독에서 네이버 로그인이 필요해요' : `연결됨 (${[rc.skipLabel, rc.pauseLabel].filter(Boolean).join(' · ') || '버튼 확인 중'})`) : (rc.error || '연결 안 됨');
   $('rcUrl').textContent = r.remoteUrl || '치지직 채널을 먼저 설정해 주세요';
   const fw = r.firewall;
-  $('fwRow').hidden = !fw?.checked;
+  $('fwRow').hidden = !fw?.checked || r.settings?.lanAccess === false; // no firewall question when only this PC may connect
   if (fw?.checked) {
     setDot('dFw', fw.ok ? 'ok' : 'bad');
     $('vFw').textContent = fw.ok ? '방화벽 허용됨 — 메인 PC에서 열 수 있어요' : '방화벽이 막고 있어요 — 메인 PC에서 안 열려요';
@@ -644,7 +644,12 @@ function basicStatus() {
 
   const fw = info.firewall;
   step('fw.ok', fw?.ok || !fw?.checked);
-  setMod('m-mainpc', fw?.checked && !fw.ok ? 'bad' : 'ok', fw?.checked && !fw.ok ? '방화벽이 막음' : info.addresses[0] ? info.addresses[0].replace(/^https?:\/\//, '') : '네트워크 없음');
+  const lan = info.settings?.lanAccess !== false;
+  $('lanOff').hidden = lan; $('addrRow').hidden = !lan; $('otherAddrs').hidden = !lan;
+  for (const el of $('m-mainpc').querySelectorAll('.steps, .tip-line:not(#lanOff)')) el.hidden = !lan;
+  $('lanOffPort').textContent = info.settings?.port || location.port || 8080;
+  if (!lan) setMod('m-mainpc', 'ok', '이 PC에서만');
+  else setMod('m-mainpc', fw?.checked && !fw.ok ? 'bad' : 'ok', fw?.checked && !fw.ok ? '방화벽이 막음' : info.addresses[0] ? info.addresses[0].replace(/^https?:\/\//, '') : '네트워크 없음');
 
   const rc = info.remote;
   step('rc.connected', rc.connected); step('rc.login', rc.connected && !rc.needsLogin);
@@ -683,3 +688,16 @@ function linksStatus() {
 const taskbar = () => fetch('/api/launcher/taskbar', { method: 'POST' }).catch(() => {});
 taskbar();
 addEventListener('focus', taskbar);
+
+// ---------------- remove Allmind from this (borrowed) PC ----------------
+call('/remove-all-info').then((r) => { if (r?.ok) $('rmExePath').textContent = r.exe ? `(${r.exe})` : ''; if (r?.ok && !r.exe) $('rmExe').closest('label').hidden = true; });
+$('rmAll').addEventListener('click', async () => {
+  const typed = prompt('이 PC에서 Allmind의 설정·로그인·기록을 모두 지우고 Allmind를 꺼요.\n되돌릴 수 없어요. 계속하려면 "지우기"라고 입력해 주세요.');
+  if (typed === null) return;
+  if (typed.trim() !== '지우기') return toast('"지우기"라고 입력해야 지워져요', true);
+  const r = await call('/remove-all', { confirm: '지우기', exe: $('rmExe').checked });
+  if (!r.ok) return;
+  $('overlay').querySelector('.spinner').hidden = true;
+  $('overlayText').textContent = r.dryRun ? `(소스 실행 — 실제로는 안 지움) ${r.paths.join(', ')}` : 'Allmind를 지웠어요. 이 창을 닫으면 끝이에요.';
+  $('overlay').hidden = false;
+});

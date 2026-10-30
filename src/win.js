@@ -467,3 +467,23 @@ $t.Start()
   process.on('exit', kill);
   return { stop: kill };
 }
+
+// "이 PC에서 지우기": delete these folders/files once this process has exited (its own exe, log file and
+// settings are in use until then). A hidden PowerShell waits for our pid, then retries for ~30 s.
+export function removeAfterExit(paths) {
+  if (!isWin) return false;
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+try { Wait-Process -Id ([int]$env:SD_PID) -Timeout 60 } catch {}
+$paths = $env:SD_PATHS -split '\\|'
+for ($i = 0; $i -lt 15; $i++) {
+  $left = @($paths | Where-Object { $_ -and (Test-Path -LiteralPath $_) })
+  if ($left.Count -eq 0) { break }
+  foreach ($p in $left) { Remove-Item -LiteralPath $p -Recurse -Force }
+  Start-Sleep -Seconds 2
+}`;
+  spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', script], {
+    detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, SD_PID: String(process.pid), SD_PATHS: paths.join('|') },
+  }).unref();
+  return true;
+}

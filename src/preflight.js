@@ -100,7 +100,14 @@ export async function runPreflight(c) {
 
   // ---------- 기타 ----------
   const v = c.vts.status();
-  if (v.enabled) out.push(item('vts', '기타', 'VTube Studio', v.state === 'ready' ? (v.customItems ? 'ok' : 'warn') : 'warn', v.state === 'ready' ? `연결됨 · ${v.model || '모델 없음'}` : v.error || '연결 안 됨', v.state === 'ready' ? '' : '메인 PC의 VTube Studio와 API가 켜져 있는지 확인'));
+  if (v.enabled) {
+    // settings brought from a two-PC setup point at the old main PC; on one PC VTS is on 127.0.0.1
+    const remote = v.host && !/^(127\.0\.0\.1|localhost|\[?::1\]?)(:|$)/i.test(v.host);
+    const fix = v.state === 'ready' ? '' : remote
+      ? `VTube Studio가 켜져 있고 API가 켜져 있는지 확인 — VTube Studio가 이 PC에 있으면 주소를 127.0.0.1:8001로 (Xylem → VTube Studio), 안 쓰면 거기서 끄기`
+      : 'VTube Studio와 API가 켜져 있는지 확인 — 안 쓰면 Xylem → VTube Studio에서 끄기';
+    out.push(item('vts', '기타', 'VTube Studio', v.state === 'ready' ? (v.customItems ? 'ok' : 'warn') : 'warn', v.state === 'ready' ? `연결됨 · ${v.model || '모델 없음'}` : v.error || '연결 안 됨', fix));
+  }
   const u = c.update();
   if (u?.available) out.push(item('update', '기타', 'Allmind 업데이트', 'info', `새 버전 ${u.latest}`, live ? '방송이 끝난 뒤 설정 창에서 업데이트' : '방송 전이면 설정 창 → 업데이트'));
 
