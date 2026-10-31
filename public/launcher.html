@@ -126,18 +126,16 @@
     </details>
 
     <details class="mod" id="m-sources" data-group="basic" data-name="화면 소스" data-icon="🖼️">
-      <summary><span class="m-ico">🖼️</span><span class="m-t"><b>화면 소스 (영도 · 위플챗 · 알림 · 마이크)</b><small>대시보드에 보여 줄 OBS 소스 이름</small></span><span class="pill" data-pill></span></summary>
+      <summary><span class="m-ico">🖼️</span><span class="m-t"><b>화면 소스 (영도 · 알림 · 마이크)</b><small>대시보드에 보여 줄 OBS 소스 이름</small></span><span class="pill" data-pill></span></summary>
       <div class="m-body">
         <p class="why">대시보드는 이 OBS 소스들의 화면을 받아서 보여 줘요. 영도 화면은 대시보드에서 누르면 OBS 안의 영도 페이지에 그대로 클릭이 전달돼요 (광고 건너뛰기 등). 이름만 맞으면 OBS 쪽은 바꿀 게 없어요.</p>
-        <div class="uses">쓰는 곳 <i>영도 뷰어</i><i>위플챗 패널</i><i>후원 탭 알림 화면</i><i>마이크 상태</i></div>
+        <div class="uses">쓰는 곳 <i>영도 뷰어</i><i>후원 탭 알림 화면</i><i>마이크 상태</i></div>
         <ol class="steps">
           <li data-step="sources.donation">영도 브라우저 소스 이름을 골라요 (입력칸을 누르면 OBS 소스 목록이 나와요).</li>
-          <li data-step="sources.chat">위플챗 브라우저 소스 이름을 골라요.</li>
           <li data-step="sources.saved"><i>(선택)</i> 알림·마이크 → <b>저장하고 다시 시작</b>.</li>
         </ol>
         <div class="fields">
           <label>영도 브라우저 소스<input form="settings" type="text" name="donation" list="inputList"></label>
-          <label>위플챗 브라우저 소스<input form="settings" type="text" name="chat" list="inputList"></label>
           <label>도네 알림 브라우저 소스 <span class="hint">선택 — 후원 탭의 "알림 화면"</span><input form="settings" type="text" name="alert" list="inputList"></label>
           <label>마이크 소스 <span class="hint">비워 두면 OBS 오디오 설정의 마이크</span><input form="settings" type="text" name="mic" list="inputList"></label>
           <datalist id="inputList"></datalist>
@@ -211,18 +209,21 @@
     <details class="mod" id="m-youtube" data-group="links" data-name="유튜브 아카이브" data-icon="▶️">
       <summary><span class="m-ico">▶️</span><span class="m-t"><b>유튜브 아카이브</b><small>방송마다 비공개 다시보기를 자동으로</small></span><span class="pill" data-pill></span></summary>
       <div class="m-body">
-        <p class="why">OBS의 <b>Multi-RTMP</b>로 유튜브에도 같이 송출해서 비공개 다시보기를 남겨요. Allmind는 방송마다 <b>비공개</b> 방송을 미리 만들어 두고, 방송 중에 공개로 바뀌면 바로 되돌리고, 송출했는데 유튜브가 시작되지 않으면 대시보드에 알려 줘요. 방송이 끝나면 유튜브 방송도 Allmind가 끝내 둬요.</p>
+        <p class="why">OBS의 <b>Multi-RTMP</b>로 유튜브에도 같이 송출해서 비공개 다시보기를 남겨요. Allmind는 방송마다 유튜브 방송을 미리 만들어 두고 (기본은 <b>비공개</b>), 방송 중에 정한 공개 범위보다 더 공개되면 바로 되돌리고, 송출했는데 유튜브가 시작되지 않으면 대시보드에 알려 줘요. 방송이 끝나면 유튜브 방송도 Allmind가 끝내 둬요.</p>
         <div class="uses">필요한 것 <a href="#m-google" data-goto>Google 계정 (유튜브)</a> 쓰는 곳 <i>아카이브</i><i>방송 준비 (유튜브 제목)</i></div>
         <ul class="status m-status"><li><span class="sdot" id="dYt"></span><span class="lbl">유튜브</span><span class="val" id="vYt">…</span></li></ul>
         <ol class="steps">
           <li data-step="google.youtube"><a href="#m-google" data-goto>Google 계정</a>을 먼저 연결해요.</li>
-          <li data-step="yt.enabled">아래 <b>비공개 아카이브 준비</b>를 켜고 저장해요.</li>
+          <li data-step="yt.enabled">아래 <b>아카이브 준비</b>를 켜고 저장해요.</li>
           <li data-step="yt.key"><b>스트림 키 만들기</b>를 눌러요.</li>
           <li data-step="yt.key">OBS의 <b>Multi-RTMP</b> 유튜브 대상에 나온 <b>서버 주소와 키</b>를 넣어요 (예전 키 대신, 한 번만).</li>
         </ol>
         <div class="fields">
-          <label class="check"><input form="linksForm" type="checkbox" name="youtubeEnabled"><span>방송마다 <b>비공개</b> 아카이브를 미리 준비하고, 방송 중에 지키기</span></label>
+          <label class="check"><input form="linksForm" type="checkbox" name="youtubeEnabled"><span>방송마다 유튜브 아카이브를 미리 준비하고, 방송 중에 지키기</span></label>
           <label>유튜브 제목 형식 <span class="hint">{date} = 2026-10-26, {title} = 방송 제목</span><input form="linksForm" type="text" name="titleTemplate" placeholder="{date} - {title}"></label>
+          <label>공개 범위 <span class="hint">이보다 더 공개된 방송은 바로 되돌려요. 유튜브 채팅은 비공개가 아닐 때만 생겨요</span>
+            <select form="linksForm" name="ytPrivacy"><option value="private">비공개 — 아카이브만 (기본)</option><option value="unlisted">일부 공개 — 링크가 있는 사람만</option><option value="public">공개 — 유튜브 동시 송출</option></select></label>
+          <label class="check"><input form="linksForm" type="checkbox" name="ytChat"><span>유튜브 채팅도 대시보드 채팅에 같이 보여 주기 <span class="hint">비공개가 아닌 방송이 나가는 동안만 · 10초마다 확인 (YouTube API 할당량을 써요)</span></span></label>
         </div>
         <div class="m-save">
           <button class="btn accent" type="submit" form="linksForm">저장</button>

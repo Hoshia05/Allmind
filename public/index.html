@@ -101,12 +101,10 @@
         <span class="state-dot" id="chatDot" title=""></span>
         <div class="tools">
           <div class="seg small" id="chatTabs">
-            <button data-tab="text" class="on" title="Chat from Chzzk, as text">채팅</button>
+            <button data-tab="text" class="on" title="치지직 + 유튜브 채팅">채팅</button>
             <button data-tab="donations" title="이번 방송의 후원·구독만">후원<span class="tab-count" id="donUnread"></span></button>
-            <button data-tab="mirror" title="Your 위플챗 OBS source, as on stream">위플챗</button>
           </div>
  <button class="btn ghost icon text-only" id="chatClearBtn" title="채팅 화면 지우기 (모든 기기에서) — 지난 방송 채팅과 헷갈리지 않게">🧹</button>
-          <button class="btn ghost icon mirror-only" id="chatModeBtn" title="위플챗 보기 방식 바꾸기">⇄</button>
         </div>
       </div>
       <form class="channel-form" id="channelForm" hidden>
@@ -131,11 +129,6 @@
           <button class="btn ghost" type="button" id="donReadAll" title="모두 읽음으로 표시">모두 읽음</button>
         </div>
         <ol class="don-list" id="donList"></ol>
-      </div>
-      <div class="chat-body mirror" id="chatMirror" hidden>
-        <canvas id="chatFrame"></canvas>
-        <iframe id="chatPage" title="위플챗" hidden referrerpolicy="no-referrer"></iframe>
-        <div class="stage-empty" id="chatMirrorEmpty">Waiting for OBS…</div>
       </div>
     </section>
 

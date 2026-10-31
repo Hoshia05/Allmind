@@ -20,7 +20,10 @@
 
   "youtube": {
     "enabled": true,
-    "titleTemplate": "{date} - {title}"
+    "titleTemplate": "{date} - {title}",
+    "privacy": "private",
+    "chat": true,
+    "chatPollSec": 10
   },
 
   "drive": {
@@ -49,7 +52,6 @@
   "sources": {
     "donation": "영도",
     "bgm": "BGM Player",
-    "chat": "위플챗",
     "alert": "",
     "mic": "",
     "soundboard": "Soundboard"
@@ -101,7 +103,6 @@
   "viewer": {
     "fps": 30,
     "parallel": 2,
-    "chatFps": 6,
     "width": 1280,
     "quality": 70
   },

@@ -325,7 +325,7 @@ function fillLinks(r) {
   const v = {
     googleClientId: r.google.clientId, googleClientSecret: r.google.clientSecret,
     chzzkClientId: r.chzzk.clientId, chzzkClientSecret: r.chzzk.clientSecret,
-    youtubeEnabled: r.youtube.enabled, titleTemplate: r.youtube.titleTemplate,
+    youtubeEnabled: r.youtube.enabled, titleTemplate: r.youtube.titleTemplate, ytPrivacy: r.youtube.privacy, ytChat: r.youtube.chat,
     driveEnabled: r.drive.enabled, nameTemplate: r.drive.nameTemplate, maxMbps: r.drive.maxMbps, driveFolder: r.drive.folder || '',
   };
   for (const [k, x] of Object.entries(v)) {
@@ -637,10 +637,9 @@ function basicStatus() {
 
   const names = new Set(info.inputs.map((i) => i.name));
   const has = (n) => !!n && (!o.connected || names.has(n));
-  step('sources.donation', has(s.donation)); step('sources.chat', has(s.chat)); step('sources.saved', has(s.donation) && has(s.chat));
-  const missing = [['영도', s.donation], ['위플챗', s.chat]].filter(([, n]) => !has(n)).map(([l]) => l);
+  step('sources.donation', has(s.donation)); step('sources.saved', has(s.donation));
   if (!o.connected) setMod('m-sources', '', 'OBS 연결 후 확인');
-  else setMod('m-sources', missing.length ? 'warn' : 'ok', missing.length ? `${missing.join('·')} 소스 확인` : '영도 ✓ · 위플챗 ✓');
+  else setMod('m-sources', has(s.donation) ? 'ok' : 'warn', has(s.donation) ? '영도 ✓' : '영도 소스 확인');
 
   const fw = info.firewall;
   step('fw.ok', fw?.ok || !fw?.checked);

@@ -49,7 +49,8 @@ fieldset.move legend { font-size: 11px; font-weight: 800; letter-spacing: .06em;
 .l-main input[type=text], .l-main input[type=password], .l-main input[type=number] {
   width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; outline: none; min-width: 0;
 }
-.l-main input:focus { border-color: var(--accent); }
+.l-main input:focus, .l-main select:focus { border-color: var(--accent); }
+.fields select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; outline: none; }
 .l-main input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
 .folder-row, .pw { display: flex; gap: 6px; }
 .folder-row input, .pw input { flex: 1; }

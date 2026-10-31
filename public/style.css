@@ -249,6 +249,14 @@ input[type=search]:focus { border-color: var(--accent); }
 .msg .tm { color: var(--muted); font-size: 10.5px; margin-right: 6px; font-variant-numeric: tabular-nums; }
 .msg .badge { width: 16px; height: 16px; vertical-align: -3px; margin-right: 3px; }
 .msg .nick { font-weight: 700; margin-right: 6px; }
+/* platform mark + subscription / membership */
+.msg .plat { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; }
+.msg .plat svg { width: 100%; height: 100%; display: block; }
+.msg .badge.sub { width: 18px; height: 18px; vertical-align: -4px; }
+.sub-pill { display: inline-block; font-size: 9.5px; font-weight: 800; line-height: 14px; padding: 0 4px; border-radius: 4px; margin-right: 4px; vertical-align: 1px; background: #b9a4ff; color: #150b2e; }
+.sub-pill.yt { background: #2ba640; color: #fff; }
+.msg .verified { font-size: 10px; color: var(--muted); margin: 0 6px 0 -3px; }
+.msg.yt .amt { color: #ffcf5c; }
 .msg .role { font-size: 10px; font-weight: 800; padding: 0 5px; border-radius: 4px; margin-right: 5px; vertical-align: 1px; }
 .msg .role.streamer { background: var(--accent); color: #031a18; }
 .msg .role.manager { background: #5be37d; color: #04170b; }
@@ -634,10 +642,6 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
   .livebar { flex-wrap: nowrap; gap: 8px; }
 }
 
-/* 위플챗: the overlay page itself, filling the panel */
-#chatPage { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; } /* matching scheme keeps a see-through page see-through */
-.chat-body.mirror.page { background: #0a1113; }
-.chat-panel:not(.show-mirror) .mirror-only { display: none; }
 
 /* ---------- ⭐ mark button (live bar) ---------- */
 .markgrp { display: inline-flex; align-items: stretch; flex: none; border-radius: 9px; overflow: hidden; border: 1px solid var(--line); }
@@ -854,4 +858,4 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; color:
 .rep-good { color: var(--ok); } .rep-warn { color: var(--warn); } .rep-bad { color: var(--bad); }
 #reportPick { margin-left: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; max-width: 360px; }
 .msg.divider { text-align: center; color: var(--accent-2); font-style: normal; font-weight: 700; font-size: 12px; border-top: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent); margin: 8px 0 4px; padding-top: 6px; }
-#chatPanel.show-mirror .text-only { display: none; }
+#chatPanel:has(#chatText[hidden]) .text-only { display: none; }

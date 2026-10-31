@@ -19,6 +19,7 @@ import { writeLogBundle, redact, obsConfigDir } from './logbundle.js';
 import { Soundboard } from './soundboard.js';
 import { Google } from './google.js';
 import { YouTubeGuard, fillTemplate } from './youtube.js';
+import { YouTubeChat } from './ytchat.js';
 import { DriveUploader, safeName, parseFolderId } from './drive.js';
 import { ChzzkOpen, cleanTags } from './chzzkopen.js';
 import { loadState, saveState, freezeState, configPath as cfgPath } from './config.js';
@@ -35,7 +36,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.10';
+const VERSION = '0.37.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -134,28 +135,6 @@ async function main() {
   const bgm = new BGM(obs, config);
   const viewer = new DonationViewer(obs, config);
   const interact = new Interact(config);
-  const chatViewer = new DonationViewer(obs, config, 'chat');
-  // The 위플챗 panel can show the overlay page itself (filling the panel, and
-  // no OBS screenshots at all) — if the site allows being shown inside
-  // another page. Checked once per URL from here, the stream PC.
-  const chatPage = { url: '', frameable: null };
-  chatViewer.onUrl = async (url) => {
-    if (url === chatPage.url) return;
-    chatPage.url = url;
-    chatPage.frameable = null;
-    if (!/^https?:\/\//i.test(url)) { chatPage.frameable = false; stateChanged(); return; }
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(6000), redirect: 'follow' });
-      const xfo = (r.headers.get('x-frame-options') || '').toLowerCase();
-      const fa = /frame-ancestors\s+([^;]+)/i.exec(r.headers.get('content-security-policy') || '')?.[1]?.trim();
-      chatPage.frameable = !(xfo.includes('deny') || xfo.includes('sameorigin') || (fa && !fa.includes('*')));
-      r.body?.cancel().catch(() => {});
-      console.log(`[chat] overlay page ${chatPage.frameable ? 'can' : 'cannot'} be shown directly`);
-    } catch (e) {
-      chatPage.frameable = null; // unknown: the page will just try
-    }
-    stateChanged();
-  };
   const alertViewer = new DonationViewer(obs, config, 'alert');
   const remote = new ChzzkRemote(config);
   // The program preview is a full-scene capture that changes every frame (game
@@ -190,6 +169,9 @@ async function main() {
   let reports = null; // set once the Xylem parts exist (needs the roulette)
   const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
   // uploads wait while OBS streams or records, and 5 min after a stream ends (it may be restarted)
+  // YouTube chat joins the dashboard chat list while a non-private YouTube broadcast is live
+  const ytChat = new YouTubeChat(google, youtube, config);
+  ytChat.on('chat', (list) => { chzzk.addExternal(list); for (const m of list) markers.addChat(m); });
   const drive = new DriveUploader(google, config, { busy: () => obsStreaming || markers.status().recording || Date.now() - streamEndedAt < 5 * 60000 });
   viewer.onUrl = (url) => interact.setSourceUrl(url);
   // Clicks need the 영도 source's URL from OBS. If it hasn't arrived (asked too
@@ -220,8 +202,7 @@ async function main() {
       idleFps: 1,
       parallel: (QUALITY[viewer.quality] || {}).parallel || config.viewer.parallel,
     }),
-    chat: new FrameFeed({ name: 'chat', grab: () => chatViewer.grab(), fps: config.viewer.chatFps, idleFps: 1, parallel: 1 }),
-    // 도네 alerts animate, so give them a smoother rate than the chat overlay.
+    // 도네 alerts animate: a smoother rate than a still page would need
     alert: new FrameFeed({ name: 'alert', grab: () => alertViewer.grab(), fps: 20, idleFps: 1, parallel: 2 }),
     // what's on stream; capped at 30 since a full-scene capture is the heaviest one
     program: new FrameFeed({ name: 'program', grab: () => program.grab(), fps: QUALITY[program.quality].fps, idleFps: 2, parallel: QUALITY[program.quality].parallel }),
@@ -269,7 +250,6 @@ async function main() {
     soundboard: soundboard.status(),
     donation: viewer.status(),
     interact: interact.status(),
-    chatSource: { ...chatViewer.status(), pageUrl: chatPage.url, frameable: chatPage.frameable },
     alertSource: alertViewer.status(),
     remote: remote.status(),
     chzzk: chzzk.status(),
@@ -278,6 +258,7 @@ async function main() {
     donationActive,
     google: google.status(),
     youtube: youtube.status(),
+    ytChat: ytChat.status(),
     drive: drive.status(),
     chzzkOpen: chzzkOpen.status(),
     prep: { title: prep.title, category: prep.category, tags: prep.tags, appliedAt: prep.appliedAt, results: prep.results || null, ytTemplate: config.youtube?.titleTemplate || '{date} - {title}', fileTemplate: config.drive?.nameTemplate || '{date} - {title}' },
@@ -321,7 +302,7 @@ async function main() {
   studio.on('change', stateChanged);
   markers.on('change', stateChanged);
   markers.on('finished', (rec) => drive.add({ ...rec, name: prepFile() }));
-  for (const x of [google, youtube, drive, chzzkOpen]) x.on('change', stateChanged);
+  for (const x of [google, youtube, drive, chzzkOpen, ytChat]) x.on('change', stateChanged);
   for (const x of [youtube, drive]) x.on('toast', (t) => sendAll('toast', { long: true, ...t }));
   // OBS's own stream output (the Multi-RTMP plugin's outputs aren't visible over obs-websocket)
   const setStreaming = (active) => {
@@ -420,7 +401,7 @@ async function main() {
     let n = 0;
     if (bgm.sourceName && !bgm.sourceOk) { n++; bgm._onConnected().catch(() => {}); }
     if (soundboard.sourceName && !soundboard.sourceOk) { n++; soundboard._onConnected().catch?.(() => {}); }
-    for (const v of [viewer, chatViewer, alertViewer]) if (v.sourceName && !v.sourceOk) { n++; v.refreshInfo().catch(() => {}); }
+    for (const v of [viewer, alertViewer]) if (v.sourceName && !v.sourceOk) { n++; v.refreshInfo().catch(() => {}); }
     if (!studio.mic.ok) { n++; studio._loadMic().catch(() => {}); }
     if (!studio.scenes.length) { n++; studio._loadScenes().catch(() => {}); }
     if (obsDebug === false) checkObsDebug(); // started OBS again from the settings window, or fixed by hand
@@ -481,7 +462,7 @@ async function main() {
       steadySince = now;
     }
   });
-  setInterval(() => clients.size && sendAll('fps', { donation: feeds.donation.stats(), chat: feeds.chat.stats(), alert: feeds.alert.stats(), program: feeds.program.stats() }), 1000);
+  setInterval(() => clients.size && sendAll('fps', { donation: feeds.donation.stats(), alert: feeds.alert.stats(), program: feeds.program.stats() }), 1000);
 
   // ---------- launcher helpers ----------
   // Firewall check runs PowerShell, so cache it (re-check at most once a minute).
@@ -599,7 +580,7 @@ async function main() {
     if (preflightBusy) return preflightBusy;
     preflightBusy = runPreflight({
       obs, config, obsInfo, obsStreaming: () => obsStreaming, obsStartedAt,
-      bgm, soundboard, viewer, chatViewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, obsAudio, update: () => updater.state(),
+      bgm, soundboard, viewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, obsAudio, update: () => updater.state(),
     }).then((r) => { preflightLast = r; stateChanged(); return r; }).finally(() => { preflightBusy = null; });
     return preflightBusy;
   }
@@ -752,7 +733,7 @@ async function main() {
     return {
       google: { clientId: config.google?.clientId || '', clientSecret: config.google?.clientSecret ? SECRET_MASK : '', redirect: `http://127.0.0.1:${PORT}/api/google/callback`, ...google.status() },
       chzzk: { clientId: config.chzzkOpen?.clientId || '', clientSecret: config.chzzkOpen?.clientSecret ? SECRET_MASK : '', redirect: chzzkRedirect(), ...chzzkOpen.status() },
-      youtube: { enabled: config.youtube?.enabled !== false, titleTemplate: config.youtube?.titleTemplate || '{date} - {title}', ...youtube.status() },
+      youtube: { enabled: config.youtube?.enabled !== false, titleTemplate: config.youtube?.titleTemplate || '{date} - {title}', privacy: youtube.privacy(), chat: config.youtube?.chat !== false, ...youtube.status() },
       drive: { folder: config.drive?.folder || '', enabled: config.drive?.enabled !== false, nameTemplate: config.drive?.nameTemplate || '{date} - {title}', maxMbps: config.drive?.maxMbps || 0, ...drive.status() },
     };
   }
@@ -817,7 +798,6 @@ async function main() {
           saveChat: config.markers?.saveChat !== false,
           shortcuts: config.dashboard?.shortcuts === true,
           donation: config.sources.donation,
-          chat: config.sources.chat,
           alert: config.sources.alert,
           mic: config.sources.mic || '',
           bgmSource: config.sources.bgm,
@@ -838,7 +818,7 @@ async function main() {
         markers: { saveChat: s.saveChat !== false },
         dashboard: { shortcuts: !!s.shortcuts },
         obs: { password: s.obsPassword ?? '', url: `ws://127.0.0.1:${Number(s.obsPort) || 4455}`, path: s.obsPath || '' },
-        sources: { donation: s.donation, chat: s.chat, alert: s.alert || '', mic: s.mic || '', bgm: s.bgmSource },
+        sources: { donation: s.donation, alert: s.alert || '', mic: s.mic || '', bgm: s.bgmSource },
         bgm: { folder: s.folder || '' },
         soundboard: { folder: s.sbFolder || '' },
         chzzk: { channelId: parseChannelId(s.channel) || '' },
@@ -919,7 +899,7 @@ async function main() {
         clientId: clean(b.chzzkClientId),
         clientSecret: b.chzzkClientSecret === SECRET_MASK ? (config.chzzkOpen?.clientSecret || '') : clean(b.chzzkClientSecret),
       };
-      const y = { enabled: !!b.youtubeEnabled, titleTemplate: String(b.titleTemplate || '{date} - {title}').trim() || '{date} - {title}' };
+      const y = { enabled: !!b.youtubeEnabled, titleTemplate: String(b.titleTemplate || '{date} - {title}').trim() || '{date} - {title}', privacy: ['private', 'unlisted', 'public'].includes(b.ytPrivacy) ? b.ytPrivacy : 'private', chat: b.ytChat !== false };
       const folder = String(b.driveFolder || '').trim();
       if (folder && !parseFolderId(folder)) throw new Error('드라이브 폴더 링크를 확인해 주세요 (…/drive/folders/… 형태)');
       const d = { folder, enabled: !!b.driveEnabled, nameTemplate: String(b.nameTemplate || '{date} - {title}').trim() || '{date} - {title}', maxMbps: Math.max(0, Number(b.maxMbps) || 0) };

@@ -31,7 +31,7 @@ done
   "update": { "apiBase": "http://127.0.0.1:9333" },
   "google": { "clientId": "mock-google-id", "clientSecret": "mock-google-secret", "authUrl": "http://127.0.0.1:9333/g/auth", "tokenUrl": "http://127.0.0.1:9333/g/token", "revokeUrl": "http://127.0.0.1:9333/g/revoke", "apiBase": "http://127.0.0.1:9333/g", "uploadBase": "http://127.0.0.1:9333/g/upload" },
   "chzzkOpen": { "clientId": "mock-chzzk-id", "clientSecret": "mock-chzzk-secret", "authUrl": "http://127.0.0.1:9333/c/account-interlock", "apiBase": "http://127.0.0.1:9333/c" },
-  "sources": { "donation": "영도", "chat": "위플챗", "bgm": "BGM Player", "alert": "도네 알림" },
+  "sources": { "donation": "영도", "bgm": "BGM Player", "alert": "도네 알림" },
   "xylem": { "packUrl": "http://127.0.0.1:9333/xylem-pack/" },
   "vts": { "enabled": true, "host": "127.0.0.1:8001" },
   "server": { "port": 8080 }

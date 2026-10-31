@@ -25,6 +25,11 @@ export function fillTemplate(tpl, { date, title }) {
   return String(tpl || '{date} - {title}').replace(/\{date\}/g, ymd(date)).replace(/\{title\}/g, title).replace(/\s+/g, ' ').trim();
 }
 
+// how public the archive may be (settings: 유튜브 공개 범위). Allmind only ever makes a broadcast LESS
+// public than it is, never more — a private test stays private even with 'public' chosen.
+const RANK = { private: 0, unlisted: 1, public: 2 };
+const PRIV_KO = { private: '비공개', unlisted: '일부 공개', public: '공개' };
+
 export class YouTubeGuard extends EventEmitter {
   // getTitle(): the current stream title (방송 준비 panel / Chzzk), '' if unknown
   // getFullTitle(): a title typed separately for YouTube (used as is), '' if none
@@ -51,6 +56,8 @@ export class YouTubeGuard extends EventEmitter {
   }
 
   get cfg() { return this.config.youtube || {}; }
+  privacy() { return RANK[this.cfg.privacy] !== undefined ? this.cfg.privacy : 'private'; }
+  _tooPublic(b) { return (RANK[b?.status?.privacyStatus] ?? 0) > RANK[this.privacy()]; }
   enabled() { return this.cfg.enabled !== false && this.g.has('youtube') && !!this.st.streamId; }
 
   status() {
@@ -122,6 +129,7 @@ export class YouTubeGuard extends EventEmitter {
       title: b.snippet?.title || '',
       privacy: b.status?.privacyStatus || '',
       life: b.status?.lifeCycleStatus || '',
+      chatId: b.snippet?.liveChatId || '',
       url: `https://studio.youtube.com/video/${b.id}/livestreaming`,
     } : null;
   }
@@ -138,7 +146,8 @@ export class YouTubeGuard extends EventEmitter {
       let b = this.st.broadcastId ? await this._get(this.st.broadcastId) : null;
       const life = b?.status?.lifeCycleStatus;
       if (b && (READY.has(life) || life === 'live' || life === 'liveStarting')) {
-        if (b.status.privacyStatus !== 'private') b = await this._makePrivate(b);
+        // a waiting one of ours also goes UP to the chosen privacy (the setting was changed since it was made)
+        if (this._tooPublic(b) || (READY.has(life) && this._ours(b) && b.status?.privacyStatus !== this.privacy())) b = await this._makePrivate(b);
         if (READY.has(life) && b.contentDetails?.boundStreamId !== this.st.streamId) await this._bind(b.id);
         // also on stream start: the date in the title and description becomes the day it's really streamed
         if (READY.has(life) && (b.snippet?.title !== this.title() || b.snippet?.description !== this._desc(b))) b = await this._retitle(b, this.title());
@@ -149,13 +158,13 @@ export class YouTubeGuard extends EventEmitter {
           b = spare;
           this.st.broadcastId = b.id;
           this._remember(b.id);
-          if (b.status?.privacyStatus !== 'private') b = await this._makePrivate(b);
+          if (b.status?.privacyStatus !== this.privacy()) b = await this._makePrivate(b);
           if (b.contentDetails?.boundStreamId !== this.st.streamId) await this._bind(b.id);
           if (b.snippet?.title !== this.title() || b.snippet?.description !== this._desc(b)) b = await this._retitle(b, this.title());
           console.log(`[youtube] reusing waiting broadcast (${why}): ${b.id}`);
         } else {
           b = await this._create();
-          console.log(`[youtube] new private broadcast ready (${why}): ${b.id}`);
+          console.log(`[youtube] new ${this.privacy()} broadcast ready (${why}): ${b.id}`);
         }
       }
       this._set({ b: this._summary(b), error: null });
@@ -194,7 +203,7 @@ export class YouTubeGuard extends EventEmitter {
       query: { part: 'snippet,status,contentDetails' },
       body: {
         snippet: { title: this.title(), scheduledStartTime: new Date(Date.now() + 60000).toISOString(), description: descFor(new Date()) },
-        status: { privacyStatus: 'private', selfDeclaredMadeForKids: false },
+        status: { privacyStatus: this.privacy(), selfDeclaredMadeForKids: false },
         contentDetails: { enableAutoStart: true, enableAutoStop: true, enableDvr: true, monitorStream: { enableMonitorStream: false } },
       },
     });
@@ -208,14 +217,17 @@ export class YouTubeGuard extends EventEmitter {
     await this.g.api('POST', '/youtube/v3/liveBroadcasts/bind', { query: { id, part: 'id,contentDetails', streamId: this.st.streamId } });
   }
 
+  // (named for what it did before 유튜브 공개 범위 existed: down to the chosen privacy, private by default)
   async _makePrivate(b) {
+    const to = this.privacy();
     const u = await this.g.api('PUT', '/youtube/v3/liveBroadcasts', {
       query: { part: 'status' },
-      body: { id: b.id, status: { privacyStatus: 'private', selfDeclaredMadeForKids: b.status?.selfDeclaredMadeForKids ?? false } },
+      body: { id: b.id, status: { privacyStatus: to, selfDeclaredMadeForKids: b.status?.selfDeclaredMadeForKids ?? false } },
     });
-    console.log(`[youtube] broadcast ${b.id} was ${b.status?.privacyStatus} — set to private`);
-    return { ...b, status: { ...b.status, ...u.status, privacyStatus: 'private' } };
+    console.log(`[youtube] broadcast ${b.id} was ${b.status?.privacyStatus} — set to ${to}`);
+    return { ...b, status: { ...b.status, ...u.status, privacyStatus: to } };
   }
+  _fixedToast(from) { return `🔒 유튜브 방송이 '${PRIV_KO[from] || from}'(으)로 되어 있어서 '${PRIV_KO[this.privacy()]}'(으)로 바꿨어요`; }
 
   async _retitle(b, title) {
     if (this._ours(b)) this._remember(b.id); // an old "[allmind] …" one loses that mark with its new description
@@ -262,9 +274,9 @@ export class YouTubeGuard extends EventEmitter {
     if (!b) { await this.ensureReady('missing'); return; }
     let cur = b;
     let alert = null;
-    if (b.status.privacyStatus !== 'private') {
+    if (this._tooPublic(b)) {
       cur = await this._makePrivate(b);
-      this.emit('toast', { text: `🔒 유튜브 아카이브가 '${b.status.privacyStatus === 'public' ? '공개' : '일부 공개'}'로 되어 있어서 비공개로 바꿨어요`, bad: true });
+      this.emit('toast', { text: this._fixedToast(b.status.privacyStatus), bad: true });
     }
     const life = cur.status.lifeCycleStatus;
     this.elsewhere = null;
@@ -283,17 +295,17 @@ export class YouTubeGuard extends EventEmitter {
         this.st.broadcastId = other.b.id;
         if (other.streamId) this.st.streamId = other.streamId;
         this._save();
-        cur = other.b.status?.privacyStatus === 'private' ? other.b : await this._makePrivate(other.b);
+        cur = this._tooPublic(other.b) ? await this._makePrivate(other.b) : other.b;
         this._tidy(cur.id).catch(() => {});
       } else if (other && !fed) {
-        if (other.b.status?.privacyStatus !== 'private') {
-          await this._makePrivate(other.b).catch((e) => console.log(`[youtube] couldn't make ${other.b.id} private: ${e.message}`));
-          this.emit('toast', { text: `🔒 유튜브에 나가는 방송이 '${other.b.status.privacyStatus === 'public' ? '공개' : '일부 공개'}'로 되어 있어서 비공개로 바꿨어요`, bad: true });
+        if (this._tooPublic(other.b)) {
+          await this._makePrivate(other.b).catch((e) => console.log(`[youtube] couldn't make ${other.b.id} ${this.privacy()}: ${e.message}`));
+          this.emit('toast', { text: this._fixedToast(other.b.status.privacyStatus), bad: true });
         }
         this.elsewhere = { broadcastId: other.b.id, streamId: other.streamId, keyName: other.keyName };
         alert = {
           level: 'warn',
-          text: `유튜브 아카이브는 나가고 있지만 OBS가 Allmind 키가 아닌 다른 스트림 키${other.keyName ? ` ('${other.keyName}')` : ''}로 보내고 있어요 — 비공개는 지켜 드려요. 옆의 버튼으로 그 키를 Allmind가 쓰게 하거나, OBS Multi-RTMP의 키를 설정 창의 Allmind 키로 바꿔 주세요`,
+          text: `유튜브 아카이브는 나가고 있지만 OBS가 Allmind 키가 아닌 다른 스트림 키${other.keyName ? ` ('${other.keyName}')` : ''}로 보내고 있어요 — 공개 범위(${PRIV_KO[this.privacy()]})는 지켜 드려요. 옆의 버튼으로 그 키를 Allmind가 쓰게 하거나, OBS Multi-RTMP의 키를 설정 창의 Allmind 키로 바꿔 주세요`,
           url: `https://studio.youtube.com/video/${other.b.id}/livestreaming`,
           adopt: !!other.streamId,
         };

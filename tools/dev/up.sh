@@ -1,6 +1,6 @@
 #!/bin/sh
 # Start the mock OBS/Chzzk + Allmind from source, in the background.
-#   sh tools/dev/up.sh [MOCK_ENV=value …]     e.g.  sh tools/dev/up.sh MOCK_CHAT_PAGE=1
+#   sh tools/dev/up.sh [MOCK_ENV=value …]     e.g.  sh tools/dev/up.sh MOCK_YT_PUBLIC=1
 # Dashboard: http://127.0.0.1:8080   Logs: .dev/mock.log, .dev/server.log   Stop: sh tools/dev/down.sh
 cd "$(dirname "$0")/../.."
 D=.dev

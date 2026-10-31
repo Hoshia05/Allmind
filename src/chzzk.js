@@ -1,7 +1,7 @@
 // Chzzk live stats + chat (read-only).
 // Uses the same public endpoints the chzzk.naver.com website uses. They're
-// unofficial, so Naver can change them; everything here fails soft and the
-// 위플챗 mirror tab keeps working regardless.
+// unofficial, so Naver can change them; everything here fails soft.
+// The dashboard chat list is shared with YouTube chat (ytchat.js → addExternal).
 import { EventEmitter } from 'node:events';
 import { loadState, saveState } from './config.js';
 
@@ -248,14 +248,26 @@ export class Chzzk extends EventEmitter {
     else if (type === 11 || type === 12) kind = 'subscription';
     else if (type === 30 || type === 121) kind = 'system';
     const role = profile.userRoleCode === 'streamer' ? 'streamer' : /manager/.test(profile.userRoleCode || '') ? 'manager' : '';
+    // the badges Chzzk shows before a nickname: subscription (with its month count), then the channel's
+    // viewer badges (후원 랭킹, events …), then activity badges the viewer picked
+    const subP = profile.streamingProperty?.subscription;
+    const sub = subP && (subP.accumulativeMonth || subP.badge?.imageUrl)
+      ? { months: Number(subP.accumulativeMonth) || 0, tier: Number(subP.tier) || 1, img: subP.badge?.imageUrl || '' } : null;
+    const badges = [
+      ...(profile.viewerBadges || []).map((v) => v?.badge?.imageUrl),
+      ...(profile.activityBadges || []).filter((b) => b.activated !== false).map((b) => b.imageUrl),
+    ].filter(Boolean);
     return {
       key: `${time}:${uid}:${text.slice(0, 20)}`,
       id: ++this.seq,
+      platform: 'chzzk',
       time,
       uid,
       nick: profile.nickname || (kind === 'donation' ? '익명' : ''),
       role,
-      badges: (profile.activityBadges || []).filter((b) => b.activated !== false).map((b) => b.imageUrl).filter(Boolean).slice(0, 3),
+      sub,
+      verified: profile.verifiedMark === true,
+      badges: [...new Set(badges)].slice(0, 4),
       text,
       emojis: extras.emojis || {},
       kind,
@@ -277,6 +289,17 @@ export class Chzzk extends EventEmitter {
     const max = this.cfg.chatHistory || 300;
     if (this.chat.length > max) this.chat.splice(0, this.chat.length - max);
     this.emit('chat', [m]);
+  }
+
+  // chat from another platform (ytchat.js), already shaped like ours: shares the dashboard list, the
+  // 🧹 and the history a new dashboard gets — but not Chzzk's viewer info, donations or the games
+  addExternal(list) {
+    if (!list.length) return;
+    for (const m of list) m.id = ++this.seq;
+    this.chat.push(...list);
+    const max = this.cfg.chatHistory || 300;
+    if (this.chat.length > max) this.chat.splice(0, this.chat.length - max);
+    this.emit('chat', list);
   }
 
   _add(list) {
@@ -327,6 +350,7 @@ export class Chzzk extends EventEmitter {
       nick: u?.nick || dons.at(-1)?.nick || fromChat?.nick || '',
       role: u?.role || fromChat?.role || '',
       badges: fromChat?.badges || [],
+      sub: [...this.chat].reverse().find((m) => m.uid === uid && m.sub)?.sub || null,
       firstSeen: u?.firstSeen ?? dons[0]?.time ?? null,
       lastSeen: u?.lastSeen ?? dons.at(-1)?.time ?? null,
       chats: u?.chats || 0,

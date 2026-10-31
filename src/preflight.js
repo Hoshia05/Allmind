@@ -59,8 +59,6 @@ export async function runPreflight(c) {
     if (sb.folder) out.push(item('sb', '화면 · 소리', '사운드보드', sb.sourceOk ? 'ok' : 'warn', sb.sourceOk ? `${sb.sounds.length}개` : `"${sb.sourceName}" 소스가 없어요`, sb.sourceOk ? '' : '대시보드 사운드보드 칸의 만들기'));
     const d = c.viewer.status();
     out.push(item('donation', '화면 · 소리', '영도 소스', d.sourceOk ? 'ok' : 'warn', d.sourceOk ? d.sourceName : d.error || `"${d.sourceName}" 소스가 없어요`, d.sourceOk ? '' : '설정 창 → 화면 소스'));
-    const ch = c.chatViewer.status();
-    if (ch.sourceName) out.push(item('chatsrc', '화면 · 소리', '위플챗 소스', ch.sourceOk ? 'ok' : 'warn', ch.sourceOk ? ch.sourceName : ch.error || `"${ch.sourceName}" 소스가 없어요`, ch.sourceOk ? '' : '설정 창 → 화면 소스'));
     const st = c.studio.status();
     if (st.mic?.name) out.push(item('mic', '화면 · 소리', '마이크', st.mic.muted ? 'warn' : 'ok', st.mic.muted ? `${st.mic.name} — 음소거 중` : st.mic.name, st.mic.muted ? '대시보드에서 마이크 음소거 풀기' : ''));
   }

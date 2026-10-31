@@ -20,7 +20,7 @@ export const QUALITY = {
 };
 
 export class DonationViewer {
-  // key: which entry of config.sources this mirrors ('donation' or 'chat').
+  // key: which entry of config.sources this mirrors ('donation' or 'alert').
   constructor(obs, config, key = 'donation') {
     this.obs = obs;
     this.key = key;
@@ -63,7 +63,7 @@ export class DonationViewer {
 
   // One screenshot of the source from OBS. FrameFeed decides how often.
   async grab() {
-    // 영도 uses the chosen preset; the 위플챗 / 도네 alert mirrors use fixed settings.
+    // 영도 uses the chosen preset; the 도네 alert mirror uses fixed settings.
     const p = QUALITY[this.quality] || (this.key === 'alert' ? { format: 'jpg', q: 88, maxWidth: 1280 } : { format: 'jpg', q: 85, maxWidth: 720 });
     const { imageData } = await this.obs.call('GetSourceScreenshot', {
       sourceName: this.sourceName,

@@ -103,7 +103,6 @@ function render() {
   renderStudio();
   renderMarks();
   renderSoundboard();
-  window.syncChatPage?.();
   if (typeof followDonation === 'function') followDonation();
   window.syncAlertMirror?.();
 }
@@ -280,7 +279,7 @@ function renderLevel({ db, mic }) {
   $('meter').classList.toggle('hot', S && db > S.bgm.autoPause.thresholdDb);
 }
 
-// ---------------- OBS source mirrors (영도 + 위플챗) ----------------
+// ---------------- OBS source mirrors (영도, 방송 화면, 도네 알림) ----------------
 // The helper sends a continuous stream of images. Instead of letting <img>
 // show it (Chrome's live-image mode didn't draw OBS's frames for everyone),
 // we read the stream ourselves, decode each frame and draw it on a canvas.
@@ -439,16 +438,11 @@ const shown = (el) => !!el && el.offsetParent !== null;
 let mainTab = pref.get('mainTab', 'program');
 const donationLoop = makeMirror({ img: 'frame', empty: 'stageEmpty', src: 'donation', active: () => mainTab === 'donation', missing: '영도 소스를 찾을 수 없음' });
 const programLoop = makeMirror({ img: 'programFrame', empty: 'programEmpty', src: 'program', active: () => mainTab === 'program', missing: 'OBS 방송 화면을 가져올 수 없음' });
-const chatMirrorLoop = makeMirror({
-  img: 'chatFrame', empty: 'chatMirrorEmpty', src: 'chat', missing: '위플챗 소스를 찾을 수 없음',
-  active: () => chatTab === 'mirror' && shown($('chatPanel')) && !chatPageMode(),
-});
 donationLoop.kick = donationLoop.sync;
-chatMirrorLoop.kick = () => chatMirrorLoop.sync();
-document.addEventListener('visibilitychange', () => { donationLoop.sync(); programLoop.sync(); chatMirrorLoop.sync(); window.syncAlertMirror?.(); });
+document.addEventListener('visibilitychange', () => { donationLoop.sync(); programLoop.sync(); window.syncAlertMirror?.(); });
 
 // small corner badge: how the picture is arriving
-function renderFps({ donation, chat, program }) {
+function renderFps({ donation, program }) {
   if (mainTab === 'program') {
     if (programLoop.on && programLoop.frames > 0) $('programEmpty').style.display = 'none';
     const b = $('stageBadge');
@@ -460,7 +454,6 @@ function renderFps({ donation, chat, program }) {
   // Frames are arriving: drop the "waiting" overlay even if the browser
   // never reports the image as loaded (it doesn't always for live streams).
   if (donationLoop.on && donationLoop.frames > 0) $('stageEmpty').style.display = 'none';
-  if (chatMirrorLoop.on && chatMirrorLoop.frames > 0) $('chatMirrorEmpty').style.display = 'none';
   const b = $('stageBadge');
   if (!donationLoop.on || donation.mode === 'idle') { b.textContent = ''; return; }
   if (donationLoop.error) { b.textContent = '⚠ ' + donationLoop.error; return; }
@@ -963,7 +956,7 @@ setInterval(tickUptime, 1000);
 
 // ---------------- chat ----------------
 let chatTab = pref.get('chatTab', 'text');
-if (!['text', 'mirror', 'donations'].includes(chatTab)) chatTab = 'text'; // the old 리모콘 tab is gone
+if (!['text', 'donations'].includes(chatTab)) chatTab = 'text'; // the old 리모콘 / 위플챗 tabs are gone
 const MAX_CHAT = 300;
 
 function nickColor(name) {
@@ -972,6 +965,13 @@ function nickColor(name) {
   return `hsl(${h % 360} 75% 72%)`;
 }
 
+// which platform a line came from: a small mark before the badges
+const PLAT = {
+  chzzk: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="4" fill="#00ffa3"/><path d="M4.2 4.5h7.6L8 9h3.8v2.5H4.2L8 7H4.2z" fill="#0b0f10"/></svg>',
+  youtube: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect y="2" width="16" height="12" rx="3.5" fill="#ff0033"/><path d="M6.5 5.4v5.2L10.8 8z" fill="#fff"/></svg>',
+};
+const platformIcon = (m) => `<span class="plat ${m.platform === 'youtube' ? 'yt' : 'cz'}" title="${m.platform === 'youtube' ? '유튜브' : '치지직'}">${PLAT[m.platform === 'youtube' ? 'youtube' : 'chzzk']}</span>`;
+
 function chatHtml(m) {
   const t = new Date(m.time);
   const tm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
@@ -979,16 +979,25 @@ function chatHtml(m) {
   const text = esc(m.text).replace(/\{:([^:{}]+):\}/g, (all, name) =>
     m.emojis?.[name] ? `<img class="emo" src="${esc(m.emojis[name])}" alt="${esc(name)}" title="${esc(name)}">` : all);
   if (m.kind === 'system') return `<li class="msg system${m.divider ? ' divider' : ''}" data-id="${m.id}">${text}</li>`;
-  const role = m.role ? `<span class="role ${m.role}">${m.role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
+  const yt = m.platform === 'youtube';
+  const role = m.role ? `<span class="role ${m.role}">${m.role === 'streamer' ? '스트리머' : yt ? '모더레이터' : '매니저'}</span>` : '';
+  const sub = m.sub ? (m.sub.img ? `<img class="badge sub" src="${esc(m.sub.img)}" alt="구독" title="구독 ${m.sub.months}개월${m.sub.tier > 1 ? ` · ${m.sub.tier}티어` : ''}">`
+    : `<span class="sub-pill" title="구독 ${m.sub.months}개월">${m.sub.months}</span>`) : '';
+  const member = m.member ? '<span class="sub-pill yt" title="유튜브 채널 멤버">멤버</span>' : '';
   const badges = (m.badges || []).map((u) => `<img class="badge" src="${esc(u)}" alt="">`).join('');
+  const verified = m.verified ? '<span class="verified" title="인증된 계정">✔</span>' : '';
   let amt = '';
   if (m.kind === 'donation') {
-    const what = m.donationType === 'VIDEO' ? '영도' : m.donationType === 'MISSION' ? '미션' : '후원';
-    amt = `<span class="amt">${what} · ${Number(m.amount || 0).toLocaleString('ko-KR')} 치즈</span>`;
+    if (yt) amt = `<span class="amt">${m.amountText ? `슈퍼챗 · ${esc(m.amountText)}` : '슈퍼챗'}</span>`;
+    else {
+      const what = m.donationType === 'VIDEO' ? '영도' : m.donationType === 'MISSION' ? '미션' : '후원';
+      amt = `<span class="amt">${what} · ${Number(m.amount || 0).toLocaleString('ko-KR')} 치즈</span>`;
+    }
   }
-  if (m.kind === 'subscription') amt = `<span class="amt">구독${m.months ? ` · ${m.months}개월` : ''}</span>`;
-  const nick = m.nick ? `<span class="nick${m.uid ? ' clickable' : ''}"${m.uid ? ` data-uid="${esc(m.uid)}" title="눌러서 시청자 정보 보기"` : ''} style="color:${nickColor(m.nick)}">${esc(m.nick)}</span>` : '';
-  return `<li class="msg ${m.kind}${m.hidden ? ' hidden-msg' : ''}" data-id="${m.id}">${amt}<span class="tm">${tm}</span>${badges}${role}${nick}${text}</li>`;
+  if (m.kind === 'subscription') amt = `<span class="amt">${yt ? '멤버십' : '구독'}${m.months ? ` · ${m.months}개월` : ''}</span>`;
+  const click = m.uid && !yt; // the viewer card knows Chzzk viewers only
+  const nick = m.nick ? `<span class="nick${click ? ' clickable' : ''}"${click ? ` data-uid="${esc(m.uid)}" title="눌러서 시청자 정보 보기"` : ''} style="color:${nickColor(m.nick)}">${esc(m.nick)}</span>${verified}` : '';
+  return `<li class="msg ${m.kind}${yt ? ' yt' : ''}${m.hidden ? ' hidden-msg' : ''}" data-id="${m.id}">${amt}<span class="tm">${tm}</span>${platformIcon(m)}${sub}${member}${badges}${role}${nick}${text}</li>`;
 }
 
 function nearBottom() {
@@ -1032,7 +1041,7 @@ async function openUserCard(uid, at) {
   if (card.hidden) return;
   if (!u?.found) { card.innerHTML = '<div class="muted small">이 시청자 정보가 아직 없어요</div>'; return; }
   const role = u.role ? `<span class="role ${u.role}">${u.role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
-  const badges = (u.badges || []).map((b) => `<img class="badge" src="${esc(b)}" alt="">`).join('');
+  const badges = (u.sub?.img ? `<img class="badge sub" src="${esc(u.sub.img)}" alt="구독" title="구독 ${u.sub.months}개월">` : '') + (u.badges || []).map((b) => `<img class="badge" src="${esc(b)}" alt="">`).join('');
   const stat = (k, v) => `<div class="uc-stat"><b>${v}</b><span>${k}</span></div>`;
   const lines = (u.recent || []).map((r) => {
     const text = esc(r.text).replace(/\{:([^:{}]+):\}/g, (all, name) => r.emojis?.[name] ? `<img class="emo" src="${esc(r.emojis[name])}" alt="${esc(name)}">` : all);
@@ -1077,17 +1086,13 @@ $('newMsgs').addEventListener('click', () => {
 
 function setChatTab(tab) {
   chatTab = tab;
-  $('chatPanel').classList.toggle('show-mirror', tab === 'mirror');
   pref.set('chatTab', tab);
   for (const b of $('chatTabs').children) b.classList.toggle('on', b.dataset.tab === tab);
   $('chatText').hidden = tab !== 'text';
   $('chatSend').hidden = tab !== 'text';
   $('chatDonations').hidden = tab !== 'donations';
-  $('chatMirror').hidden = tab !== 'mirror';
 
   renderChatState();
-  chatMirrorLoop.kick();
-  window.syncChatPage?.();
   window.syncAlertMirror?.(); // defined further down, once the 후원 tab code has loaded
 }
 $('chatTabs').addEventListener('click', (ev) => { if (ev.target.dataset?.tab) setChatTab(ev.target.dataset.tab); });
@@ -1122,12 +1127,14 @@ function renderChatState() {
   renderChatSend();
   renderTopChecks();
   const { channelId, chat } = S.chzzk;
-  $('channelForm').hidden = !!channelId || chatTab === 'mirror';
+  $('channelForm').hidden = !!channelId;
   if (!channelId && chatTab === 'donations') $('donList').innerHTML = '<li class="don-empty">치지직 채널을 연결하면 후원이 여기에 모여요</li>';
   $('remoteBtn').disabled = !channelId;
   const dot = $('chatDot');
-  dot.className = 'state-dot ' + (chatTab === 'mirror' ? (S.chatSource.sourceOk ? 'ok' : 'bad') : chat.state === 'connected' ? 'ok' : chat.state === 'error' ? 'bad' : channelId ? 'warn' : '');
-  dot.title = chatTab === 'mirror' ? (S.chatSource.error || S.chatSource.sourceName) : (chat.error || chat.state);
+  dot.className = 'state-dot ' + (chat.state === 'connected' ? 'ok' : chat.state === 'error' ? 'bad' : channelId ? 'warn' : '');
+  const yc = S.ytChat;
+  const ko = (x) => ({ connected: '연결됨', connecting: '연결 중', error: '문제 있음', idle: '대기', off: '꺼짐' })[x] || x;
+  dot.title = `치지직: ${chat.error || ko(chat.state)}` + (yc && yc.state !== 'off' ? `\n유튜브: ${yc.error || ko(yc.state)}` : '');
   if (!channelId && chatTab === 'text') $('chatList').innerHTML = '';
   else if (chat.state !== 'connected' && chat.error && $('chatEmpty')) $('chatEmpty').textContent = chat.error;
 }
@@ -1144,7 +1151,6 @@ function applyChatVisible(show) {
   $('chatToggle').textContent = show ? '채팅 숨기기' : '채팅 보이기';
   window.dockRefresh?.();
   pref.set('chatVisible', show);
-  chatMirrorLoop.kick();
 }
 $('chatToggle').addEventListener('click', () => applyChatVisible($('layout').classList.contains('no-chat')));
 applyChatVisible(pref.get('chatVisible', true));
@@ -1398,7 +1404,7 @@ $('links').addEventListener('click', (ev) => {
 // Picks which panel fills the space under the picture. Hidden panels stop
 // their OBS mirrors, so nothing is captured for a panel you can't see.
 function syncMirrors() {
-  donationLoop.sync(); programLoop.sync(); chatMirrorLoop.sync(); alertMirrorLoop.sync(); window.syncChatPage?.();
+  donationLoop.sync(); programLoop.sync(); alertMirrorLoop.sync();
 }
 function setMobilePanel(p) {
   pref.set('mPanel', p);
@@ -1433,7 +1439,7 @@ document.addEventListener('click', (ev) => {
 });
 $('optSaver').addEventListener('change', () => {
   pref.set('saver', $('optSaver').checked);
-  for (const m of [donationLoop, programLoop, chatMirrorLoop, alertMirrorLoop]) m.restart();
+  for (const m of [donationLoop, programLoop, alertMirrorLoop]) m.restart();
   toast($('optSaver').checked ? '데이터 절약: 이 기기는 최대 15fps로 받아요' : '데이터 절약 꺼짐');
 });
 $('optVibrate').addEventListener('change', () => { pref.set('vibrate', $('optVibrate').checked); buzz(); });
@@ -1556,45 +1562,6 @@ $('health').addEventListener('click', () => toast($('health').title.split('\n').
 
 // phones: the 리모콘 button lives in the ⚙ menu (no room in the top bar)
 $('devRemote').addEventListener('click', () => { $('devMenu').hidden = true; openRemoteWindow(); });
-
-// ---------------- 위플챗: page mode ----------------
-// Shows the 위플챗 overlay page itself (same URL as the OBS source), sized to
-// the whole panel — instead of a picture of the OBS source, which is only as
-// tall as the source. Falls back to the picture if the site refuses.
-function chatPageMode() {
-  const c = S?.chatSource;
-  if (!c?.pageUrl || c.frameable === false) return false;
-  return pref.get('chatView', 'page') === 'page';
-}
-function syncChatPage() {
-  const f = $('chatPage');
-  const want = chatPageMode() && chatTab === 'mirror' && shown($('chatPanel')) && !document.hidden;
-  // Load it the first time it's shown, then keep it loaded while hidden:
-  // the 위플챗 page only shows chat that arrives while it's open, so
-  // reloading it on every tab switch would wipe the chat.
-  const url = chatPageMode() ? S.chatSource.pageUrl : '';
-  if (url && (want || f.dataset.url)) {
-    if (f.dataset.url !== url) { f.dataset.url = url; f.src = url; }
-  } else if (!url && f.dataset.url) {
-    f.dataset.url = ''; f.removeAttribute('src'); // switched to the OBS picture: unload
-  }
-  f.hidden = !want;
-  $('chatFrame').hidden = want;
-  $('chatMirror').classList.toggle('page', want);
-  if (want) $('chatMirrorEmpty').style.display = 'none';
-  const canPage = !!S?.chatSource?.pageUrl && S.chatSource.frameable !== false;
-  $('chatModeBtn').hidden = !canPage;
-  $('chatModeBtn').title = chatPageMode() ? '지금: 위플챗 페이지 (패널 크기에 맞춤) — 눌러서 OBS 화면으로' : '지금: OBS 화면 그대로 — 눌러서 위플챗 페이지로';
-  chatMirrorLoop.sync();
-}
-window.syncChatPage = syncChatPage;
-$('chatModeBtn').addEventListener('click', () => {
-  pref.set('chatView', chatPageMode() ? 'obs' : 'page');
-  syncChatPage();
-  toast(chatPageMode() ? '위플챗 페이지를 패널 크기로 보여줘요' : 'OBS의 위플챗 화면을 그대로 보여줘요');
-});
-document.addEventListener('visibilitychange', syncChatPage);
-
 
 // ---------------- ⭐ marks (moments for YouTube edits, read by VOD Scout) ----------------
 let marksGotAt = 0;

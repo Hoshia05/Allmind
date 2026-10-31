@@ -295,6 +295,7 @@ export class Markers extends EventEmitter {
     };
     const amount = Number(m.amount);
     if (m.kind === 'donation' && Number.isFinite(amount) && m.amount !== null && m.amount !== '') item.amount = amount;
+    if (m.platform === 'youtube') { item.platform = 'youtube'; if (m.amountText) item.amountText = String(m.amountText).slice(0, 30); } // Chzzk lines stay as they were
     r.chat.push(item);
     r.dirty = true;
   }

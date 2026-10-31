@@ -65,8 +65,7 @@ checks and screenshots (no WebKit, so Safari/iPad behaviour can't be tested here
 Use **Python** Playwright (`python3 -I script.py`, `from playwright.sync_api import sync_playwright`);
 there is no Node Playwright package. Put test scripts in the scratchpad, not the repo.
 
-Useful mock switches (`tools/mock-obs.js`): `MOCK_CHAT_PAGE=1` (fake 위플챗 page,
-`=deny` to refuse framing), `MOCK_YD_INTRO=1` (영도 = alert, silence, video),
+Useful mock switches (`tools/mock-obs.js`): `MOCK_YD_INTRO=1` (영도 = alert, silence, video),
 `MOCK_SKIP_EVERY_MS` / `MOCK_SKIP_TRANSITION=1` / `MOCK_OBS_STRUGGLES=1` (OBS skipped
 frames, for the load guard), `MOCK_NO_CHAPTERS=1`, `MOCK_STOP_MS` (recording stop delay),
 `MOCK_REQS=1` (prints OBS request counts every 20 s), `MOCK_TRACK_MS`, `MOCK_SB_MS`.
@@ -112,7 +111,8 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   and deletes `%APPDATA%\Allmind`, `%LOCALAPPDATA%\Allmind` and optionally `ALLMIND_ORIGIN`; refuses while streaming/recording,
   dry run unless the exe and both folders are named Allmind. Windows deletion untested here.
 - `src/backup.js` — 설정 옮기기: export/import of config.json + data\*.json (not `uploads`) as one `.allmind` file, encrypted with the owner's passphrase (scrypt N=2^16 → AES-256-GCM; no built-in key on purpose). Import previews (`apply:false`), copies current settings to `가져오기 전 백업 <time>`, `freezeState()` stops pending writes, then restarts.
-- `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break).
+- `src/chzzk.js` — live status, chat, donations (unofficial endpoints; can break). Chat lines carry `platform`, `sub {months,tier,img}` (subscription badge from `profile.streamingProperty.subscription`), `badges` (viewer + activity badges), `verified`. `addExternal()` = other platforms' lines into the same list (dashboard only: no viewer info, donations or `live-chat`).
+- **One chat list, 0.37** (`docs/plans/multichat.md`): 위플챗 tab/mirror/source removed. `src/ytchat.js` reads YouTube live chat (`liveChatMessages.list`, existing YouTube login) only while the watched broadcast is live, **not private** and has `liveChatId`; ≥`youtube.chatPollSec` (10 s), quotaExceeded stops for the day; lines → `chzzk.addExternal` + markers log (`platform:'youtube'`). `youtube.privacy` private|unlisted|public (settings 공개 범위): the guard lowers anything more public than chosen, never raises — except our own waiting broadcasts, set to exactly the choice. Mock: `liveChatId` on broadcasts, `/g/youtube/v3/liveChat/messages`, `MOCK_YT_QUOTA=1`, `GET /g/_yt/chat` (call count). Real YouTube chat untested.
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**. After an update the exe the owner originally started is overwritten in place (launcher env `ALLMIND_ORIGIN`/`ALLMIND_LAUNCHER`, `win.syncOriginLauncher`) — Windows-only, untested on a real PC.
 - `src/config.js` — config/state paths (`%APPDATA%\Allmind` in the exe), defaults from
   `config.example.json`. `src/win.js` — Windows bits (tray, firewall, pickers).
@@ -125,7 +125,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - **OBS screenshots aren't free**: each preview frame is an extra scene render on the
   stream PC's GPU. 60 fps previews measurably dropped stream frames; 30 fps didn't.
   The guard ignores skips during scene transitions (stinger) and one-off blips.
-- **Moving an iframe in the DOM reloads it** — the 위플챗 page would lose its chat.
+- **Moving an iframe in the DOM reloads it** (the old 위플챗 page lost its chat that way).
   `dock.js` only moves nodes when needed; tabs hide with a class, never by moving.
 - A hidden scene item is "inactive": OBS stops its audio. The BGM/Soundboard sources
   must stay visible (the owner scales their group to 0 instead of hiding).

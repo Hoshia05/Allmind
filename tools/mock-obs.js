@@ -17,7 +17,6 @@ const TRACK_MS = Number(process.env.MOCK_TRACK_MS || 20000);
 const inputs = new Map([
   [DONATION, { kind: 'browser_source', settings: { url: 'https://chzzk.naver.com/widget/video-donation?token=abc', width: 1280, height: 720 }, volumeDb: 0 }],
   ['Mic', { kind: 'wasapi_input_capture', settings: {}, volumeDb: 0 }],
-  ['위플챗', { kind: 'browser_source', settings: { url: process.env.MOCK_CHAT_PAGE ? 'http://127.0.0.1:9333/overlay' : 'https://weflab.com/page/chat-overlay', width: 420, height: 760 }, volumeDb: 0 }],
   ['도네 알림', { kind: 'browser_source', settings: { url: 'https://weflab.com/page/alert', width: 1280, height: 720 }, volumeDb: 0 }],
 ]);
 if (!process.env.MOCK_NO_BGM) inputs.set(BGM, { kind: 'ffmpeg_source', settings: {}, volumeDb: 0 });
@@ -290,7 +289,7 @@ function handle(type, d) {
       if (scene.list.includes(d.sourceName) && process.env.MOCK_PROGRAM_JPG) return { imageData: 'data:image/jpeg;base64,' + fs.readFileSync(process.env.MOCK_PROGRAM_JPG).toString('base64') };
       if (scene.list.includes(d.sourceName)) return { imageData: 'data:image/svg+xml;base64,' + Buffer.from(fakeProgram()).toString('base64') };
       need(d.sourceName);
-      const svg = d.sourceName === '위플챗' ? fakeOverlay() : fakeFrame();
+      const svg = fakeFrame();
       return { imageData: 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64') };
     }
     default: throw new Error(`mock: ${type} not implemented`);
@@ -449,10 +448,24 @@ const sentChats = [];
 let viewers = 37;
 const openDate = new Date(Date.now() - 83 * 60000 + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
 
+// Chzzk's profile shape: subscription (months, tier, badge image) under streamingProperty, channel viewer badges
+const svgUri = (svg) => 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
+const SUB_BADGE = (c) => svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><path d="M9 1l2.4 5 5.4.6-4 3.7 1.1 5.4L9 13l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" fill="${c}"/></svg>`);
+const SUBS = { '치즈냥': [3, '#b9a4ff'], '호시아팬1호': [14, '#ffcf5c'], 'Gura_KR': [1, '#8fd3ff'] };
+const VIEWER_BADGE = svgUri('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#ff7a59"/><text x="8" y="11.5" font-size="9" text-anchor="middle" fill="#fff" font-family="sans-serif" font-weight="700">1</text></svg>');
+function fakeProfile(nick, role) {
+  const sub = SUBS[nick];
+  return JSON.stringify({
+    nickname: nick, userRoleCode: role, verifiedMark: nick === 'Gura_KR', activityBadges: [],
+    badge: role === 'common_user' ? null : { imageUrl: 'https://ssl.pstatic.net/static/nng/glive/icon/manager.png' },
+    streamingProperty: sub ? { subscription: { accumulativeMonth: sub[0], tier: 1, badge: { imageUrl: SUB_BADGE(sub[1]) } }, nicknameColor: { colorCode: 'CC000' } } : { nicknameColor: { colorCode: 'CC000' } },
+    viewerBadges: nick === '라면조아' ? [{ badge: { badgeNo: 1, badgeId: 'donation_rank_1', imageUrl: VIEWER_BADGE, scope: 'CHANNEL' } }] : [],
+  });
+}
 function fakeMsg(kind) {
   const nick = names[Math.floor(Math.random() * names.length)];
   const role = nick === '호시아팬1호' ? 'streaming_chat_manager' : 'common_user';
-  const base = { uid: 'u_' + nick, msgTime: Date.now(), profile: JSON.stringify({ nickname: nick, userRoleCode: role, activityBadges: [] }) };
+  const base = { uid: 'u_' + nick, msgTime: Date.now(), profile: fakeProfile(nick, role) };
   if (kind === 'donation') {
     const video = Math.random() < 0.4;
     const amt = video ? 1000 : [1000, 1480, 2000, 5000, 10000][Math.floor(Math.random() * 5)];
@@ -506,12 +519,6 @@ function updateRoutes(req, res) {
 
 const chzzkHttp = http.createServer((req, res) => {
   if (updateRoutes(req, res)) return;
-  // fake 위플챗 overlay page (MOCK_CHAT_PAGE=1 points the 위플챗 source here)
-  if (req.url.startsWith('/overlay')) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...(process.env.MOCK_CHAT_PAGE === 'deny' ? { 'X-Frame-Options': 'DENY' } : {}) });
-    return res.end(`<!doctype html><body style="margin:0;background:transparent;font:16px sans-serif;color:#fff;display:flex;flex-direction:column;justify-content:flex-end;height:100vh">
-      <div id=l style="padding:8px"></div><script>let n=0;setInterval(()=>{const d=document.createElement('div');d.textContent='위플챗 메시지 '+(++n);d.style.cssText='background:#0008;margin:4px 0;padding:6px 10px;border-radius:8px';l.append(d);if(l.children.length>40)l.firstChild.remove()},700)</script>`);
-  }
   const send = (content, code = 200) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ code, message: null, content })); };
   if (/\/service\/v3\/channels\/[0-9a-f]{32}\/live-detail/.test(req.url)) {
     viewers = Math.max(5, viewers + Math.round((Math.random() - 0.45) * 4));
@@ -557,14 +564,6 @@ chatWss.on('connection', (ws) => {
   ws.on('close', () => timers.forEach((t) => { clearInterval(t); clearTimeout(t); }));
 });
 chzzkHttp.listen(9333, '127.0.0.1');
-
-function fakeOverlay() {
-  const items = recent.slice(-9).map((r, i) => {
-    const p = JSON.parse(r.profile);
-    return `<text x="16" y="${470 + i * 32}" font-size="20" font-family="sans-serif" fill="#fff"><tspan fill="#ff9ec0" font-weight="bold">${p.nickname}</tspan> ${r.msg.replace(/\{:[^}]+:\}/g, '😊')}</text>`;
-  }).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="760" viewBox="0 0 420 760"><rect width="420" height="760" fill="#0000"/><rect x="6" y="440" width="408" height="310" rx="12" fill="#000a"/>${items}</svg>`;
-}
 
 function fakeProgram() {
   const t = ((Date.now() - t0) / 1000);
@@ -657,7 +656,7 @@ async function mockApis(req, res) {
   }
   if (p === '/g/youtube/v3/liveBroadcasts' && req.method === 'POST') {
     const id = 'bc' + (++yt.n);
-    const b = { id, snippet: j.snippet, status: { ...j.status, lifeCycleStatus: 'created' }, contentDetails: { ...j.contentDetails } };
+    const b = { id, snippet: { ...j.snippet, liveChatId: 'chat_' + id }, status: { ...j.status, lifeCycleStatus: 'created' }, contentDetails: { ...j.contentDetails } };
     yt.broadcasts.set(id, b);
     log('yt broadcast created', id, b.status.privacyStatus, JSON.stringify(b.snippet.title));
     return out(200, b);
@@ -689,6 +688,36 @@ async function mockApis(req, res) {
     b.status.lifeCycleStatus = u.searchParams.get('broadcastStatus') === 'complete' ? 'complete' : b.status.lifeCycleStatus;
     return out(200, b);
   }
+  // live chat (liveChatMessages.list): only for a live, non-private broadcast; new fake messages every few seconds
+  if (p === '/g/youtube/v3/liveChat/messages') {
+    yt.chatCalls = (yt.chatCalls || 0) + 1;
+    const b = [...yt.broadcasts.values()].find((x) => x.snippet?.liveChatId === u.searchParams.get('liveChatId'));
+    if (!b) return out(404, { error: { message: 'The live chat that you are trying to retrieve cannot be found.', errors: [{ reason: 'liveChatNotFound' }] } });
+    if (process.env.MOCK_YT_QUOTA) return out(403, { error: { message: 'quota', errors: [{ reason: 'quotaExceeded' }] } });
+    if (b.status.privacyStatus === 'private') return out(403, { error: { message: 'The live chat is disabled.', errors: [{ reason: 'liveChatDisabled' }] } });
+    if (b.status.lifeCycleStatus === 'complete') return out(403, { error: { message: 'The live chat is no longer live.', errors: [{ reason: 'liveChatEnded' }] } });
+    const since = Number(u.searchParams.get('pageToken') || 0);
+    const now = Date.now();
+    yt.chat ||= [];
+    // make up what was said since the last call
+    const ytNames = ['YT_시청자', 'Alex from Seoul', 'hoshia clips', '유튜브고양이'];
+    const ytLines = ['hello from youtube!', '유튜브에서 보고 있어요', 'lol', '오늘 무슨 게임해요?', '👋👋'];
+    let last = yt.chatLast || now - 20000;
+    while (last + 2500 < now) {
+      last += 2500;
+      const n = ++yt.n, who = ytNames[n % ytNames.length];
+      const type = n % 11 === 0 ? 'superChatEvent' : n % 17 === 0 ? 'newSponsorEvent' : 'textMessageEvent';
+      const text = ytLines[n % ytLines.length];
+      yt.chat.push({ t: last, item: { id: 'ytm' + n, snippet: { type, publishedAt: new Date(last).toISOString(), displayMessage: type === 'newSponsorEvent' ? `${who} 님이 멤버가 되었습니다` : text,
+        ...(type === 'superChatEvent' ? { superChatDetails: { amountDisplayString: '₩5,000', userComment: '슈퍼챗 테스트!', tier: 2 } } : {}) },
+        authorDetails: { channelId: 'UCv' + (n % ytNames.length), displayName: who, isChatOwner: false, isChatModerator: who === 'hoshia clips', isChatSponsor: who === 'Alex from Seoul', isVerified: false } } });
+    }
+    yt.chatLast = last;
+    if (yt.chat.length > 200) yt.chat.splice(0, yt.chat.length - 200);
+    return out(200, { pollingIntervalMillis: 3000, nextPageToken: String(now), items: yt.chat.filter((c) => c.t > since).map((c) => c.item) });
+  }
+  // test helper: GET /g/_yt/chat → how many chat calls (quota)
+  if (p === '/g/_yt/chat') return out(200, { calls: yt.chatCalls || 0 });
   // test helper: POST /g/_yt/set {id, status?, contentDetails?} → change a broadcast as YouTube would
   if (p === '/g/_yt/set') { const b = yt.broadcasts.get(j.id); if (!b) return out(404, {}); Object.assign(b.status, j.status || {}); Object.assign(b.contentDetails, j.contentDetails || {}); return out(200, b); }
   // test helper: GET /g/_yt → everything
