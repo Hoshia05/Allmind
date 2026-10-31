@@ -147,6 +147,12 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   report). 3 stream starts in 8 min → `report.js` reopens the last report if a stream starts within 10 min (`recent`);
   Drive waits 5 min after a stream ends. Multi-RTMP there had 0 audio configs and never started (YouTube archive missing).
   Mock: `node tools/dev/obs.mjs MockEmit '{"eventType":…,"eventData":…}'` sends any OBS event.
+- **OBS opened by hand** has no `--remote-debugging-port` → no 클릭 전달 / 광고 넘기기 / 리모컨 (studio log: "OBS가 이미 실행
+  중이에요"). 0.36.10: `obsDebug` (fetch :9222/json/version on connect + in the 10-s re-check) → dashboard banner with
+  "OBS 다시 켜기" (`POST /api/obs/relaunch`: refuses while streaming/recording, `win.closeObs()` = `taskkill /IM obs64.exe`
+  without /F so OBS saves and doesn't come back in safe mode, then `startObs()`); settings "OBS 바로가기 고치기"
+  (`win.fixObsShortcuts()`: adds the options to obs64.exe .lnk files on desktop, taskbar pins, Start menu; all-users ones
+  need admin → `denied`). Mock: `MOCK_NO_DEBUG=1`. Close/relaunch and .lnk editing are Windows-only, untested here.
 - Real OBS sends `RecordStateChanged STOPPED` only after the file is finished (seconds
   later) — use `STOPPING` for timing. Hybrid MP4 is needed for record chapters.
 - OBS's own state isn't reset between streams unless it restarts; the owner's frame drops

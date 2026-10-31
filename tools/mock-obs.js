@@ -430,7 +430,8 @@ cdpWss.on('connection', (ws, req) => {
     ws.send(JSON.stringify({ id, result, ...(sessionId ? { sessionId } : {}) }));
   });
 });
-cdpHttp.listen(9222, '127.0.0.1');
+// MOCK_NO_DEBUG=1: OBS was opened from its own shortcut, without --remote-debugging-port
+if (!process.env.MOCK_NO_DEBUG) cdpHttp.listen(9222, '127.0.0.1');
 
 log(`mock OBS on ws://127.0.0.1:4455${PASSWORD ? ' (password set)' : ''}, DevTools on http://127.0.0.1:9222`);
 

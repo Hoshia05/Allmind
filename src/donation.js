@@ -169,7 +169,7 @@ export class Interact extends EventEmitter {
       this._loop();
       setInterval(() => this._autoSkipTick(), 1000);
     } else {
-      this.error = 'Interact is turned off in the config';
+      this.error = '클릭 전달이 설정에서 꺼져 있어요';
     }
   }
 
@@ -208,14 +208,14 @@ export class Interact extends EventEmitter {
       list = await res.json();
     } catch {
       this.candidates = [];
-      throw new Error(`OBS browser debugging isn't on — start OBS from Allmind (OBS 시작 button)`);
+      throw new Error('OBS가 Allmind 옵션 없이 켜져 있어요 — 대시보드의 "OBS 다시 켜기"');
     }
     this.candidates = list.filter((t) => t.type === 'page').map((t) => ({ url: t.url, title: t.title }));
     const match = this.effectiveMatch();
     const target = match && list.find((t) => t.type === 'page' && t.url.includes(match));
     if (!target) {
       if (!match) this.needUrl?.(); // ask OBS again: the first answer may have come too early
-      throw new Error(match ? `No OBS browser page whose URL contains "${match}" — pick the 영도 below` : (this.urlHint?.() || 'Waiting for the 영도 source URL from OBS…'));
+      throw new Error(match ? `OBS에서 주소에 "${match}"가 들어간 브라우저 페이지를 못 찾았어요 — 아래에서 영도를 골라 주세요` : (this.urlHint?.() || 'OBS에서 영도 소스 주소를 받아 오는 중…'));
     }
     await this._open(target);
   }

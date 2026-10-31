@@ -144,6 +144,11 @@ function renderBanners() {
   } else {
     if (bgm.sourceError) B(`bgm:${bgm.sourceError}`, '', `${esc(bgm.sourceError)}${bgm.sourceMissing ? ' <button class="btn" data-act="create-bgm">현재 장면에 만들기</button>' : ''}`);
     if (donation.error) B(`donation:${donation.error}`, '', esc(donation.error));
+    // OBS opened from its own shortcut: no 영도 클릭 전달 / 광고 넘기기 / 치지직 리모컨
+    if (S.obsDebug === false) {
+      const live = S.obsStreaming || S.marks?.recording;
+      B('obsdebug', '', `OBS가 Allmind 밖에서 켜져서 <b>영도 클릭·광고 넘기기·치지직 리모컨</b>이 안 돼요 — ${live ? '방송·녹화가 끝나면 OBS를 다시 켜 주세요' : 'OBS를 Allmind 옵션으로 다시 켤게요 <button class="btn" data-act="obs-relaunch">OBS 다시 켜기</button>'}<br><span class="muted small">다음부터 OBS를 직접 켜도 되게 하려면: 방송 PC 설정 창 → OBS → <b>OBS 바로가기 고치기</b></span>`);
+    }
   }
   if (S.streamReconnect) B('reconnect', 'bad', `📡 방송 연결이 끊겨서 OBS가 다시 연결하는 중이에요 (${Math.max(1, Math.round((Date.now() - S.streamReconnect.since) / 1000))}초째) — 인터넷(공유기·랜선)을 확인해 주세요. 다시 연결되면 저절로 사라져요`);
   if (S.obsAudio?.warn) B(`obsaudio:${S.obsAudio.ms}`, 'bad', `🔊 OBS가 소리를 <b>${S.obsAudio.ms}ms</b> 늦게 내보내고 있어요${S.obsAudio.source ? ` (${esc(S.obsAudio.source)} 때문)` : ''} — 방송 중에는 줄일 수 없어요. 방송이 끝나면(또는 쉬는 시간에) OBS를 다시 켜면 돌아와요`);
@@ -159,7 +164,7 @@ function renderBanners() {
   const failed = S.drive?.items?.find((i) => i.status === 'error');
   if (failed) B(`drive-fail:${failed.id}:${failed.error || ''}`, 'bad', `☁️ 드라이브 업로드 실패: ${esc(failed.name)} — ${esc(failed.error || '')} <button class="btn" data-act="drive-retry" data-id="${esc(failed.id.replace(/m$/, ''))}">다시 시도</button>`);
   if (bgm.folderError) B(`bgmfolder:${bgm.folderError}`, '', esc(bgm.folderError));
-  if (interact.enabled && !interact.connected && interact.error) {
+  if (interact.enabled && !interact.connected && interact.error && S.obsDebug !== false) { // (no debugging option: the OBS banner above says it)
     let html = `클릭 전달: ${esc(interact.error)}`;
     if (interact.candidates?.length) {
       html += ' ' + interact.candidates
@@ -885,6 +890,14 @@ $('banners').addEventListener('click', async (ev) => {
     if (!confirm('OBS가 지금 보내고 있는 유튜브 스트림 키를 Allmind가 관리하게 할까요?\n다음 방송부터는 이 키에 비공개 방송을 미리 만들어 둬요. OBS 설정은 그대로 두면 돼요.')) return;
     const r = await api('youtube/adopt');
     if (r.ok) toast(`유튜브 키를 바꿨어요${r.keyName ? `: ${r.keyName}` : ''}`);
+  }
+  if (btn.dataset.act === 'obs-relaunch') {
+    if (!confirm('OBS를 닫았다가 Allmind 옵션으로 다시 켤까요? (10~20초 걸려요)')) return;
+    btn.disabled = true; btn.textContent = 'OBS 다시 켜는 중…';
+    const r = await api('obs/relaunch');
+    btn.disabled = false; btn.textContent = 'OBS 다시 켜기';
+    if (r.ok) toast(r.already ? '이미 Allmind 옵션으로 켜져 있어요' : 'OBS를 다시 켰어요 — 연결되면 클릭 전달·리모컨이 돼요');
+    return;
   }
   if (btn.dataset.act === 'create-bgm') {
     const r = await api('bgm/create-source');

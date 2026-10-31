@@ -707,3 +707,12 @@ $('rmAll').addEventListener('click', async () => {
   $('overlayText').textContent = r.dryRun ? `(소스 실행 — 실제로는 안 지움) ${r.paths.join(', ')}` : 'Allmind를 지웠어요. 이 창을 닫으면 끝이에요.';
   $('overlay').hidden = false;
 });
+
+// OBS's own shortcuts get Allmind's remote-debugging option (win.fixObsShortcuts)
+$('obsShortcuts').addEventListener('click', async () => {
+  const r = await call('/obs-shortcuts', {});
+  if (!r.ok) return;
+  $('obsShortcutsOut').textContent = r.dryRun ? '(Windows에서만)' : r.fixed || r.already
+    ? `바로가기 ${r.fixed}개 고침${r.already ? `, ${r.already}개는 이미 됨` : ''}${r.denied ? ` · 시작 메뉴 ${r.denied}개는 관리자 권한이 필요해서 못 고쳤어요 (작업 표시줄·바탕화면 아이콘을 쓰세요)` : ''} — 지금 켜진 OBS는 한 번 다시 켜야 적용돼요`
+    : 'OBS 바로가기를 찾지 못했어요 — Allmind의 "OBS 시작"으로 켜 주세요';
+});

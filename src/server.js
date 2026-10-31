@@ -35,7 +35,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.36.9';
+const VERSION = '0.36.10';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -178,6 +178,7 @@ async function main() {
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
   let obsStreaming = false;
+  let obsDebug = null; // OBS started with Allmind's remote-debugging option? (see checkObsDebug)
   let streamEndedAt = 0;      // a stream often restarts within minutes (studio 2026-10-30: 3 starts in 8 min)
   let streamReconnect = null; // { since } while OBS's stream output is reconnecting
   const obsAudio = new ObsLogWatch(obs); // audio buffering from OBS's own log (stream audio delay)
@@ -281,6 +282,7 @@ async function main() {
     chzzkOpen: chzzkOpen.status(),
     prep: { title: prep.title, category: prep.category, tags: prep.tags, appliedAt: prep.appliedAt, results: prep.results || null, ytTemplate: config.youtube?.titleTemplate || '{date} - {title}', fileTemplate: config.drive?.nameTemplate || '{date} - {title}' },
     obsStreaming,
+    obsDebug,
     streamReconnect,
     obsAudio: obsAudio.status(),
     shortcuts: config.dashboard?.shortcuts === true,
@@ -421,6 +423,7 @@ async function main() {
     for (const v of [viewer, chatViewer, alertViewer]) if (v.sourceName && !v.sourceOk) { n++; v.refreshInfo().catch(() => {}); }
     if (!studio.mic.ok) { n++; studio._loadMic().catch(() => {}); }
     if (!studio.scenes.length) { n++; studio._loadScenes().catch(() => {}); }
+    if (obsDebug === false) checkObsDebug(); // started OBS again from the settings window, or fixed by hand
     if (n) setTimeout(stateChanged, 1500);
   }, 10000).unref?.();
   setInterval(() => {
@@ -509,6 +512,30 @@ async function main() {
       debugOn = (await fetch('http://127.0.0.1:9222/json/version', { signal: AbortSignal.timeout(800) })).ok;
     } catch {}
     return { exe, running, debugOn };
+  }
+
+  // Was OBS started with Allmind's remote-debugging option? (영도 클릭 전달, 광고 넘기기, 치지직 리모컨)
+  // null = don't know yet. Checked when OBS connects and, while false, by the 10-s re-check.
+  async function checkObsDebug() {
+    let on = false;
+    try { on = (await fetch('http://127.0.0.1:9222/json/version', { signal: AbortSignal.timeout(800) })).ok; } catch {}
+    if (on !== obsDebug) { obsDebug = on; if (!on && obs.connected) console.log('[obs] OBS was started without Allmind\'s options: no 클릭 전달 / 리모컨'); stateChanged(); }
+  }
+  obs.on('connected', () => setTimeout(checkObsDebug, 4000));
+  obs.on('disconnected', () => { obsDebug = null; });
+
+  // "OBS 다시 켜기": close OBS the normal way and start it again with the options — never while live
+  async function relaunchObs() {
+    if (obsStreaming || markers.status().recording) throw new Error('방송·녹화 중에는 OBS를 다시 켤 수 없어요 — 끝난 뒤에 눌러 주세요');
+    await updater.assertIdle().catch(() => { throw new Error('방송·녹화 중에는 OBS를 다시 켤 수 없어요 — 끝난 뒤에 눌러 주세요'); });
+    const info = await obsInfo();
+    if (info.debugOn) { await checkObsDebug(); return { already: true }; }
+    if (!info.exe) throw new Error('OBS가 어디 설치돼 있는지 몰라서 다시 켤 수 없어요 — 설정 창 → OBS에서 위치를 지정해 주세요');
+    console.log("[obs] closing OBS to start it again with Allmind's options");
+    if (!(await win.closeObs())) throw new Error('OBS가 닫히지 않았어요 — OBS에 뜬 창이 있는지 확인하고 직접 닫은 뒤, 설정 창의 "OBS 시작"을 눌러 주세요');
+    runningCache = { at: Date.now(), value: false };
+    await new Promise((r) => setTimeout(r, 1500));
+    return startObs();
   }
 
   async function startObs() {
@@ -683,6 +710,7 @@ async function main() {
     'POST /api/dogfight/reset': () => dogfight.reset(),
     'POST /api/preflight': () => preflight(),
     'POST /api/youtube/adopt': () => youtube.adoptLive(),
+    'POST /api/obs/relaunch': () => relaunchObs(),
     'POST /api/chat/clear': () => { chzzk.clearChat(); },
     'POST /api/report': (b) => ({ report: reports.view(b.id ? String(b.id) : null), ...reports.summary() }),
     'POST /api/report/seen': (b) => reports.markSeen(String(b.id || '')),
@@ -865,6 +893,7 @@ async function main() {
       return { restarting: true, aside: r.aside };
     },
     'POST /api/launcher/start-obs': () => startObs(),
+    'POST /api/launcher/obs-shortcuts': () => win.fixObsShortcuts(),
     'POST /api/launcher/firewall': async () => {
       await win.allowFirewall(PORT);
       const st = await firewall(true);

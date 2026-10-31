@@ -70,6 +70,48 @@ export async function isObsRunning() {
   return /obs64\.exe/i.test(r.stdout);
 }
 
+// Asks OBS to close the normal way (like clicking ✕: no /F, so it saves its settings and doesn't come back
+// in "safe mode"). Resolves true once it's gone, false if it's still there after `ms`.
+export async function closeObs(ms = 25000) {
+  if (!isWin) return true;
+  await run('taskkill.exe', ['/IM', 'obs64.exe']);
+  for (let t = 0; t < ms; t += 500) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (!(await isObsRunning())) return true;
+  }
+  return false;
+}
+
+// OBS opened from its own shortcut has no remote-debugging port (영도 클릭 전달, 광고 넘기기, 치지직 리모컨 need
+// it). Add Allmind's options to every OBS shortcut we can write: desktop, taskbar pins, Start menu.
+// Shortcuts in the all-users Start menu need admin rights: counted as "denied", not an error.
+export async function fixObsShortcuts() {
+  if (!isWin) return { fixed: 0, already: 0, denied: 0, dryRun: true };
+  const r = await powershell(`
+$ErrorActionPreference = 'SilentlyContinue'
+$args2 = '${OBS_DEBUG_ARGS.join(' ')}'
+$sh = New-Object -ComObject WScript.Shell
+$dirs = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'),
+  (Join-Path $env:APPDATA 'Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar'),
+  [Environment]::GetFolderPath('StartMenu'), [Environment]::GetFolderPath('CommonStartMenu'))
+$fixed = 0; $already = 0; $denied = 0; $seen = @{}
+foreach ($d in $dirs) {
+  if (-not $d -or -not (Test-Path -LiteralPath $d)) { continue }
+  foreach ($f in Get-ChildItem -LiteralPath $d -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue) {
+    if ($seen[$f.FullName]) { continue }; $seen[$f.FullName] = 1
+    $l = $sh.CreateShortcut($f.FullName)
+    if ($l.TargetPath -notlike '*\\obs64.exe') { continue }
+    if ($l.Arguments -like '*remote-debugging-port*') { $already++; continue }
+    $l.Arguments = ($l.Arguments + ' ' + $args2).Trim()
+    try { $l.Save(); $fixed++ } catch { $denied++ }
+  }
+}
+[Console]::Out.Write("$fixed $already $denied")`, { timeout: 30000 });
+  const [fixed, already, denied] = String(r.stdout || '').trim().split(/\s+/).map((n) => Number(n) || 0);
+  console.log(`[obs] shortcuts: ${fixed} fixed, ${already} already fine, ${denied} need admin`);
+  return { fixed, already, denied };
+}
+
 // Starts OBS from its own folder (or it can't find its files) with the
 // browser-debugging flags. Goes through Start-Process (the same path as a
 // double-click), so an OBS set to "Run as administrator" shows the normal

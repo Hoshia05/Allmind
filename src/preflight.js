@@ -17,7 +17,7 @@ export async function runPreflight(c) {
     out.push(item('obs', 'OBS', 'OBS 연결', info.running ? 'bad' : 'warn', info.running ? (obs.lastError || '연결 안 됨') : 'OBS가 꺼져 있어요', info.running ? '설정 창 → OBS 연결 (WebSocket 서버·비밀번호)' : '설정 창의 OBS 시작'));
   } else {
     out.push(item('obs', 'OBS', 'OBS 연결', 'ok', '연결됨'));
-    out.push(item('debug', 'OBS', '영도 클릭 전달', info.debugOn ? 'ok' : 'warn', info.debugOn ? 'Allmind가 켠 OBS' : 'OBS가 Allmind 밖에서 켜져서 클릭 전달·광고 스킵이 꺼져 있어요', info.debugOn ? '' : '방송 전이면 OBS를 닫고 설정 창의 OBS 시작'));
+    out.push(item('debug', 'OBS', '영도 클릭 전달', info.debugOn ? 'ok' : 'warn', info.debugOn ? 'Allmind가 켠 OBS' : 'OBS가 Allmind 밖에서 켜져서 클릭 전달·광고 스킵이 꺼져 있어요', info.debugOn ? '' : '방송 전이면 대시보드의 OBS 다시 켜기 — 다음부터 직접 켜도 되게: 설정 창 → OBS 바로가기 고치기'));
   }
   const started = await c.obsStartedAt().catch(() => null);
   if (started) {
