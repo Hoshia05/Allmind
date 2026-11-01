@@ -20,6 +20,7 @@ import { Soundboard } from './soundboard.js';
 import { Google } from './google.js';
 import { YouTubeGuard, fillTemplate } from './youtube.js';
 import { YouTubeChat } from './ytchat.js';
+import { ViewerCard } from './viewercard.js';
 import { DriveUploader, safeName, parseFolderId } from './drive.js';
 import { ChzzkOpen, cleanTags } from './chzzkopen.js';
 import { loadState, saveState, freezeState, configPath as cfgPath } from './config.js';
@@ -36,7 +37,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.37.0';
+const VERSION = '0.37.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -156,6 +157,8 @@ async function main() {
   const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers'), saveChat: config.markers?.saveChat !== false, getTitle: streamTitle });
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
+  // nickname popup: Chzzk's profile card + 관리 actions, through the logged-in 리모컨 dock
+  const viewerCard = new ViewerCard({ chzzk, remote, chzzkOpen });
   let obsStreaming = false;
   let obsDebug = null; // OBS started with Allmind's remote-debugging option? (see checkObsDebug)
   let streamEndedAt = 0;      // a stream often restarts within minutes (studio 2026-10-30: 3 starts in 8 min)
@@ -695,6 +698,8 @@ async function main() {
     'POST /api/chat/clear': () => { chzzk.clearChat(); },
     'POST /api/report': (b) => ({ report: reports.view(b.id ? String(b.id) : null), ...reports.summary() }),
     'POST /api/report/seen': (b) => reports.markSeen(String(b.id || '')),
+    // 상단 고정 / 메시지 삭제 / 채팅 운영자 / 임시 제한 / 활동 제한 from the viewer card
+    'POST /api/chzzk/act': (b) => viewerCard.act(String(b.action || ''), b.uid, b.msgId),
     'POST /api/chat/send': async (b) => {
       if (!chzzkOpen.status().loggedIn) throw new Error('채팅을 보내려면 방송 PC 설정 창에서 치지직 연동 로그인을 해 주세요');
       return chzzkOpen.sendChat(b.message);
@@ -997,6 +1002,9 @@ async function main() {
     if (key === 'GET /api/google/callback') return oauthCallback(req, res, url, 'google');
     if (key === 'GET /api/chzzk-open/callback') return oauthCallback(req, res, url, 'chzzk');
     if (key === 'GET /api/chzzk/user') return json(res, 200, { ok: true, ...chzzk.userInfo(url.searchParams.get('uid')) });
+    if (key === 'GET /api/chzzk/card') {
+      try { return json(res, 200, { ok: true, ...(await viewerCard.card(url.searchParams.get('uid'))) }); } catch (e) { return json(res, 200, { ok: false, error: e.message }); }
+    }
     if (key === 'GET /mark') {
       res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
       return res.end(readAsset('public/mark.html'));

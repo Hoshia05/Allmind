@@ -557,7 +557,7 @@ function renderRemote() {
   $('rcStop').classList.toggle('live', ok && r.videoPlaying);
   $('rcSkip').textContent = r.skipLabel || '넘기기';
   $('rcPause').textContent = r.pauseLabel || '알림 정지';
-  // when alerts are paused, the 리모컨's button usually turns into "알림 재개"
+  // when alerts are paused, the 리모컨's button turns into "알림 재시작"
   $('rcPause').classList.toggle('paused', /재개|시작|켜기/.test(r.pauseLabel || ''));
   const why = !r.connected ? (r.error || '치지직 리모컨에 연결되지 않음') : r.needsLogin ? 'OBS의 리모컨 독에서 네이버에 로그인해 주세요' : '';
   $('rcSkip').title = why || '치지직 리모컨의 넘기기 버튼을 눌러요';
@@ -1031,35 +1031,112 @@ $('chatList').addEventListener('scroll', () => { if (nearBottom()) $('newMsgs').
 // ---------- viewer popup (click a nickname) ----------
 // Shows what Allmind has seen from this viewer since it started: chats, recent lines, 후원/구독.
 const fmtTime = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-async function openUserCard(uid, at) {
+// Laid out like Chzzk's own chat popup: picture, badges, follow date, message / 임시 제한 / 활동 제한 counts and
+// the 관리 actions. The Chzzk parts come from /api/chzzk/card (through the logged-in 리모컨 dock in OBS) and fill
+// in a moment later; Allmind's own numbers (후원, 구독, recent lines) show at once.
+const UC_ICON = {
+  pin: '<path d="M14 4l6 6-3 1-4 4 .5 4.5L12 21l-3.5-3.5L4 21l-.5-.5L7 17l-3.5-3.5 1.5-1.5 4.5.5 4-4z"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-4 4-6 7.5-6s6.3 2 7.5 6"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/>',
+  heart: '<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z" fill="currentColor" stroke="none"/>',
+  out: '<path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/>',
+};
+const ucIcon = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${UC_ICON[k]}</svg>`;
+let ucState = null; // { uid, msgId, at, u, c, arm }
+
+async function openUserCard(uid, at, msgId) {
   const card = $('userCard');
   card.hidden = false;
+  ucState = { uid, msgId: msgId || null, at, u: null, c: null, cLoading: true, arm: '' };
   card.innerHTML = '<div class="muted small">불러오는 중…</div>';
   placeCard(card, at);
-  let u;
-  try { u = await (await fetch(`/api/chzzk/user?uid=${encodeURIComponent(uid)}`, { cache: 'no-store' })).json(); } catch { u = null; }
-  if (card.hidden) return;
-  if (!u?.found) { card.innerHTML = '<div class="muted small">이 시청자 정보가 아직 없어요</div>'; return; }
-  const role = u.role ? `<span class="role ${u.role}">${u.role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
-  const badges = (u.sub?.img ? `<img class="badge sub" src="${esc(u.sub.img)}" alt="구독" title="구독 ${u.sub.months}개월">` : '') + (u.badges || []).map((b) => `<img class="badge" src="${esc(b)}" alt="">`).join('');
-  const stat = (k, v) => `<div class="uc-stat"><b>${v}</b><span>${k}</span></div>`;
+  const me = ucState;
+  fetch(`/api/chzzk/user?uid=${encodeURIComponent(uid)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => null)
+    .then((u) => { if (ucState === me) { me.u = u; renderUserCard(); } });
+  fetch(`/api/chzzk/card?uid=${encodeURIComponent(uid)}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => null)
+    .then((c) => { if (ucState === me) { me.c = c?.ok ? c : null; me.cLoading = false; renderUserCard(); } });
+}
+
+function renderUserCard() {
+  const st = ucState, card = $('userCard');
+  if (!st || card.hidden || !st.u) return;
+  const u = st.u, p = st.c?.profile || null, n = st.c?.counts || null;
+  if (!u.found && !p) { card.innerHTML = st.cLoading ? '<div class="muted small">불러오는 중…</div>' : '<div class="muted small">이 시청자 정보가 아직 없어요</div>'; return; }
+  const nick = p?.nick || u.nick || '이름 없음';
+  const role = p?.role ?? u.role;
+  const sub = p?.sub || u.sub;
+  const badges = (sub?.img ? `<img class="badge sub" src="${esc(sub.img)}" alt="구독" title="구독 ${sub.months}개월${sub.tier > 1 ? ` · ${sub.tier}티어` : ''}">` : '')
+    + (p?.badges || u.badges || []).map((b) => `<img class="badge" src="${esc(b)}" alt="">`).join('');
+  const roleTag = role ? `<span class="role ${role}">${role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
+  const avatar = p?.image ? `<img class="uc-avatar" src="${esc(p.image)}" alt="">` : `<span class="uc-avatar none">${esc([...nick][0] || '?')}</span>`;
+  const follow = p ? (p.followDate ? `${p.followDate} 부터 팔로우` : '팔로우하지 않음') : st.cLoading ? '…' : '';
+  const num = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('ko-KR'));
+  // Chzzk's counts when the dock could ask for them; else what Allmind saw since it started
+  const stats = n
+    ? [['메시지', num(n.messages)], ['임시 제한', num(n.tempRestricts)], ['활동 제한', num(n.restricts) + (n.restricted ? ' <small>(제한 중)</small>' : '')]]
+    : [['메시지', `${num(u.chats || 0)}<small title="Allmind가 켜진 뒤 본 채팅">*</small>`], ['임시 제한', st.cLoading ? '…' : '—'], ['활동 제한', st.cLoading ? '…' : '—']];
+  const extra = [
+    u.donations?.count ? `후원 ${u.donations.count}번 · ${u.donations.total.toLocaleString('ko-KR')} 치즈` : '',
+    sub?.months ? `구독 ${sub.months}개월` : u.subMonths ? `구독 ${u.subMonths}개월` : '',
+    u.firstSeen ? `Allmind에서 처음 본 시각 ${fmtTime(u.firstSeen)}` : '',
+  ].filter(Boolean).join(' · ');
   const lines = (u.recent || []).map((r) => {
     const text = esc(r.text).replace(/\{:([^:{}]+):\}/g, (all, name) => r.emojis?.[name] ? `<img class="emo" src="${esc(r.emojis[name])}" alt="${esc(name)}">` : all);
     const tag = r.kind === 'donation' ? `<span class="uc-tag don">${Number(r.amount || 0).toLocaleString('ko-KR')}</span>` : r.kind === 'subscription' ? '<span class="uc-tag sub">구독</span>' : '';
     return `<li><span class="tm">${fmtTime(r.time)}</span>${tag}${text || '<span class="muted">(내용 없음)</span>'}</li>`;
   }).join('');
+  // actions — the dangerous ones ask for a second press
+  const can = !!st.c?.canManage, isStreamer = role === 'streamer', isMgr = role === 'manager';
+  const act = (key, icon, label, { need = can, danger = false, confirm = '', title = '' } = {}) => {
+    const armed = st.arm === key;
+    const off = !need;
+    return `<button class="uc-act${danger ? ' danger' : ''}${armed ? ' armed' : ''}" data-act="${key}"${off ? ' disabled' : ''}${confirm ? ` data-confirm="1"` : ''} title="${esc(off ? (title || 'OBS의 치지직 리모컨 독(네이버 로그인)이 연결되어 있어야 해요') : title)}">${ucIcon(icon)}<span>${armed ? esc(confirm) : esc(label)}</span></button>`;
+  };
+  const acts = isStreamer ? '' : [
+    act('notice', 'pin', '메시지 상단 고정', { need: can && !!st.msgId, title: st.msgId ? '' : '채팅 목록에서 메시지의 닉네임을 눌렀을 때만 돼요' }),
+    isMgr ? act('unmanager', 'shield', '채팅 운영자 해제', { confirm: '한 번 더 누르면 운영자에서 해제해요' })
+      : act('manager', 'shield', '채팅 운영자 임명', { confirm: '한 번 더 누르면 채팅 운영자로 임명해요' }),
+    act('temp', 'clock', '임시 제한', { confirm: '한 번 더 누르면 임시 제한해요' }),
+    n?.restricted ? act('unrestrict', 'user', '활동 제한 해제', { confirm: '한 번 더 누르면 활동 제한을 풀어요' })
+      : act('restrict', 'user', '활동 제한', { confirm: '한 번 더 누르면 활동 제한해요 (채널에서 채팅 금지)' }),
+    act('blind', 'trash', '메시지 삭제', { need: !!st.msgId && (can || !!S?.chzzkOpen?.loggedIn), danger: true, confirm: '한 번 더 누르면 이 메시지를 삭제해요',
+      title: st.msgId ? '치지직 연동 로그인 또는 리모컨 독이 필요해요' : '채팅 목록에서 메시지의 닉네임을 눌렀을 때만 돼요' }),
+  ].join('');
+  const err = st.c?.errors?.length ? `<div class="uc-err" title="${esc(st.c.errors.join('\n'))}">치지직 정보 일부를 못 가져왔어요</div>` : '';
   card.innerHTML = `
-    <div class="uc-head">${badges}${role}<span class="nick" style="color:${nickColor(u.nick || '?')}">${esc(u.nick || '이름 없음')}</span><button class="btn ghost icon uc-x" title="닫기">✕</button></div>
-    <div class="uc-stats">
-      ${stat('채팅', u.chats.toLocaleString('ko-KR'))}
-      ${stat('후원', u.donations.count ? `${u.donations.total.toLocaleString('ko-KR')}<small> 치즈</small>` : '—')}
-      ${stat('구독', u.subMonths ? `${u.subMonths}<small>개월</small>` : '—')}
+    <div class="uc-top">
+      ${avatar}
+      <div class="uc-who"><div class="uc-name"><span class="nick" style="color:${nickColor(nick)}">${esc(nick)}</span>${p?.verified ? '<span class="verified" title="인증된 계정">✔</span>' : ''}${roleTag}</div>
+        <div class="uc-badges">${badges}</div></div>
+      ${u.channelUrl ? `<a class="btn ghost icon uc-ic" href="${esc(u.channelUrl)}" target="_blank" rel="noopener" title="치지직 채널 열기">${ucIcon('out')}</a>` : ''}
+      <button class="btn ghost icon uc-x" title="닫기">✕</button>
     </div>
-    <div class="muted small">${u.firstSeen ? `처음 본 시각 ${fmtTime(u.firstSeen)}` : ''}${u.donations.count ? ` · 후원 ${u.donations.count}번` : ''} · Allmind가 켜진 뒤 기준</div>
-    ${lines ? `<ol class="uc-lines">${lines}</ol>` : ''}
-    ${u.channelUrl ? `<a class="btn ghost small-btn" href="${esc(u.channelUrl)}" target="_blank" rel="noopener">치지직 채널 열기 ↗</a>` : ''}`;
-  placeCard(card, at);
+    ${follow ? `<div class="uc-follow">${ucIcon('heart')}<span>${esc(follow)}</span></div>` : ''}
+    <div class="uc-stats">${stats.map(([k, v]) => `<div class="uc-stat"><span>${k}</span><b>${v}</b></div>`).join('')}</div>
+    ${extra ? `<div class="muted small">${extra}</div>` : ''}
+    ${err}
+    ${acts ? `<div class="uc-acts">${acts}</div>` : ''}
+    ${lines ? `<details class="uc-recent"><summary>최근 채팅 ${u.recent.length}줄 <span class="muted">(Allmind가 켜진 뒤)</span></summary><ol class="uc-lines">${lines}</ol></details>` : ''}`;
+  placeCard(card, st.at);
 }
+
+$('userCard').addEventListener('click', async (ev) => {
+  const b = ev.target.closest('.uc-act');
+  if (!b || b.disabled || !ucState) return;
+  ev.stopPropagation();
+  const key = b.dataset.act, st = ucState;
+  if (b.dataset.confirm && st.arm !== key) { st.arm = key; renderUserCard(); clearTimeout(st.armT); st.armT = setTimeout(() => { if (st.arm === key) { st.arm = ''; renderUserCard(); } }, 4000); return; }
+  st.arm = '';
+  b.disabled = true;
+  const r = await api('chzzk/act', { action: key, uid: st.uid, msgId: st.msgId });
+  if (r.ok) {
+    toast(r.done);
+    if (ucState === st) { st.cLoading = true; openUserCard(st.uid, st.at, st.msgId); }
+  } else if (ucState === st) renderUserCard();
+});
+
 function placeCard(card, at) {
   if (window.matchMedia('(max-width: 640px)').matches) { card.style.left = card.style.top = ''; return; } // phones: bottom sheet (CSS)
   const r = card.getBoundingClientRect();
@@ -1071,7 +1148,9 @@ for (const id of ['chatList', 'donList']) {
     const n = ev.target.closest('[data-uid]');
     if (!n) return;
     ev.stopImmediatePropagation(); // not the 후원 card's own click (mark as read)
-    openUserCard(n.dataset.uid, { x: ev.clientX, y: ev.clientY });
+    // from the chat list we also know which message (상단 고정 / 메시지 삭제)
+    const li = id === 'chatList' ? n.closest('li[data-id]') : null;
+    openUserCard(n.dataset.uid, { x: ev.clientX, y: ev.clientY }, li ? Number(li.dataset.id) : null);
   });
 }
 document.addEventListener('click', (ev) => {

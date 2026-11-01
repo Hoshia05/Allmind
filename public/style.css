@@ -753,6 +753,34 @@ body.docking canvas, body.docking iframe { pointer-events: none; }
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 40px #000a;
 }
 .usercard[hidden] { display: none; }
+.uc-top { display: flex; align-items: center; gap: 10px; }
+.uc-avatar { width: 46px; height: 46px; border-radius: 50%; object-fit: cover; flex: none; background: var(--panel); }
+.uc-avatar.none { display: grid; place-items: center; font-weight: 800; color: var(--muted); border: 1px solid var(--line); }
+.uc-who { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.uc-name { display: flex; align-items: center; gap: 5px; font-size: 15px; min-width: 0; }
+.uc-name .nick { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uc-name .verified { font-size: 11px; color: var(--muted); }
+.uc-name .role { font-size: 10.5px; font-weight: 800; padding: 1px 5px; border-radius: 4px; flex: none; }
+.uc-name .role.streamer { background: var(--accent); color: #031a18; }
+.uc-name .role.manager { background: #5be37d; color: #04170b; }
+.uc-badges { display: flex; flex-wrap: wrap; gap: 3px; min-height: 0; }
+.uc-badges:empty { display: none; }
+.uc-badges .badge { width: 18px; height: 18px; }
+.uc-ic svg, .uc-act svg, .uc-follow svg { width: 16px; height: 16px; flex: none; }
+.uc-ic { padding: 4px 6px; }
+.uc-follow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
+.uc-follow svg { color: var(--muted); width: 14px; height: 14px; }
+.usercard .uc-stats .uc-stat { align-items: center; text-align: center; gap: 2px; }
+.uc-acts { display: flex; flex-direction: column; }
+.uc-act { display: flex; align-items: center; gap: 10px; background: none; border: 0; color: var(--text); font: inherit; font-size: 13.5px; text-align: left; padding: 7px 4px; border-radius: 6px; cursor: pointer; }
+.uc-act:hover:not(:disabled) { background: var(--panel); }
+.uc-act svg { color: var(--muted); }
+.uc-act.danger, .uc-act.danger svg { color: var(--bad); }
+.uc-act.armed { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.uc-act.armed svg { color: var(--warn); }
+.uc-act:disabled { opacity: .4; cursor: default; }
+.uc-err { font-size: 11.5px; color: var(--warn); }
+.uc-recent summary { cursor: pointer; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
 .uc-head { display: flex; align-items: center; gap: 6px; font-size: 15px; }
 .uc-head .nick { font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .uc-head .badge { width: 18px; height: 18px; }

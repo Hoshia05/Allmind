@@ -356,24 +356,55 @@ const cdpHttp = http.createServer((req, res) => {
   }
 });
 const cdpWss = new WebSocketServer({ server: cdpHttp });
-// fake 치지직 리모컨 dock: buttons "TTS 넘기기" and "알림 정지" ⇄ "알림 재개"
+// fake 치지직 리모컨 dock: buttons "TTS 넘기기" and "알림 정지" ⇄ "알림 재시작" (the real label)
 let rcPaused = false;
 let videoStopped = false;
 setInterval(() => { if (!donationLoud()) videoStopped = false; }, 500);
+// what chzzk.naver.com's own web API answers the logged-in streamer (viewer card + 관리 actions)
+const mod = { roles: new Map(), restricted: new Set(), temp: new Map(), restrictCount: new Map() };
+function mockProfileCard(uid) {
+  const nick = names.find((n) => uidOf(n) === uid) || '알 수 없음';
+  const p = JSON.parse(fakeProfile(nick, mod.roles.get(uid) || (nick === '호시아팬1호' ? 'streaming_chat_manager' : 'common_user')));
+  return { ...p, userIdHash: uid, profileImageUrl: SUB_BADGE('#7aa7ff'), streamingProperty: { ...p.streamingProperty, following: nick === '새벽감성' ? null : { followDate: '2024-02-26 21:13:05' } } };
+}
+function dockFetch(REQ) {
+  const ok = (content) => ({ status: 200, text: JSON.stringify({ code: 200, message: null, content }) });
+  const body = REQ.body ? JSON.parse(REQ.body) : {};
+  const path = REQ.url.replace(/^https?:\/\/[^/]+/, '');
+  log(`리모컨 dock fetch: ${REQ.method} ${path}${REQ.body ? ' ' + REQ.body : ''}`);
+  if (process.env.MOCK_REMOTE_LOGIN) return { status: 401, text: JSON.stringify({ code: 401, message: '로그인이 필요합니다' }) };
+  let m;
+  if ((m = /profile-card/.test(path) && /users\/([0-9a-f]{32})\//.exec(path))) return ok(mockProfileCard(m[1]));
+  if ((m = /\/users\/([0-9a-f]{32})\/chat-activity-count/.exec(path))) {
+    const uid = m[1];
+    return ok({ chatMessageCount: 900 + parseInt(uid.slice(0, 2), 16), restrict: mod.restricted.has(uid), restrictCount: mod.restrictCount.get(uid) || 0, temporaryRestrict: false, temporaryRestrictCount: mod.temp.get(uid) || 0 });
+  }
+  if (/\/streaming-roles$/.test(path) && REQ.method === 'POST') { mod.roles.set(body.targetId, 'streaming_chat_manager'); return ok({ nickname: 'x', userIdHash: body.targetId }); }
+  if ((m = /\/streaming-roles\/([0-9a-f]{32})$/.exec(path)) && REQ.method === 'DELETE') { mod.roles.set(m[1], 'common_user'); return ok(null); }
+  if (/\/temporary-restrict-users$/.test(path)) { mod.temp.set(body.targetId, (mod.temp.get(body.targetId) || 0) + 1); return ok({ userIdHash: body.targetId }); }
+  if (/\/restrict-users$/.test(path) && REQ.method === 'POST') { mod.restricted.add(body.targetId); mod.restrictCount.set(body.targetId, (mod.restrictCount.get(body.targetId) || 0) + 1); return ok({ userIdHash: body.targetId }); }
+  if ((m = /\/restrict-users\/([0-9a-f]{32})$/.exec(path)) && REQ.method === 'DELETE') { mod.restricted.delete(m[1]); return ok(null); }
+  if (/\/chats\/notices$/.test(path)) return ok(null);
+  if (/\/chats\/blind-message$/.test(path)) { for (const push of chatPushers) push(94008, { messageTime: body.messageTime, userId: body.messageUserIdHash }); return ok(null); }
+  return { status: 404, text: JSON.stringify({ code: 404, message: 'mock: unknown path' }) };
+}
 function remoteDock(ws) {
   ws.on('message', (raw) => {
     const { id, method, params } = JSON.parse(raw);
     let value = null;
     if (method === 'Runtime.evaluate') {
-      const buttons = ['전체', '영상 후원', '미션 후원', '파티', 'TTS 넘기기', rcPaused ? '알림 재개' : '알림 정지'];
-      if (params.expression.includes('isGreen')) {
+      const buttons = ['전체', '영상 후원', '미션 후원', '파티', 'TTS 넘기기', rcPaused ? '알림 재시작' : '알림 정지'];
+      if (params.expression.includes('const REQ = ')) {
+        const REQ = JSON.parse(/const REQ = (\{.*?\});\n/s.exec(params.expression)[1]);
+        value = dockFetch(REQ);
+      } else if (params.expression.includes('isGreen')) {
         const playing = donationLoud() && !videoStopped;
         if (playing && params.expression.includes('CLICK = true')) { videoStopped = true; log('리모컨: pressed ■ (stop 영도)'); }
         value = playing ? { via: 'green', info: '라이너류트 님이 1,000 치즈를 후원하였습니다. 너 혼자 거기 살아' } : null;
       } else if (params.expression.includes('b.click()')) {
         const pattern = new RegExp(JSON.parse(/new RegExp\((".*?")\)/.exec(params.expression)[1]));
         const hit = buttons.find((b) => pattern.test(b));
-        if (hit === '알림 정지' || hit === '알림 재개') rcPaused = !rcPaused;
+        if (hit === '알림 정지' || hit === '알림 재시작') rcPaused = !rcPaused;
         if (hit) log(`리모컨: pressed "${hit}"`);
         value = hit || null;
       } else {
@@ -453,6 +484,8 @@ const svgUri = (svg) => 'data:image/svg+xml;base64,' + Buffer.from(svg).toString
 const SUB_BADGE = (c) => svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><path d="M9 1l2.4 5 5.4.6-4 3.7 1.1 5.4L9 13l-4.9 2.7 1.1-5.4-4-3.7 5.4-.6z" fill="${c}"/></svg>`);
 const SUBS = { '치즈냥': [3, '#b9a4ff'], '호시아팬1호': [14, '#ffcf5c'], 'Gura_KR': [1, '#8fd3ff'] };
 const VIEWER_BADGE = svgUri('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#ff7a59"/><text x="8" y="11.5" font-size="9" text-anchor="middle" fill="#fff" font-family="sans-serif" font-weight="700">1</text></svg>');
+// Chzzk user ids are 32-hex channel ids (userIdHash)
+const uidOf = (nick) => crypto.createHash('md5').update('mock:' + nick).digest('hex');
 function fakeProfile(nick, role) {
   const sub = SUBS[nick];
   return JSON.stringify({
@@ -465,7 +498,7 @@ function fakeProfile(nick, role) {
 function fakeMsg(kind) {
   const nick = names[Math.floor(Math.random() * names.length)];
   const role = nick === '호시아팬1호' ? 'streaming_chat_manager' : 'common_user';
-  const base = { uid: 'u_' + nick, msgTime: Date.now(), profile: fakeProfile(nick, role) };
+  const base = { uid: uidOf(nick), msgTime: Date.now(), profile: fakeProfile(nick, role) };
   if (kind === 'donation') {
     const video = Math.random() < 0.4;
     const amt = video ? 1000 : [1000, 1480, 2000, 5000, 10000][Math.floor(Math.random() * 5)];
@@ -524,12 +557,14 @@ const chzzkHttp = http.createServer((req, res) => {
     viewers = Math.max(5, viewers + Math.round((Math.random() - 0.45) * 4));
     return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
   }
+  const pc = /^\/nng_main\/v1\/chats\/[^/]+\/users\/([0-9a-f]{32})\/profile-card/.exec(req.url);
+  if (pc) return send(mockProfileCard(pc[1]));
   if (req.url.startsWith('/nng_main/v1/chats/access-token')) return send({ accessToken: 'mock-token', extraToken: 'x' });
   // POST /mock/chat {nick, text, amount?, type?} → a viewer chat (or donation when amount is set) in the fake chat
   if (req.url === '/mock/chat' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
       const j = JSON.parse(b || '{}'); const nick = j.nick || '테스터';
-      const x = { uid: 'u_' + nick, msgTime: Date.now(), profile: JSON.stringify({ nickname: nick, userRoleCode: 'common_user', activityBadges: [] }), msgTypeCode: j.amount ? 10 : 1, msg: j.text || '', extras: JSON.stringify({ emojis: {}, ...(j.amount ? { payAmount: j.amount, donationType: j.type || 'CHAT' } : {}) }) };
+      const x = { uid: uidOf(nick), msgTime: Date.now(), profile: JSON.stringify({ nickname: nick, userRoleCode: 'common_user', activityBadges: [] }), msgTypeCode: j.amount ? 10 : 1, msg: j.text || '', extras: JSON.stringify({ emojis: {}, ...(j.amount ? { payAmount: j.amount, donationType: j.type || 'CHAT' } : {}) }) };
       if (!j.amount) recent.push(x);
       for (const push of chatPushers) push(j.amount ? 93102 : 93101, [x]);
       res.writeHead(200).end('{}');
@@ -801,9 +836,15 @@ async function mockApis(req, res) {
     const m = j?.message || '';
     if (process.env.MOCK_CHZZK_NOCHAT) return cs('INSUFFICIENT_SCOPE', 403);
     log('chat send:', m); sentChats.push(m);
-    const x = { uid: 'u_hoshia', msgTime: Date.now(), profile: JSON.stringify({ nickname: '호시아', userRoleCode: 'streamer', activityBadges: [] }), msgTypeCode: 1, msg: m, extras: JSON.stringify({ emojis: {} }) };
+    const x = { uid: '0123456789abcdef0123456789abcdef', msgTime: Date.now(), profile: JSON.stringify({ nickname: '호시아', userRoleCode: 'streamer', activityBadges: [] }), msgTypeCode: 1, msg: m, extras: JSON.stringify({ emojis: {} }) };
     recent.push(x); for (const push of chatPushers) push(93101, [x]);
     return cs({ messageId: 'mock-' + Date.now() });
+  }
+  if (p === '/c/open/v1/chats/blind-message' && req.method === 'POST') {
+    if (process.env.MOCK_CHZZK_NOBLIND) return cs('INSUFFICIENT_SCOPE', 403);
+    log('open api blind:', JSON.stringify(j));
+    for (const push of chatPushers) push(94008, { messageTime: j.messageTime, userId: j.senderChannelId });
+    return cs({});
   }
   if (p === '/c/open/v1/users/me') return cs({ channelId: '0123456789abcdef0123456789abcdef', channelName: '호시아' });
   if (p === '/c/open/v1/lives/setting' && req.method === 'GET') return cs(chzzkSetting);

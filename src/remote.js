@@ -10,7 +10,8 @@ import { EventEmitter } from 'node:events';
 // Button text patterns (Korean UI). Kept loose on purpose; see `buttons` in
 // status() for what was actually found if Chzzk renames them.
 const SKIP = /넘기기|건너뛰기|스킵/;
-const PAUSE = /알림\s*(정지|재개|시작|켜기|끄기)/;
+// while paused the real 리모컨 shows "알림 재시작" (owner's log 2026-11-01), older UIs "알림 재개"
+const PAUSE = /알림\s*(정지|재개|재시작|시작|켜기|끄기)/;
 
 // The playing 영도 in the list has a round green button with a stop square
 // (others have purple play buttons). It has no text, so look for a stop-ish
@@ -138,17 +139,39 @@ export class ChzzkRemote extends EventEmitter {
     await this._read();
   }
 
-  _eval(expression) {
+  _eval(expression, { awaitPromise = false, timeoutMs = 3000 } = {}) {
     if (!this.ws) return Promise.reject(new Error('리모컨 독에 연결되어 있지 않아요'));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('리모컨이 응답하지 않아요')); }, 3000);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('리모컨이 응답하지 않아요')); }, timeoutMs);
       this.pending.set(id, {
         resolve: (r) => { clearTimeout(timer); resolve(r?.result?.value); },
         reject: (e) => { clearTimeout(timer); reject(e); },
       });
-      this.ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }));
+      this.ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }));
     });
+  }
+
+  // A Chzzk web API call made from inside the 리모컨 dock, i.e. with the streamer's Naver login (the dock's
+  // cookies) — what chzzk.naver.com itself does for the viewer card and the 관리 actions. Returns `content`;
+  // throws with Chzzk's own message when the answer isn't code 200.
+  async request(url, { method = 'GET', body } = {}) {
+    if (!this.connected) throw new Error('치지직 리모컨 독에 연결되어 있지 않아요 (OBS의 리모컨 독이 필요해요)');
+    const REQ = { url, method, body: body === undefined ? null : JSON.stringify(body) };
+    const expr = `(() => { const REQ = ${JSON.stringify(REQ)};
+      return fetch(REQ.url, { method: REQ.method, credentials: 'include', headers: REQ.body ? { 'Content-Type': 'application/json' } : {}, body: REQ.body || undefined })
+        .then(async (r) => ({ status: r.status, text: (await r.text()).slice(0, 20000) }))
+        .catch((e) => ({ status: 0, text: String(e && e.message || e) })); })()`;
+    const r = await this._eval(expr, { awaitPromise: true, timeoutMs: 8000 });
+    let j = null;
+    try { j = JSON.parse(r?.text || ''); } catch {}
+    if (!r || r.status === 0) throw new Error(`치지직에 요청하지 못했어요 (${r?.text || '응답 없음'})`);
+    if (r.status === 401 || j?.code === 401) throw new Error('리모컨 독의 네이버 로그인이 필요해요');
+    if (r.status >= 400 || (j && j.code !== undefined && j.code !== 200)) {
+      console.log(`[remote] ${method} ${url.replace(/^https:\/\/[^/]+/, '')} → ${r.status} ${String(r?.text || '').slice(0, 200)}`);
+      throw new Error(j?.message || `치지직 오류 (HTTP ${r.status})`);
+    }
+    return j?.content ?? j;
   }
 
   async _read() {
@@ -169,7 +192,7 @@ export class ChzzkRemote extends EventEmitter {
       throw new Error(`리모컨에서 "${what}" 버튼을 찾지 못했어요`);
     }
     console.log(`[remote] pressed "${label}"`);
-    setTimeout(() => this._read(), 400); // label may change (알림 정지 → 알림 재개)
+    setTimeout(() => this._read(), 400); // label changes (알림 정지 → 알림 재시작)
     return { pressed: label };
   }
 

@@ -254,6 +254,7 @@ export class Chzzk extends EventEmitter {
     const sub = subP && (subP.accumulativeMonth || subP.badge?.imageUrl)
       ? { months: Number(subP.accumulativeMonth) || 0, tier: Number(subP.tier) || 1, img: subP.badge?.imageUrl || '' } : null;
     const badges = [
+      profile.streamingProperty?.realTimeDonationRanking?.badge?.imageUrl, // 실시간 후원 랭킹
       ...(profile.viewerBadges || []).map((v) => v?.badge?.imageUrl),
       ...(profile.activityBadges || []).filter((b) => b.activated !== false).map((b) => b.imageUrl),
     ].filter(Boolean);
