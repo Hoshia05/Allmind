@@ -27,6 +27,15 @@ So the question is: **who can make it do those things?**
 6. Lower: `/deck/*` GET actions (skip track, mark…) can be triggered by an `<img>` on any page unless `deck.token` is set;
    OBS's DevTools port 9222 is bound to localhost by Chromium (fine); chat/overlay text is escaped in the dashboard.
 
+## Done
+- **0.39.1 — step 1 + 2:** `guard()` at the top of the request handler in `src/server.js` (Host allow-list: IP literals,
+  `localhost`/`*.localhost`, `os.hostname()`(`.local`), `config.server.allowedHosts`; non-GET with an `Origin` must match
+  `Host`; `GET /deck/<action>` refused when `Sec-Fetch-Site` is cross-site/same-site). Refusals → 403 + `[guard]` log line
+  (once a minute per reason). `win.findObs()` only returns files named `obs64.exe`/`obs32.exe`/`obs.exe`; the settings save
+  rejects any other `.exe`. Verified on the mock: foreign-origin no-cors POST, cross-site text/plain form post to
+  `/api/launcher/save`, `<img>` → `/deck/mark`, `Host: evil.example` → all 403; dashboard, settings, Xylem, overlays,
+  viewer card, Google login, Stream Deck-style GET and curl/no-Origin POSTs unaffected (0 refusals in the e2e runs).
+
 ## Plan (each step small, testable on the mock)
 
 1. **Same-origin guard (fixes 1 + 2, invisible to the owner):** for every non-GET `/api/*`: require

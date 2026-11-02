@@ -51,6 +51,8 @@ export async function findObs(configured) {
     try {
       if (fs.statSync(p).isDirectory()) p = path.join(p, 'bin', '64bit', 'obs64.exe');
     } catch {}
+    // only ever start OBS itself — a changed setting must not be able to start another program
+    if (!/^obs(64|32)?\.exe$/i.test(path.basename(p))) { if (c === configured) console.log(`[obs] ignoring an OBS path that isn't obs64.exe: ${p}`); continue; }
     if (fs.existsSync(p)) return p;
   }
   return null;

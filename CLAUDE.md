@@ -171,6 +171,10 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   why (no source / not a Browser source / empty URL). Local-file Browser sources use `file:///`.
 - iPad Safari can't read the MJPEG stream reliably; the client falls back to long-poll
   `/api/frame` automatically.
+- **Request guard** (0.39.1, `docs/plans/security.md`): every request passes `guard()` in `server.js` — Host must be an
+  IP / localhost / this PC's name / `server.allowedHosts`; non-GET requests with an `Origin` must be same-origin; `GET /deck/<action>`
+  refused for cross-site `Sec-Fetch-Site`. New client code: same-origin fetches just work; never add CORS headers or an
+  Origin-less exception for a browser path. `findObs()` only starts `obs64.exe`. Next steps in the plan: optional PIN, deck token.
 - Never ask for or keep `service.json` / Multi-RTMP config — they contain stream keys. Same for
   `google-auth.json` / `chzzk-auth.json` (refresh tokens). The YouTube key Allmind creates is shown
   only in the local settings window and never stored (only the stream id).

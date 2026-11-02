@@ -4,6 +4,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
+import net from 'node:net';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { loadConfig, saveConfig, readAsset, configPath, ROOT, DATA_DIR, CONFIG_DIR, IS_EXE } from './config.js';
@@ -39,7 +40,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.39.0';
+const VERSION = '0.39.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -107,6 +108,45 @@ function readBody(req) {
 function json(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(data));
+}
+// ---------- request guard (docs/plans/security.md) ----------
+// Allmind is a web server that can drive OBS, the stream and Chzzk moderation, so it must only obey its own pages.
+//  • Host must be an IP address, localhost or this PC's name: a site that points its own domain at this PC
+//    (DNS rebinding) is refused, so it can't read answers either.
+//  • A request that changes something (anything but GET/HEAD) carrying an Origin must come from Allmind's own
+//    address — browsers always attach Origin when another site sends a request, so other web pages are refused.
+//    Requests without Origin (Stream Deck plugin, scripts, curl) aren't from a web page and pass.
+//  • GET /deck/<action> (Stream Deck "Website" keys) also does things, so an <img> on another site must not
+//    trigger it: refused when the browser says the request came from another site (Sec-Fetch-Site).
+// OAuth callbacks are top-level navigations back from Google/Naver and carry their own state check.
+const ownNames = () => {
+  const h = os.hostname().toLowerCase();
+  return new Set(['localhost', h, `${h}.local`, ...((config.server?.allowedHosts || []).map((x) => String(x).toLowerCase()))]);
+};
+let OWN_NAMES = null;
+function hostAllowed(hostHeader) {
+  if (!hostHeader) return true; // HTTP/1.0 tools; browsers always send Host
+  const name = String(hostHeader).replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (net.isIP(name) || name.endsWith('.localhost')) return true;
+  OWN_NAMES ||= ownNames();
+  return OWN_NAMES.has(name);
+}
+const blockedLog = new Map(); // reason → last log time (don't flood the log)
+function guard(req, url) {
+  if (!hostAllowed(req.headers.host)) return `host ${req.headers.host}`;
+  const m = req.method;
+  if (m !== 'GET' && m !== 'HEAD') {
+    const o = req.headers.origin;
+    if (o !== undefined) {
+      let oh = null;
+      try { oh = new URL(o).host.toLowerCase(); } catch {}
+      if (!oh || oh !== String(req.headers.host || '').toLowerCase()) return `origin ${o}`;
+    }
+  } else if (url.pathname.startsWith('/deck/') && url.pathname !== '/deck/events') {
+    const site = req.headers['sec-fetch-site'];
+    if (site && site !== 'same-origin' && site !== 'none') return `deck from ${site}`;
+  }
+  return null;
 }
 const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
@@ -840,6 +880,10 @@ async function main() {
       if (s.channel) {
         if (!parseChannelId(s.channel)) throw new Error('치지직 채널 주소를 확인해 주세요 (32자리 영문+숫자 ID가 들어 있어야 해요)');
       }
+      // OBS's location: the program itself (obs64.exe) or its folder — Allmind starts it, so nothing else
+      if (s.obsPath && /\.[a-z0-9]+$/i.test(path.basename(s.obsPath)) && !/^obs(64|32)?\.exe$/i.test(path.basename(s.obsPath))) {
+        throw new Error('OBS 위치에는 obs64.exe(또는 OBS 설치 폴더)를 골라 주세요');
+      }
       saveConfig({
         app: { startObs: !!s.startObs },
         markers: { saveChat: s.saveChat !== false },
@@ -1012,6 +1056,13 @@ async function main() {
   server.on('request', async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const key = `${req.method} ${url.pathname}`;
+    const why = guard(req, url);
+    if (why) {
+      const k = `${why} ${url.pathname}`;
+      if (Date.now() - (blockedLog.get(k) || 0) > 60000) { blockedLog.set(k, Date.now()); console.log(`[guard] refused ${req.method} ${url.pathname} (${why})`); }
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Allmind: 다른 사이트에서 온 요청은 받지 않아요');
+    }
 
     // ⭐ Mark moment: one request from anywhere on the LAN (a hotkey, a Stream
     // Deck key, the /mark page). 200 {ok,t,count} or 409 {ok:false,reason}.
