@@ -5,6 +5,10 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 let state = null;
+// shown inside the Allmind dashboard (?embed=1; the dashboard's own button switches back): a "새 창" button,
+// and no polling while the dashboard is on top
+const EMBED = new URLSearchParams(location.search).has('embed') && window.parent !== window;
+let embedVisible = true;
 const listeners = new Set();
 let current = null; // { id, unmount }
 let packVersion = null;
@@ -45,7 +49,7 @@ const x = {
 };
 
 async function poll(force) {
-  if (document.hidden && !force) return;
+  if ((document.hidden || !embedVisible) && !force) return;
   try {
     const r = await fetch('/api/xylem/state', { cache: 'no-store' });
     const j = await r.json();
@@ -130,6 +134,25 @@ function listen() {
   es.addEventListener('reload', () => location.reload());
 }
 
+if (EMBED) {
+  document.body.classList.add('embed');
+  const pop = document.createElement('a');
+  pop.className = 'btn ghost sm x-pop';
+  pop.href = '/xylem' + location.hash;
+  pop.target = 'allmind-xylem';
+  pop.title = '새 창으로 열기';
+  pop.textContent = '↗';
+  pop.onclick = () => window.parent.postMessage({ allmind: 'xylem-close' }, location.origin);
+  document.querySelector('.x-brand').append(pop);
+  addEventListener('message', (ev) => {
+    if (ev.origin !== location.origin || ev.data?.allmind !== 'xylem-visible') return;
+    const was = embedVisible;
+    embedVisible = !!ev.data.visible;
+    if (embedVisible && !was) poll(true);
+  });
+  window.parent.postMessage({ allmind: 'xylem-ready' }, location.origin);
+}
+
 listen();
 poll(true);
 setInterval(poll, 2000);
@@ -137,7 +160,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 
 // On the stream PC this page is an Allmind app window: keep it grouped under the pinned Allmind taskbar icon
 // (Allmind ≥ 0.36.6 tags windows titled "Xylem"; older ones just answer 404, which is fine)
-if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
+if (!EMBED && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
   const taskbar = () => fetch('/api/launcher/taskbar', { method: 'POST' }).catch(() => {});
   taskbar();
   addEventListener('focus', taskbar);

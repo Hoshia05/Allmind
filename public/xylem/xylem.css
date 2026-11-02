@@ -41,6 +41,8 @@ a { color: var(--accent); }
   .x-main { grid-template-columns: 1fr; }
   .x-nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
   .x-nav button.on { box-shadow: inset 0 -3px 0 var(--accent); }
+  .x-nav button { flex: none; white-space: nowrap; }
+  .x-nav .dot { margin-left: 2px; }
   .x-body { padding: 14px; }
 }
 
@@ -97,3 +99,9 @@ tr.dim td { opacity: .5; }
 .t-anchor button { all: unset; cursor: pointer; width: 34px; height: 26px; text-align: center; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
 .t-anchor button.on { background: var(--accent); border-color: var(--accent); color: #031a18; font-weight: 800; }
 .field[hidden] { display: none; }
+
+/* inside the Allmind dashboard (?embed=1) */
+body.embed .x-logo, body.embed #xSub { display: none; }
+body.embed .x-top { padding: 8px 12px; }
+body.embed .x-main { min-height: calc(100vh - 50px); }
+.x-pop { padding: 3px 8px; }

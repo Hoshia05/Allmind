@@ -416,7 +416,7 @@ function makeMirror({ img, empty, src, active, missing }) {
   }
 
   m.sync = () => {
-    const want = !document.hidden && active();
+    const want = !document.hidden && !document.body.classList.contains('xy-open') && active(); // not behind the Xylem view
     if (want && !m.on) {
       m.on = true;
       run();
@@ -1486,16 +1486,53 @@ function syncMirrors() {
   donationLoop.sync(); programLoop.sync(); alertMirrorLoop.sync();
 }
 function setMobilePanel(p) {
+  if (p === 'xylem') return setXylem(true);
+  if (xylemOpen) setXylem(false);
   pref.set('mPanel', p);
   for (const c of ['chat', 'music', 'alert']) document.body.classList.toggle('mp-' + c, c === p);
   for (const b of $('mnav').children) b.classList.toggle('on', b.dataset.mp === p);
   syncMirrors();
 }
+
+// ---------------- Xylem inside the dashboard ----------------
+// The 🎮 Xylem button (and the phone tab) swaps the dashboard panels for the Xylem page, so a phone or iPad
+// doesn't have to juggle two tabs. The page is loaded the first time and then only hidden — switching back
+// is instant and the panels keep their place. While Xylem shows, the dashboard's OBS pictures stop; while the
+// dashboard shows, the hidden Xylem page stops polling. Ctrl/Shift/middle-click still opens a separate window.
+let xylemOpen = false;
+function setXylem(on) {
+  xylemOpen = !!on;
+  pref.set('xylemOpen', xylemOpen);
+  const f = $('xyFrame');
+  if (xylemOpen && !f.src) f.src = '/xylem?embed=1';
+  $('xyView').hidden = !xylemOpen;
+  document.body.classList.toggle('xy-open', xylemOpen);
+  $('xylemBtn').textContent = xylemOpen ? '← 대시보드' : '🎮 Xylem';
+  $('xylemBtn').classList.toggle('accent', xylemOpen);
+  const mp = pref.get('mPanel', 'chat');
+  for (const b of $('mnav').children) b.classList.toggle('on', xylemOpen ? b.dataset.mp === 'xylem' : b.dataset.mp === mp);
+  try { f.contentWindow?.postMessage({ allmind: 'xylem-visible', visible: xylemOpen }, location.origin); } catch {}
+  syncMirrors();
+  window.dockRefresh?.();
+}
+$('xylemBtn').addEventListener('click', (ev) => {
+  if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button !== 0) return; // a separate window, as before
+  ev.preventDefault();
+  buzz();
+  setXylem(!xylemOpen);
+});
+// the embedded page's "← 대시보드" / "새 창" buttons
+addEventListener('message', (ev) => {
+  if (ev.origin !== location.origin || ev.source !== $('xyFrame').contentWindow) return;
+  if (ev.data?.allmind === 'xylem-close') setXylem(false);
+  if (ev.data?.allmind === 'xylem-ready') ev.source.postMessage({ allmind: 'xylem-visible', visible: xylemOpen }, location.origin);
+});
 $('mnav').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-mp]');
   if (b) { buzz(); setMobilePanel(b.dataset.mp); }
 });
-setMobilePanel(pref.get('mPanel', 'chat'));
+setMobilePanel(pref.get('mPanel', 'chat') === 'xylem' ? 'chat' : pref.get('mPanel', 'chat'));
+if (pref.get('xylemOpen', false)) setXylem(true);
 // layout changes (rotate the iPad, fold/unfold the phone): some panels appear or disappear
 let layoutTimer = null;
 window.addEventListener('resize', () => {

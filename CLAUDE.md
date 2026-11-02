@@ -118,6 +118,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**. After an update the exe the owner originally started is overwritten in place (launcher env `ALLMIND_ORIGIN`/`ALLMIND_LAUNCHER`, `win.syncOriginLauncher`) — Windows-only, untested on a real PC.
 - `src/config.js` — config/state paths (`%APPDATA%\Allmind` in the exe), defaults from
   `config.example.json`. `src/win.js` — Windows bits (tray, firewall, pickers).
+- **Xylem inside the dashboard** (0.38.1): `#xylemBtn` / phone tab `data-mp="xylem"` → `setXylem()` shows `#xyView` (iframe `/xylem?embed=1`, loaded once, then only hidden) and hides `.layout`; mirrors don't run while `body.xy-open`; the embedded page (`EMBED` in `public/xylem/xylem.js`) skips polling while hidden (`postMessage` `xylem-visible`), shows a ↗ new-window button. Ctrl/Shift/middle-click = separate window as before.
 - `public/index.html`, `app.js`, `style.css` — dashboard. `dock.js` — free panel layout
   (columns, slots, tabs; saved per browser in `localStorage['sd.dock']`; only on wide
   landscape screens). `launcher.*` — settings window on the stream PC. `mark.html` — /mark page.
