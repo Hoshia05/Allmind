@@ -225,6 +225,28 @@
         <div class="sb-grid" id="sbGrid"></div>
       </section>
 
+      <!-- 할 일: 오늘 (this stream) / 창고 (ideas) / 한 것 -->
+      <section class="panel todo-panel" id="todoPanel">
+        <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
+          <h2>할 일</h2>
+          <div class="seg small" id="todoTabs">
+            <button data-tt="tonight" class="on" title="이번 방송에 할 것">오늘<span class="tab-count" id="tdN1"></span></button>
+            <button data-tt="idea" title="생각난 게임·콘텐츠·이야깃거리를 모아 두는 곳">창고<span class="muted td-n" id="tdN2"></span></button>
+            <button data-tt="done" title="해낸 것">한 것</button>
+          </div>
+          <button class="btn ghost icon small-btn todo-fold" id="todoFold" title="접기 / 펴기">▾</button>
+        </div>
+        <div class="todo-body" id="todoBody">
+          <form class="todo-add" id="todoAdd" autocomplete="off">
+            <input type="text" id="todoInput" maxlength="120" placeholder="생각난 것 바로 적기 (Enter)" enterkeyhint="done">
+            <select id="todoTag" title="분류 (선택)"><option value="">분류</option></select>
+          </form>
+          <div class="todo-filter" id="todoFilter"></div>
+          <ol class="todo-list" id="todoList"></ol>
+        </div>
+      </section>
+
       <section class="panel alert-panel">
         <div class="resizer h" data-r="alert-h" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
         <div class="panel-head">
@@ -248,6 +270,7 @@
     <button data-mp="chat" class="on">채팅<span class="tab-count" id="mnavUnread"></span></button>
     <button data-mp="music">음악</button>
     <button data-mp="alert">알림 화면</button>
+    <button data-mp="todo">할 일<span class="tab-count" id="mnavTodo"></span></button>
     <button data-mp="xylem">🎮 Xylem</button>
   </nav>
 
@@ -279,6 +302,14 @@
       <div class="check-sum" id="checkSum"></div>
       <div id="checkList" class="check-list"></div>
       <div class="row-btns"><button class="btn accent" id="checkRun">다시 점검</button><span class="muted small">OBS가 연결될 때와, 대시보드가 열려 있으면 10분마다 저절로 점검해요.</span></div>
+    </div>
+  </div>
+  <!-- 할 일: reminder when the stream starts -->
+  <div class="sheet-wrap" id="todoPopWrap" hidden>
+    <div class="sheet todo-pop" role="dialog" aria-label="오늘 할 것">
+      <div class="sheet-head"><b>🎬 방송 시작!</b><button class="btn ghost icon" id="todoPopClose" title="닫기">✕</button></div>
+      <div id="todoPopBody"></div>
+      <div class="row-btns"><button class="btn accent" id="todoPopOk">알겠어요</button><button class="btn" id="todoPopOpen">할 일 열기</button></div>
     </div>
   </div>
   <!-- 방송 기록 (리포트) -->

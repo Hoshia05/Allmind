@@ -61,6 +61,8 @@ function connectEvents() {
   es.addEventListener('chat-history', (e) => chatReset(JSON.parse(e.data)));
   es.addEventListener('fps', (e) => renderFps(JSON.parse(e.data)));
   es.addEventListener('chat', (e) => chatAdd(JSON.parse(e.data)));
+  es.addEventListener('todo', (e) => window.todoState?.(JSON.parse(e.data)));
+  es.addEventListener('todo-start', (e) => window.todoReminder?.(JSON.parse(e.data)));
   es.addEventListener('chat-update', (e) => chatUpdate(JSON.parse(e.data)));
   es.addEventListener('donations-history', (e) => donReset(JSON.parse(e.data)));
   es.addEventListener('donations', (e) => donAdd(JSON.parse(e.data)));
@@ -1489,7 +1491,7 @@ function setMobilePanel(p) {
   if (p === 'xylem') return setXylem(true);
   if (xylemOpen) setXylem(false);
   pref.set('mPanel', p);
-  for (const c of ['chat', 'music', 'alert']) document.body.classList.toggle('mp-' + c, c === p);
+  for (const c of ['chat', 'music', 'alert', 'todo']) document.body.classList.toggle('mp-' + c, c === p);
   for (const b of $('mnav').children) b.classList.toggle('on', b.dataset.mp === p);
   syncMirrors();
 }
@@ -1877,6 +1879,7 @@ async function showReport(id) {
     </ul></div>
     <div class="rep-sec"><h4>유튜브 아카이브</h4><ul><li>${!p.yt?.enabled ? '<span class="muted">안 씀</span>' : p.yt.live ? `<span class="rep-good">비공개로 올라갔어요</span> · ${esc(p.yt.title || '')}${p.yt.id ? ` · <a href="https://studio.youtube.com/video/${esc(p.yt.id)}/edit" target="_blank" rel="noopener">유튜브 스튜디오</a>` : ''}` : '<span class="rep-bad">유튜브 방송이 시작되지 않았어요</span>'}</li></ul></div>
     <div class="rep-sec"><h4>녹화 업로드</h4><ul>${upHtml}</ul></div>
+    ${p.plan && (p.plan.done.length || p.plan.left.length) ? `<div class="rep-sec"><h4>할 일</h4><ul>${p.plan.done.map((t) => `<li class="rep-good">✔ ${esc(t)}</li>`).join('')}${p.plan.left.map((t) => `<li class="muted">다음에: ${esc(t)}</li>`).join('')}</ul></div>` : ''}
     ${p.roulette.todo.length ? `<div class="rep-sec"><h4>아직 안 한 룰렛 결과</h4><ul>${p.roulette.todo.slice(0, 10).map((t) => `<li>${esc(t.nick)} — ${esc(t.result)}</li>`).join('')}${p.roulette.todo.length > 10 ? `<li class="muted">외 ${p.roulette.todo.length - 10}개 — Xylem 창의 룰렛 기록에서 완료 체크</li>` : ''}</ul></div>` : ''}
     <div class="rep-sec"><h4>방송 중 생긴 문제</h4><ul>${p.problems.length ? p.problems.map((x) => `<li>${esc(new Date(x.at).toTimeString().slice(0, 5))} ${esc(x.text)}</li>`).join('') : '<li class="rep-good">없었어요</li>'}</ul></div>`;
 }
@@ -1885,3 +1888,177 @@ $('reportPick').addEventListener('change', () => showReport($('reportPick').valu
 $('reportClose').addEventListener('click', () => { $('reportWrap').hidden = true; });
 $('reportWrap').addEventListener('click', (ev) => { if (ev.target === $('reportWrap')) $('reportWrap').hidden = true; });
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { $('checkWrap').hidden = true; $('reportWrap').hidden = true; } });
+
+
+// ---------------- 할 일 (오늘 / 창고 / 한 것) ----------------
+// A place for the games, content and talk topics thought of between streams, so they aren't forgotten
+// once the stream starts. 오늘 = picked for this stream (shown again when the stream starts), 창고 = all ideas,
+// 한 것 = checked off (moved there when the stream ends). Checking one off while recording drops a ⭐ mark.
+(() => {
+  let items = [], tags = [];
+  let tab = pref.get('todoTab', 'tonight');
+  let filter = '';                       // 창고: tag filter
+  let oldest = pref.get('todoOldest', true); // 창고: oldest first, so ideas don't sink
+  let editing = null;                    // item id being edited
+  let armed = null;                      // item id whose ✕ was pressed once
+  const panel = $('todoPanel');
+  const fold = (on) => { panel.classList.toggle('folded', on); pref.set('todoFolded', on); };
+  fold(pref.get('todoFolded', true)); // fixed layouts: folded until opened (a tab in the free layout)
+
+  const age = (t) => {
+    const d = Math.floor((Date.now() - t) / 86400000);
+    return d < 1 ? '오늘' : d < 7 ? `${d}일` : d < 60 ? `${Math.floor(d / 7)}주` : `${Math.floor(d / 30)}달`;
+  };
+  const dayOf = (t) => { const d = new Date(t); return `${d.getMonth() + 1}월 ${d.getDate()}일`; };
+  const tagHtml = (t) => (t ? `<span class="td-tag t-${esc(t)}">${esc(t)}</span>` : '');
+  const noteHtml = (it) => (it.note ? `<span class="td-note" title="${esc(it.note)}">📝</span>` : '');
+
+  function itemHtml(it) {
+    if (editing === it.id) {
+      return `<li class="todo-edit" data-id="${esc(it.id)}">
+        <input data-f="title" value="${esc(it.title)}" maxlength="120">
+        <select data-f="tag"><option value="">분류 없음</option>${tags.map((t) => `<option${t === it.tag ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>
+        <textarea data-f="note" placeholder="메모 (링크, 준비할 것…)" maxlength="1000">${esc(it.note)}</textarea>
+        <div class="row-btns"><button class="btn accent small-btn" data-do="save">저장</button><button class="btn ghost small-btn" data-do="cancel">취소</button>
+        <button class="btn ghost small-btn${armed === it.id ? ' danger' : ''}" data-do="del" style="margin-left:auto">${armed === it.id ? '한 번 더 누르면 지워요' : '지우기'}</button></div></li>`;
+    }
+    const title = `<span class="td-title" data-do="edit" title="눌러서 고치기${it.note ? '\n\n' + esc(it.note) : ''}">${esc(it.title)}${noteHtml(it)}</span>`;
+    if (it.status === 'tonight') {
+      return `<li class="td-item${it.done ? ' done' : ''}" data-id="${esc(it.id)}"><input type="checkbox" data-do="check"${it.done ? ' checked' : ''} title="했어요 (녹화 중이면 ⭐ 마크도)">${title}${tagHtml(it.tag)}
+        ${it.done ? '' : '<button class="td-act" data-do="to-idea" title="창고로 돌려보내기">↩</button>'}</li>`;
+    }
+    if (it.status === 'idea') {
+      return `<li class="td-item" data-id="${esc(it.id)}">${tagHtml(it.tag)}${title}<span class="td-age" title="창고에 들어온 지">${age(it.moved)}</span>
+        <button class="td-act go" data-do="to-tonight" title="이번 방송에 하기">오늘 +</button></li>`;
+    }
+    return `<li class="td-item done" data-id="${esc(it.id)}">${tagHtml(it.tag)}${title}<button class="td-act" data-do="to-idea" title="다시 창고로 (또 하고 싶을 때)">↩</button></li>`;
+  }
+
+  function render() {
+    const tonight = items.filter((x) => x.status === 'tonight');
+    const ideas = items.filter((x) => x.status === 'idea');
+    const done = items.filter((x) => x.status === 'done');
+    const open = tonight.filter((x) => !x.done).length;
+    $('tdN1').textContent = open ? String(open) : '';
+    $('mnavTodo').textContent = open ? String(open) : '';
+    $('tdN2').textContent = ideas.length ? String(ideas.length) : '';
+    for (const b of $('todoTabs').children) b.classList.toggle('on', b.dataset.tt === tab);
+    $('todoInput').placeholder = tab === 'tonight' ? '오늘 할 것 추가 (Enter)' : '생각난 것 바로 적기 (Enter)';
+    // 창고: tag filter + sort
+    if (tab === 'idea' && ideas.length) {
+      const used = tags.filter((t) => ideas.some((x) => x.tag === t));
+      $('todoFilter').innerHTML = (used.length ? ['', ...used].map((t) => `<button class="td-chip${filter === t ? ' on' : ''}" data-filter="${esc(t)}">${t ? esc(t) : '전체'}</button>`).join('') : '')
+        + `<button class="td-sort" data-do="sort">${oldest ? '오래된 것부터 ▾' : '최근 것부터 ▾'}</button>`;
+    } else $('todoFilter').innerHTML = '';
+    let list, empty;
+    if (tab === 'tonight') {
+      list = [...tonight].sort((a, b) => a.done - b.done || a.moved - b.moved);
+      empty = ideas.length ? `오늘 할 걸 아직 안 골랐어요<br><button class="btn small-btn" data-goto="idea" style="margin-top:6px">창고에서 고르기 (${ideas.length})</button>` : '위 칸에 오늘 할 것을 적어 보세요';
+    } else if (tab === 'idea') {
+      list = ideas.filter((x) => !filter || x.tag === filter).sort((a, b) => (oldest ? a.moved - b.moved : b.moved - a.moved));
+      empty = '생각난 게임·콘텐츠·이야깃거리를 위 칸에 바로 적어 두세요';
+    } else {
+      list = [...done].sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+      empty = '방송에서 체크한 것이 방송이 끝나면 여기로 와요';
+    }
+    let html = '', lastDay = '';
+    for (const it of list) {
+      if (tab === 'done') { const d = dayOf(it.doneAt || it.moved); if (d !== lastDay) { html += `<li class="td-day">${d}</li>`; lastDay = d; } }
+      html += itemHtml(it);
+    }
+    $('todoList').innerHTML = html || `<li class="td-empty">${empty}</li>`;
+  }
+
+  window.todoState = (v) => {
+    items = v.items || []; tags = v.tags || [];
+    if (!$('todoTag').options.length || $('todoTag').options.length !== tags.length + 1) {
+      $('todoTag').innerHTML = '<option value="">분류</option>' + tags.map((t) => `<option>${esc(t)}</option>`).join('');
+    }
+    if (editing && !items.some((x) => x.id === editing)) editing = null;
+    // don't wipe an edit in progress
+    if (editing && $('todoList').contains(document.activeElement)) return;
+    render();
+  };
+
+  function setTab(t) { tab = t; pref.set('todoTab', t); editing = null; armed = null; render(); }
+  $('todoTabs').addEventListener('click', (ev) => { const b = ev.target.closest('[data-tt]'); if (b) { fold(false); setTab(b.dataset.tt); } });
+  $('todoFold').addEventListener('click', () => fold(!panel.classList.contains('folded')));
+  panel.querySelector('.panel-head h2').addEventListener('click', () => fold(!panel.classList.contains('folded')));
+
+  $('todoAdd').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const title = $('todoInput').value.trim();
+    if (!title) return;
+    if (tab === 'done') setTab('idea');
+    const r = await api('todo/add', { title, tag: $('todoTag').value, tonight: tab === 'tonight' });
+    if (r.ok) { $('todoInput').value = ''; $('todoTag').value = ''; if (tab === 'tonight') toast('오늘 할 것에 넣었어요'); }
+  });
+
+  $('todoFilter').addEventListener('click', (ev) => {
+    const c = ev.target.closest('[data-filter]');
+    if (c) { filter = c.dataset.filter; render(); return; }
+    if (ev.target.closest('[data-do=sort]')) { oldest = !oldest; pref.set('todoOldest', oldest); render(); }
+  });
+
+  $('todoList').addEventListener('click', async (ev) => {
+    const go = ev.target.closest('[data-goto]');
+    if (go) { setTab(go.dataset.goto); return; }
+    const el = ev.target.closest('[data-do]');
+    const li = ev.target.closest('[data-id]');
+    if (!el || !li) return;
+    const id = li.dataset.id, what = el.dataset.do;
+    if (what === 'check') {
+      buzz();
+      const r = await api('todo/check', { id, done: el.checked });
+      if (r.ok && r.marked) toast(`⭐ "${r.item.title}" — 녹화에 마크도 남겼어요`);
+      return;
+    }
+    if (what === 'edit') { editing = id; armed = null; render(); $('todoList').querySelector('[data-f=title]')?.focus(); return; }
+    if (what === 'cancel') { editing = null; armed = null; render(); return; }
+    if (what === 'save') {
+      const f = (k) => li.querySelector(`[data-f=${k}]`).value;
+      const r = await api('todo/update', { id, patch: { title: f('title'), tag: f('tag'), note: f('note') } });
+      if (r.ok) { editing = null; render(); }
+      return;
+    }
+    if (what === 'del') {
+      if (armed !== id) { armed = id; render(); setTimeout(() => { if (armed === id) { armed = null; render(); } }, 4000); return; }
+      armed = null; editing = null;
+      await api('todo/remove', { id });
+      return;
+    }
+    if (what === 'to-tonight') { buzz(); const r = await api('todo/update', { id, patch: { status: 'tonight' } }); if (r.ok) toast(`오늘 할 것: ${r.item.title}`); return; }
+    if (what === 'to-idea') { await api('todo/update', { id, patch: { status: 'idea' } }); return; }
+  });
+  $('todoList').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && ev.target.matches('.todo-edit input')) { ev.preventDefault(); ev.target.closest('.todo-edit').querySelector('[data-do=save]').click(); }
+    if (ev.key === 'Escape' && editing) { editing = null; render(); }
+  });
+
+  // show the panel (from the reminder): free layout → its tab, phones → 음악 tab, fixed layout → unfold
+  function openPanel(t) {
+    if (typeof xylemOpen !== 'undefined' && xylemOpen) setXylem(false);
+    fold(false);
+    setTab(t);
+    if (!window.dockShow?.('todo') && matchMedia('(max-width: 640px), (max-height: 500px) and (orientation: landscape)').matches) setMobilePanel('todo');
+    panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // the stream started: what was planned for tonight
+  window.todoReminder = (r) => {
+    const t = r.tonight || [];
+    if (!t.length && !r.ideas) return;
+    $('todoPopBody').innerHTML = t.length
+      ? `<div><b>오늘 할 것 ${t.length}개</b></div><ol>${t.map((x) => `<li>${esc(x.title)}${x.tag ? ` <span class="td-tag t-${esc(x.tag)}">${esc(x.tag)}</span>` : ''}</li>`).join('')}</ol>`
+      : `<p>오늘 할 것을 아직 안 골랐어요.<br><span class="muted">창고에 ${r.ideas}개가 기다리고 있어요.</span></p>`;
+    $('todoPopOpen').textContent = t.length ? '할 일 열기' : '창고 열기';
+    $('todoPopOpen').dataset.tab = t.length ? 'tonight' : 'idea';
+    $('todoPopWrap').hidden = false;
+  };
+  const closePop = () => { $('todoPopWrap').hidden = true; };
+  $('todoPopOk').addEventListener('click', closePop);
+  $('todoPopClose').addEventListener('click', closePop);
+  $('todoPopWrap').addEventListener('click', (ev) => { if (ev.target === $('todoPopWrap')) closePop(); });
+  $('todoPopOpen').addEventListener('click', () => { closePop(); openPanel($('todoPopOpen').dataset.tab); });
+  render();
+})();

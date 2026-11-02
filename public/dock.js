@@ -15,13 +15,14 @@
     music: { el: document.querySelector('.panel.music'), title: '음악', minH: 160 },
     sb: { el: document.getElementById('sbPanel'), title: '사운드보드', minH: 90 },
     alert: { el: document.querySelector('.alert-panel'), title: '알림 화면', minH: 100 },
+    todo: { el: document.getElementById('todoPanel'), title: '할 일', minH: 120, tabWith: 'sb' },
   };
   const slot = (ids, h = 1) => ({ ids, active: ids[0], h });
   const DEFAULT = () => ({
     cols: [
       { w: null, slots: [slot(['viewer'])] },
       { w: 340, slots: [slot(['chat'])] },
-      { w: 340, slots: [slot(['music'], 0.9), slot(['sb'], 0.85), slot(['alert'])] },
+      { w: 340, slots: [slot(['music'], 0.9), slot(['sb', 'todo'], 0.85), slot(['alert'])] },
     ],
   });
   const KEY = 'sd.dock';
@@ -62,7 +63,12 @@
     }
     model.cols = model.cols.filter((c) => c.slots.length);
     if (!model.cols.length) { model = DEFAULT(); return normalize(); }
-    for (const id of homeOrder) if (!seen.has(id)) model.cols.at(-1).slots.push(slot([id]));
+    for (const id of homeOrder) {
+      if (seen.has(id)) continue;
+      // a panel added in a newer version: as a tab next to its partner (할 일 → 사운드보드), else at the end
+      const partner = PANELS[id].tabWith && model.cols.flatMap((c) => c.slots).find((s) => s.ids.includes(PANELS[id].tabWith));
+      if (partner) partner.ids.push(id); else model.cols.at(-1).slots.push(slot([id]));
+    }
     const fill = model.cols.find((c) => c.w == null) || model.cols.find((c) => c.slots.some((s) => s.ids.includes('viewer'))) || model.cols[0];
     for (const c of model.cols) if (c !== fill && c.w == null) c.w = 340;
     fill.w = null;
@@ -373,6 +379,16 @@
 
   // re-place gaps when a panel is shown/hidden by the app (채팅 숨기기)
   window.dockRefresh = () => { if (docked) render(); };
+  // bring a panel's tab to the front (e.g. 할 일 from the stream-start reminder)
+  window.dockShow = (id) => {
+    if (!docked) return false;
+    const s = model.cols.flatMap((c) => c.slots).find((x) => x.ids.includes(id));
+    if (!s) return false;
+    s.active = id;
+    save();
+    render();
+    return true;
+  };
   wide.addEventListener('change', sync);
   sync();
 })();

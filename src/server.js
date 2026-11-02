@@ -30,6 +30,7 @@ import { Dogfight } from './dogfight.js';
 import { XylemPack } from './xylem.js';
 import { Roulette } from './roulette.js';
 import { TextBoxes } from './textbox.js';
+import { TodoList } from './todo.js';
 import { ObsLogWatch } from './obslog.js';
 import { Deck } from './deck.js';
 import { VTS } from './vts.js';
@@ -38,7 +39,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.38.1';
+const VERSION = '0.39.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -156,6 +157,9 @@ async function main() {
   // While live, Chzzk's own title is the truth (it may be edited there); before that, the panel's.
   const streamTitle = () => (chzzk.live?.isLive ? chzzk.live.title : '') || prepFresh() || chzzk.live?.title || chzzk.live?.category || '';
   const markers = new Markers(obs, { fallbackDir: path.join(DATA_DIR, 'markers'), saveChat: config.markers?.saveChat !== false, getTitle: streamTitle });
+  // 할 일: the streamer's idea list (창고 / 오늘 / 한 것); changes go to every dashboard (sendAll is hoisted)
+  const todo = new TodoList(markers);
+  todo.on('change', (v) => sendAll('todo', v));
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
   // nickname popup: Chzzk's profile card + 관리 actions, through the logged-in 리모컨 dock
@@ -317,7 +321,12 @@ async function main() {
       reports?.start().catch((e) => console.warn('[report]', e.message));
       const t = new Date();
       chzzk.note(`— 방송 시작 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} —`);
-    } else reports?.finish().catch((e) => console.warn('[report]', e.message));
+      // the reminder: what was planned for tonight (or that nothing was picked yet)
+      setTimeout(() => { if (obsStreaming && todo) sendAll('todo-start', todo.reminder()); }, 4000);
+    } else {
+      (reports ? reports.finish() : Promise.resolve()).catch((e) => console.warn('[report]', e.message))
+        .finally(() => todo?.archive()); // the report counts what got done first
+    }
     if (!active) { streamEndedAt = Date.now(); streamReconnect = null; setTimeout(() => drive.kick(), 5 * 60000 + 3000); }
     stateChanged();
   };
@@ -365,7 +374,7 @@ async function main() {
   const vtsThrow = new VTSThrow(vts, chzzk);
   vts.apply();
   // 방송 리포트 (src/report.js): one summary per stream
-  reports = new StreamReports({ obs, chzzk, youtube, markers, roulette, drive });
+  reports = new StreamReports({ obs, chzzk, youtube, markers, roulette, drive, todo });
   reports.on('change', () => stateChanged());
   reports.on('ready', () => sendAll('toast', { text: '📋 방송 리포트가 준비됐어요 — 위쪽 "방송 기록"에서 볼 수 있어요', long: true }));
   // while a Xylem page is open, look for a newer pack every 3 min (one small GitHub request)
@@ -688,6 +697,10 @@ async function main() {
     'POST /api/xylem/check': async () => ({ pack: await xylem.check() }),
     'POST /api/xylem/apply': async () => ({ pack: await xylem.apply() }),
     'POST /api/xylem/use': (b) => ({ pack: xylem.use(b.version || null) }),
+    'POST /api/todo/add': (b) => todo.add(b),
+    'POST /api/todo/update': (b) => todo.update(String(b.id || ''), b.patch || {}),
+    'POST /api/todo/remove': (b) => todo.remove(String(b.id || '')),
+    'POST /api/todo/check': (b) => todo.check(String(b.id || ''), !!b.done),
     'POST /api/text/set': (b) => ({ box: textBoxes.set(String(b.id || ''), b.patch || {}) }),
     'POST /api/text/forget': (b) => ({ box: textBoxes.forget(String(b.id || ''), String(b.text ?? '')) }),
     'POST /api/text/add': (b) => ({ box: textBoxes.add(b.copyFrom ? String(b.copyFrom) : null) }),
@@ -1066,6 +1079,7 @@ async function main() {
       if (studio.health) res.write(`event: health\ndata: ${JSON.stringify(studio.health)}\n\n`);
       res.write(`event: chat-history\ndata: ${JSON.stringify(chzzk.chat)}\n\n`);
       res.write(`event: donations-history\ndata: ${JSON.stringify(chzzk.donationList())}\n\n`);
+      if (todo) res.write(`event: todo\ndata: ${JSON.stringify(todo.view())}\n\n`);
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;

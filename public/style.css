@@ -551,6 +551,14 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
   body.mp-chat .side, body.mp-music .chat-panel, body.mp-alert .chat-panel,
   body.mp-music .alert-panel, body.mp-alert .music { display: none !important; }
   body.mp-chat .layout.no-chat .chat-panel { display: flex; }
+  /* 할 일 has its own tab on phones (the 음악 tab is full already) */
+  body.mp-todo .chat-panel, body.mp-todo .music, body.mp-todo .sb-panel, body.mp-todo .alert-panel,
+  body.mp-chat .todo-panel, body.mp-music .todo-panel, body.mp-alert .todo-panel { display: none !important; }
+  body.mp-todo .todo-panel { flex: 1 1 auto; }
+  body.mp-todo .todo-panel .todo-body { display: flex; }
+  body.mp-todo .todo-fold { display: none; }
+  body.mp-todo .todo-list { max-height: none; flex: 1 1 auto; }
+  .mnav button { font-size: 12.5px; }
   .mnav {
     display: flex; flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel);
     padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -893,3 +901,47 @@ body.xy-open .layout { display: none !important; }
 #reportPick { margin-left: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; max-width: 360px; }
 .msg.divider { text-align: center; color: var(--accent-2); font-style: normal; font-weight: 700; font-size: 12px; border-top: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent); margin: 8px 0 4px; padding-top: 6px; }
 #chatPanel:has(#chatText[hidden]) .text-only { display: none; }
+
+/* ---------- 할 일 ---------- */
+.todo-panel { flex: none; display: flex; flex-direction: column; min-height: 0; }
+.todo-panel .panel-head .seg { margin-left: auto; }
+.todo-panel .tab-count:empty, .td-n:empty { display: none; }
+.td-n { margin-left: 4px; font-size: 11px; }
+.todo-panel.folded .todo-body { display: none; }
+.todo-panel.folded .todo-fold { transform: rotate(-90deg); }
+.layout.docked .todo-fold { display: none; }
+.layout.docked .todo-panel .todo-body { display: flex; }
+.todo-body { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: 1 1 auto; }
+.todo-add { display: flex; gap: 6px; }
+.todo-add input { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; outline: none; }
+.todo-add input:focus { border-color: var(--accent); }
+.todo-add select, .todo-edit select { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 0 6px; }
+.todo-filter { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.todo-filter:empty { display: none; }
+.td-chip { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px; padding: 1px 9px; font-size: 12px; cursor: pointer; }
+.td-chip.on { border-color: var(--accent); color: var(--accent-2); }
+.td-sort { margin-left: auto; font-size: 11.5px; color: var(--muted); background: none; border: 0; cursor: pointer; }
+.todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; max-height: 280px; min-height: 0; }
+.layout.docked .todo-list { max-height: none; flex: 1 1 auto; }
+.td-item { display: flex; align-items: center; gap: 8px; padding: 6px 6px; border-radius: 8px; }
+.td-item:hover { background: var(--panel-2); }
+.td-item input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex: none; cursor: pointer; }
+.td-title { flex: 1; min-width: 0; cursor: pointer; overflow-wrap: anywhere; line-height: 1.35; }
+.td-item.done .td-title { text-decoration: line-through; color: var(--muted); }
+.td-note { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+.td-tag { flex: none; font-size: 10.5px; font-weight: 700; padding: 0 6px; border-radius: 4px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+.td-tag.t-게임 { color: #8fd3ff; border-color: #24465a; } .td-tag.t-콘텐츠 { color: #ffcf5c; border-color: #5a4720; }
+.td-tag.t-토크 { color: #b9a4ff; border-color: #3d3166; } .td-tag.t-공지 { color: #ff9e9e; border-color: #5c2a2a; }
+.td-age { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.td-act { flex: none; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 7px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.td-act:hover { border-color: var(--accent); }
+.td-act.go { color: var(--accent-2); }
+.td-act.armed { border-color: var(--bad); color: var(--bad); }
+.td-day { font-size: 11.5px; color: var(--muted); padding: 8px 6px 2px; }
+.td-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 16px 8px; line-height: 1.6; }
+.todo-edit { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel-2); }
+.todo-edit input, .todo-edit textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; color: var(--text); font: inherit; outline: none; }
+.todo-edit textarea { min-height: 54px; resize: vertical; }
+.todo-edit .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.todo-pop ol { margin: 8px 0 4px; padding-left: 22px; line-height: 1.9; font-size: 15px; }
+@media (pointer: coarse) { .td-item { padding: 9px 6px; } .td-act { padding: 5px 10px; } }

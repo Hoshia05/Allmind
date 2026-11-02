@@ -153,6 +153,7 @@ export class StreamReports extends EventEmitter {
       roulette: { spins: roulette.length, todo: roulette.filter((x) => !x.done && !x.wheel).map((x) => ({ id: x.id, nick: x.nick, result: x.result })) },
       health: { dropPct: pct('net'), dropFrames: b && a ? Math.max(0, b.netSkip - a.netSkip) : b?.netSkip ?? null, renderPct: pct('ren'), encodePct: pct('enc') },
       yt: r.yt, problems: r.problems,
+      plan: this.c.todo ? this.c.todo.summary(r.startedAt, r.endedAt) : null, // 할 일: done during it / still open
     };
     this.list.push(rep);
     if (!stale) this.recent = { r, rep, at: Date.now() };
