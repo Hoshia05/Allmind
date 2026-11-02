@@ -1,7 +1,7 @@
 {
-  "version": "1.3.1",
-  "minAllmind": "0.36.0",
-  "notes": "치즈 룰렛: 룰렛마다 가격(정확한 금액만 돌아감), 여러 개, 안내판 오버레이, !룰렛 채팅 명령어",
+  "version": "1.4.0",
+  "minAllmind": "0.38.0",
+  "notes": "텍스트: 방송 화면에 글자 띄우기 — 글꼴·크기·색·배경·위치·애니메이션을 실시간으로",
   "modules": [
     {
       "id": "roulette",
@@ -18,6 +18,13 @@
       "panel": "dogfight.panel.js"
     },
     {
+      "id": "text",
+      "name": "텍스트",
+      "icon": "🔤",
+      "overlay": "/text",
+      "panel": "text.panel.js"
+    },
+    {
       "id": "vts",
       "name": "VTube Studio",
       "icon": "🎭",
@@ -31,8 +38,10 @@
     "roulette-board.html": "fe0bc20b3ff7e8a20b8625a7bcd6389d038a560978d6858bd968a2db7f58d3af",
     "roulette.html": "468984d7068994780976cd5abfb3212ea5f58dbbe39d17e93e067fcc9debd6ce",
     "roulette.panel.js": "c41fa55ed79ca67489156866c5a7ca2097c150caebd03be5249e59d467f3077d",
+    "text.html": "bbfa48ec6eb73d129b3f809c960e97b917adcbb8cbae192e33c2a16e6c63fbde",
+    "text.panel.js": "e5d6c50376c4cb068600435c3ab42d69d638836cf53d7a5423195c9735311343",
     "vts.panel.js": "0467802dd1f7b07552f80c2136da9f8a095f97297ea2faf656ae85d7b9055031",
-    "xylem.css": "9beca687e02cd7166da271da373c22572c27410e54f457e95a96a13256c644fe",
+    "xylem.css": "390ec3eb133be0e0eb42f8d3687d90a0eeee55c791a683eb9b7c8e97cdbbb6be",
     "xylem.js": "fbb957a47f82396cef1eed8e1e408679aaad04008bbdeae4f31f100122b69e21"
   }
 }

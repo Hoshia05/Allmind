@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Allmind 텍스트</title>
+<!-- OBS browser source: http://localhost:<port>/text?id=1 — 1920×1080, transparent. Everything about the box
+     (text, style, animations) is set on the Xylem page (텍스트) and arrives here live. -->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  #stage { position: fixed; inset: 0; }
+  #pos { position: absolute; display: flex; }
+  #anim, #loop { display: flex; }
+  #box { box-sizing: border-box; overflow-wrap: anywhere; }
+  /* the outline is its own layer under the text (so a gradient fill isn't painted over by the stroke) */
+  #stack { display: grid; }
+  #stack > span { grid-area: 1 / 1; white-space: pre-wrap; display: block; }
+  #outline { -webkit-text-fill-color: currentColor; }
+  #box.marquee { overflow: hidden; }
+  #box.marquee #stack { display: inline-grid; animation: marquee var(--mq) linear infinite; }
+  #box.marquee #stack > span { white-space: pre; }
+  .hidden { visibility: hidden; }
+  .caret::after { content: '▍'; opacity: .7; animation: blink 0.9s steps(1) infinite; }
+
+  /* entrance (played reversed for the exit) */
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slide-up { from { opacity: 0; transform: translateY(60px); } to { opacity: 1; transform: none; } }
+  @keyframes slide-down { from { opacity: 0; transform: translateY(-60px); } to { opacity: 1; transform: none; } }
+  @keyframes slide-left { from { opacity: 0; transform: translateX(120px); } to { opacity: 1; transform: none; } }
+  @keyframes slide-right { from { opacity: 0; transform: translateX(-120px); } to { opacity: 1; transform: none; } }
+  @keyframes pop { 0% { opacity: 0; transform: scale(.4); } 65% { opacity: 1; transform: scale(1.08); } 100% { transform: scale(1); } }
+  @keyframes zoom { from { opacity: 0; transform: scale(1.6); } to { opacity: 1; transform: none; } }
+  @keyframes blur { from { opacity: 0; filter: blur(18px); } to { opacity: 1; filter: none; } }
+  /* always running */
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+  @keyframes shake { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-3px, 1px); } 40% { transform: translate(3px, -1px); } 60% { transform: translate(-2px, -1px); } 80% { transform: translate(2px, 1px); } }
+  @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-2.5deg); } 75% { transform: rotate(2.5deg); } }
+  @keyframes glow { 0%, 100% { filter: drop-shadow(0 0 2px var(--glow)); } 50% { filter: drop-shadow(0 0 16px var(--glow)) drop-shadow(0 0 4px var(--glow)); } }
+  @keyframes rainbow { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+  @keyframes marquee { from { transform: translateX(var(--mq-from)); } to { transform: translateX(var(--mq-to)); } }
+</style>
+</head>
+<body>
+<div id="stage"><div id="pos" class="hidden"><div id="anim"><div id="loop"><div id="box"><div id="stack"><span id="outline" aria-hidden="true"></span><span id="txt"></span></div></div></div></div></div></div>
+<script>
+const q = new URLSearchParams(location.search);
+const ID = q.get('id') || null;            // which box; none = the first one
+const PREVIEW = q.get('preview') === '1';  // the small preview on the Xylem page
+const $ = (id) => document.getElementById(id);
+
+// fonts the Xylem page offers, loaded from Google Fonts on demand (OBS's browser is online);
+// any other name is used as an installed Windows font
+const GOOGLE = {
+  'Noto Sans KR': 'wght@100..900', 'Noto Serif KR': 'wght@200..900', 'Nanum Gothic': 'wght@400;700;800', 'Nanum Myeongjo': 'wght@400;700;800',
+  'Gothic A1': 'wght@100;200;300;400;500;600;700;800;900', 'IBM Plex Sans KR': 'wght@100;200;300;400;500;600;700',
+  'Black Han Sans': '', 'Do Hyeon': '', 'Jua': '', 'Gowun Dodum': '', 'Gowun Batang': 'wght@400;700', 'Nanum Pen Script': '', 'Gaegu': 'wght@300;400;700',
+  'Sunflower': 'wght@300;500;700', 'Dongle': 'wght@300;400;700', 'Hi Melody': '', 'Yeon Sung': '', 'Song Myung': '', 'Gugi': '', 'Orbit': '',
+  'Bagel Fat One': '', 'Dokdo': '', 'Stylish': '', 'East Sea Dokdo': '', 'Cute Font': '', 'Poor Story': '', 'Single Day': '', 'Gamja Flower': '',
+  'Kirang Haerang': '', 'Diphylleia': '', 'Moirai One': '', 'Black And White Picture': '',
+};
+const loaded = new Set();
+function loadFont(name) {
+  if (!(name in GOOGLE) || loaded.has(name)) return Promise.resolve();
+  loaded.add(name);
+  const l = document.createElement('link');
+  l.rel = 'stylesheet';
+  l.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name).replace(/%20/g, '+')}${GOOGLE[name] ? ':' + GOOGLE[name] : ''}&display=swap`;
+  document.head.append(l);
+  return new Promise((ok) => { l.onload = l.onerror = ok; setTimeout(ok, 2500); });
+}
+
+const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+const graphemes = (s) => (window.Intl?.Segmenter ? [...new Intl.Segmenter('ko', { granularity: 'grapheme' }).segment(s)].map((x) => x.segment) : [...s]);
+
+let cur = null;      // the box as last drawn
+let shown = false;   // on screen (or entering)
+let typing = null;   // typewriter timer
+
+function applyStyle(b) {
+  const s = b.style, a = b.anim;
+  loadFont(s.font);
+  const pos = $('pos'), box = $('box'), txt = $('txt'), loop = $('loop'), ol = $('outline'), stack = $('stack');
+  // where: 3×3 anchor, offset = distance from that edge (or a shift from the centre)
+  const [row, col] = s.anchor;
+  pos.style.left = pos.style.right = pos.style.top = pos.style.bottom = '';
+  let tx = '0', ty = '0';
+  if (col === 'l') pos.style.left = s.offsetX + 'px';
+  else if (col === 'r') pos.style.right = s.offsetX + 'px';
+  else { pos.style.left = '50%'; tx = `calc(-50% + ${s.offsetX}px)`; }
+  if (row === 't') pos.style.top = s.offsetY + 'px';
+  else if (row === 'b') pos.style.bottom = s.offsetY + 'px';
+  else { pos.style.top = '50%'; ty = `calc(-50% + ${s.offsetY}px)`; }
+  pos.style.transform = `translate(${tx}, ${ty})`;
+  pos.style.justifyContent = col === 'l' ? 'flex-start' : col === 'r' ? 'flex-end' : 'center';
+
+  box.style.maxWidth = s.maxWidth + 'px';
+  box.style.padding = `${s.padY}px ${s.padX}px`;
+  box.style.borderRadius = s.radius + 'px';
+  box.style.background = s.bgAlpha > 0 ? hexA(s.bgColor, s.bgAlpha / 100) : 'transparent';
+  box.style.border = s.borderWidth > 0 ? `${s.borderWidth}px solid ${s.borderColor}` : '0';
+  box.style.textAlign = s.align;
+
+  for (const e of [txt, ol]) {
+    e.style.fontFamily = `"${s.font}", "Noto Sans KR", "Malgun Gothic", sans-serif`;
+    e.style.fontSize = s.size + 'px';
+    e.style.fontWeight = s.weight;
+    e.style.fontStyle = s.italic ? 'italic' : 'normal';
+    e.style.letterSpacing = s.letterSpacing + 'px';
+    e.style.lineHeight = s.lineHeight;
+  }
+  if (s.gradient) {
+    txt.style.background = `linear-gradient(180deg, ${s.color}, ${s.color2})`;
+    txt.style.webkitBackgroundClip = txt.style.backgroundClip = 'text';
+    txt.style.webkitTextFillColor = 'transparent';
+    txt.style.color = s.color;
+  } else {
+    txt.style.background = 'none';
+    txt.style.webkitTextFillColor = '';
+    txt.style.color = s.color;
+  }
+  // outline: the layer underneath, stroked twice as wide (half of it is hidden under the text)
+  ol.style.display = s.outlineWidth > 0 ? '' : 'none';
+  ol.style.color = s.outlineColor;
+  ol.style.webkitTextStroke = `${s.outlineWidth * 2}px ${s.outlineColor}`;
+  stack.style.filter = s.shadow > 0 ? `drop-shadow(0 ${Math.round(s.shadow / 3)}px ${s.shadow}px ${hexA(s.shadowColor, s.shadowAlpha / 100)})` : 'none';
+
+  // the always-running animation
+  const spd = a.speed || 1;
+  const dur = { float: 3, pulse: 1.6, shake: 0.35, wiggle: 1.2, glow: 2, rainbow: 6, blink: 1.2 }[a.loop];
+  loop.style.setProperty('--glow', s.gradient ? s.color2 : s.color);
+  loop.style.animation = a.loop !== 'none' && a.loop !== 'marquee' ? `${a.loop} ${dur / spd}s ease-in-out infinite` : 'none';
+  if (a.loop === 'rainbow') loop.style.animationTimingFunction = 'linear';
+  box.classList.toggle('marquee', a.loop === 'marquee');
+  if (a.loop === 'marquee') {
+    box.style.width = s.maxWidth + 'px';
+    requestAnimationFrame(() => {
+      const w = stack.scrollWidth, bw = box.clientWidth;
+      stack.style.setProperty('--mq-from', bw + 'px');
+      stack.style.setProperty('--mq-to', -w + 'px');
+      stack.style.setProperty('--mq', ((bw + w) / (140 * spd)).toFixed(2) + 's'); // 140 px/s at 1×
+    });
+  } else box.style.width = '';
+}
+
+function play(name, { reverse = false, ms = 450 } = {}) {
+  const el = $('anim');
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  if (name === 'none' || name === 'typewriter') return Promise.resolve();
+  const d = ms / ((cur?.anim.speed) || 1);
+  el.style.animation = `${name} ${d}ms ${reverse ? 'ease-in' : 'cubic-bezier(.2,.8,.2,1)'} both${reverse ? ' reverse' : ''}`;
+  return new Promise((ok) => setTimeout(ok, d));
+}
+
+function setText(text, typewriter) {
+  clearInterval(typing);
+  const txt = $('txt');
+  const put = (t) => { txt.textContent = t; $('outline').textContent = t; };
+  txt.classList.remove('caret');
+  if (!typewriter) { put(text); return; }
+  const parts = graphemes(text);
+  let i = 0;
+  put('');
+  txt.classList.add('caret');
+  const step = 1000 / (22 * ((cur?.anim.speed) || 1));
+  typing = setInterval(() => {
+    i++;
+    put(parts.slice(0, i).join(''));
+    if (i >= parts.length) { clearInterval(typing); txt.classList.remove('caret'); if (cur.anim.loop === 'marquee') applyStyle(cur); }
+  }, step);
+}
+
+async function draw(b) {
+  const prev = cur;
+  cur = b;
+  const want = b.visible && b.text.trim() !== '';
+  applyStyle(b);
+  if (!want) {
+    if (shown) { shown = false; await play(b.anim.in === 'typewriter' ? 'fade' : b.anim.in, { reverse: true, ms: 350 }); if (!shown) $('pos').classList.add('hidden'); }
+    else $('pos').classList.add('hidden');
+    return;
+  }
+  if (!shown) {
+    shown = true;
+    setText(b.text, b.anim.in === 'typewriter');
+    $('pos').classList.remove('hidden');
+    play(b.anim.in);
+  } else if (prev && prev.rev !== b.rev) {
+    setText(b.text, b.anim.change === 'typewriter');
+    play(b.anim.change, { ms: b.anim.change === 'fade' ? 300 : 420 });
+  } else if ($('txt').textContent !== b.text && !typing) setText(b.text, false);
+  if (b.anim.loop === 'marquee') applyStyle(b); // its width depends on the text
+}
+
+function pickBox(list) { return ID ? list.find((x) => x.id === ID) : list[0]; }
+
+function listen() {
+  const es = new EventSource(`/api/text/events${PREVIEW ? '?preview=1' : ''}`);
+  let version = null;
+  es.addEventListener('hello', (e) => { const v = JSON.parse(e.data).pack; if (version && v !== version) location.reload(); version = v; });
+  es.addEventListener('reload', () => location.reload());
+  es.addEventListener('boxes', (e) => { const b = pickBox(JSON.parse(e.data)); if (b) draw(b); else if (cur) draw({ ...cur, visible: false }); });
+  es.addEventListener('box', (e) => { const b = JSON.parse(e.data); if (ID ? b.id === ID : (!cur || b.id === cur.id)) draw(b); });
+  es.addEventListener('removed', (e) => { if (cur && JSON.parse(e.data).id === cur.id) draw({ ...cur, visible: false }); });
+}
+listen();
+</script>
+</body>
+</html>

@@ -68,3 +68,32 @@ tr.dim td { opacity: .5; }
 .x-toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
 .x-toast { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 9px 14px; border-radius: 10px; max-width: 420px; box-shadow: 0 6px 24px #0008; }
 .x-toast.bad { border-left-color: var(--bad); }
+
+/* 텍스트 panel */
+.t-area { width: 100%; resize: vertical; min-height: 92px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; color: var(--text); font-size: 15px; line-height: 1.5; }
+.t-area:focus { outline: none; border-color: var(--accent); }
+.t-prev { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; border: 1px solid var(--line);
+  background: repeating-conic-gradient(#1b2629 0 25%, #121b1e 0 50%) 0 0 / 24px 24px; }
+.t-prev iframe { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; border: 0; transform-origin: 0 0; pointer-events: none; background: transparent; color-scheme: normal; }
+.t-range { margin-top: 6px; }
+.t-range input[type=range] { accent-color: var(--accent); }
+.t-num { width: 76px; padding: 5px 7px !important; }
+.t-color { flex-direction: row; align-items: center; gap: 8px; }
+.t-color input[type=color] { width: 38px; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); cursor: pointer; }
+.t-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.t-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 4px 4px 4px 10px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); font-size: 12.5px; cursor: pointer; }
+.t-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-chip:hover { border-color: var(--muted); }
+.t-chip.on { border-color: var(--accent); color: var(--accent-2); }
+.t-chip.preset { padding-right: 10px; }
+.t-chip.preset:has(button) { padding-right: 4px; }
+.t-chip button { all: unset; cursor: pointer; width: 18px; height: 18px; border-radius: 50%; text-align: center; line-height: 18px; font-size: 10px; color: var(--muted); }
+.t-chip button:hover { background: var(--line); color: var(--text); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { all: unset; cursor: pointer; padding: 6px 10px; font-size: 12.5px; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #031a18; font-weight: 700; }
+.t-anchor { display: grid; grid-template-columns: repeat(3, 34px); gap: 4px; }
+.t-anchor button { all: unset; cursor: pointer; width: 34px; height: 26px; text-align: center; border-radius: 6px; background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+.t-anchor button.on { background: var(--accent); border-color: var(--accent); color: #031a18; font-weight: 800; }
+.field[hidden] { display: none; }
