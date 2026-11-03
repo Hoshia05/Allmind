@@ -11,7 +11,6 @@ import { loadState, saveState } from './config.js';
 
 const CHECK_MS = Number(process.env.ALLMIND_YT_CHECK_MS) || 60 * 1000; // env only for mock tests
 const NOT_LIVE_AFTER_MS = CHECK_MS * 1.5;
-const AFTER_STREAM_MS = CHECK_MS * 2;
 const READY = new Set(['created', 'ready', 'testStarting', 'testing']);
 // Which broadcasts are Allmind's (only those are ever reused or deleted): the ids it made, kept in st.made.
 // Before 0.36.7 they were marked by this description prefix instead — still recognised.

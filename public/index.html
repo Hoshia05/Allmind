@@ -38,7 +38,7 @@
     <button class="btn ghost small-btn top-badge" id="checkBtn" title="방송 전 점검 — OBS·녹화·유튜브·로그인 등을 한 번에 확인">점검<b id="checkBadge" hidden></b></button>
     <button class="btn ghost small-btn top-badge" id="reportBtn" title="지난 방송들의 리포트">방송 기록<b id="reportDot" class="dot" hidden></b></button>
     <button class="btn ghost small-btn" id="prepBtn" title="방송 제목·카테고리·태그를 치지직, 유튜브 아카이브, 녹화 파일 이름에 한 번에 적용">방송 준비</button>
-    <button class="btn ghost small-btn" id="remoteBtn" title="치지직 리모콘을 옆 창으로 열기">리모콘</button>
+    <button class="btn ghost small-btn" id="remoteBtn" title="치지직 리모컨을 옆 창으로 열기">리모컨</button>
     <button class="btn ghost small-btn" id="chatToggle" title="Show / hide the chat column">채팅 숨기기</button>
     <button class="btn ghost icon small-btn" id="devBtn" title="이 기기 설정">⚙</button>
   </div>
@@ -83,8 +83,8 @@
       <div class="stage" id="stage">
         <canvas id="frame"></canvas>
         <canvas id="programFrame"></canvas>
-        <div class="stage-empty" id="stageEmpty">Waiting for OBS…</div>
-        <div class="stage-empty" id="programEmpty">Waiting for OBS…</div>
+        <div class="stage-empty" id="stageEmpty">OBS 기다리는 중…</div>
+        <div class="stage-empty" id="programEmpty">OBS 기다리는 중…</div>
         <div class="stage-badge" id="stageBadge"></div>
         <button class="btn fs-exit" id="fsExit" hidden>✕ 닫기</button>
       </div>
@@ -256,7 +256,7 @@
         </div>
         <div class="chat-body mirror alert-mirror" id="alertMirror">
           <canvas id="alertFrame"></canvas>
-          <div class="stage-empty" id="alertMirrorEmpty">Waiting for OBS…</div>
+          <div class="stage-empty" id="alertMirrorEmpty">OBS 기다리는 중…</div>
         </div>
       </section>
     </aside>
@@ -280,7 +280,7 @@
     <label class="switch"><input type="checkbox" id="optSaver"><span></span>데이터 절약 <em class="hint">화면을 최대 15fps로</em></label>
     <label class="switch"><input type="checkbox" id="optAwake"><span></span>화면 꺼짐 방지</label>
     <label class="switch" id="optVibrateWrap"><input type="checkbox" id="optVibrate"><span></span>버튼 진동</label>
-    <button class="btn" id="devRemote">치지직 리모콘 열기</button>
+    <button class="btn" id="devRemote">치지직 리모컨 열기</button>
     <button class="btn" id="dockReset" title="패널 위치와 크기를 처음 상태로">레이아웃 초기화</button>
     <div class="devmenu-row"><span>채팅 글자 크기</span>
       <div class="seg small"><button id="fontDown">가−</button><button id="fontReset" class="mono">100%</button><button id="fontUp">가+</button></div>

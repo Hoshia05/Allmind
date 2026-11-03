@@ -22,8 +22,11 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 - **Lean matters.** Every OBS request and every preview frame costs the stream PC.
   Prefer OBS events over polling; poll only while a dashboard is open (`clients.size`).
 - **Test against the mock before claiming something works**, and say plainly what was
-  only tested with the mock (real OBS/Chzzk/weflab behaviour can differ).
+  only tested with the mock (real OBS/Chzzk/Google behaviour can differ).
 - Commit messages end with the attribution lines the session provides.
+- **UI wording** (cleanup 0.40.1 — keep it consistent): 해요체 everywhere; **리모컨** (not 리모콘); **광고 스킵** for YouTube
+  ads (넘기기 is the 리모컨's donation-skip button); **설정 창**; **Google** (not 구글); no English in anything the owner
+  sees, including fallback toasts and errors thrown from `src/` (they reach the dashboard via `post()` → `toast(data.error)`).
 
 ## Versioning, build, release
 

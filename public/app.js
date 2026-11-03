@@ -12,10 +12,10 @@ async function api(path, body = {}) {
       body: JSON.stringify(body),
     });
     const data = await res.json();
-    if (!data.ok) toast(data.error || 'Request failed', true);
+    if (!data.ok) toast(data.error || '요청이 실패했어요', true);
     return data;
   } catch {
-    toast('Allmind helper is not reachable', true);
+    toast('Allmind에 연결할 수 없어요', true);
     return { ok: false };
   }
 }
@@ -148,7 +148,7 @@ function renderBanners() {
     // OBS opened from its own shortcut: no 영도 클릭 전달 / 광고 넘기기 / 치지직 리모컨
     if (S.obsDebug === false) {
       const live = S.obsStreaming || S.marks?.recording;
-      B('obsdebug', '', `OBS가 Allmind 밖에서 켜져서 <b>영도 클릭·광고 넘기기·치지직 리모컨</b>이 안 돼요 — ${live ? '방송·녹화가 끝나면 OBS를 다시 켜 주세요' : 'OBS를 Allmind 옵션으로 다시 켤게요 <button class="btn" data-act="obs-relaunch">OBS 다시 켜기</button>'}<br><span class="muted small">다음부터 OBS를 직접 켜도 되게 하려면: 방송 PC 설정 창 → OBS → <b>OBS 바로가기 고치기</b></span>`);
+      B('obsdebug', '', `OBS가 Allmind 밖에서 켜져서 <b>영도 클릭·광고 스킵·치지직 리모컨</b>이 안 돼요 — ${live ? '방송·녹화가 끝나면 OBS를 다시 켜 주세요' : 'OBS를 Allmind 옵션으로 다시 켤게요 <button class="btn" data-act="obs-relaunch">OBS 다시 켜기</button>'}<br><span class="muted small">다음부터 OBS를 직접 켜도 되게 하려면: 방송 PC 설정 창 → OBS → <b>OBS 바로가기 고치기</b></span>`);
     }
   }
   if (S.streamReconnect) B('reconnect', 'bad', `📡 방송 연결이 끊겨서 OBS가 다시 연결하는 중이에요 (${Math.max(1, Math.round((Date.now() - S.streamReconnect.since) / 1000))}초째) — 인터넷(공유기·랜선)을 확인해 주세요. 다시 연결되면 저절로 사라져요`);
@@ -960,7 +960,7 @@ setInterval(tickUptime, 1000);
 
 // ---------------- chat ----------------
 let chatTab = pref.get('chatTab', 'text');
-if (!['text', 'donations'].includes(chatTab)) chatTab = 'text'; // the old 리모콘 / 위플챗 tabs are gone
+if (!['text', 'donations'].includes(chatTab)) chatTab = 'text'; // the old 리모컨 / 위플챗 tabs are gone
 const MAX_CHAT = 300;
 
 function nickColor(name) {
@@ -1239,7 +1239,7 @@ $('chatToggle').addEventListener('click', () => applyChatVisible($('layout').cla
 applyChatVisible(pref.get('chatVisible', true));
 setChatTab(chatTab);
 
-// ---------------- 치지직 리모콘 ----------------
+// ---------------- 치지직 리모컨 ----------------
 // studio.chzzk.naver.com/<channel>/remotecontrol needs the Naver login,
 // so it runs in this browser (where you're logged in), not on the helper.
 function remoteUrl() {
@@ -1680,7 +1680,7 @@ function renderHealth(h) {
 // touch screens have no hover tooltips: tap the health chip for the details
 $('health').addEventListener('click', () => toast($('health').title.split('\n').slice(1).join(' · ')));
 
-// phones: the 리모콘 button lives in the ⚙ menu (no room in the top bar)
+// phones: the 리모컨 button lives in the ⚙ menu (no room in the top bar)
 $('devRemote').addEventListener('click', () => { $('devMenu').hidden = true; openRemoteWindow(); });
 
 // ---------------- ⭐ marks (moments for YouTube edits, read by VOD Scout) ----------------

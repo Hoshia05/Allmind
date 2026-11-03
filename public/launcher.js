@@ -69,7 +69,7 @@ async function refresh() {
   const note = $('obsNote');
   if (o.running && !o.debugOn) {
     note.hidden = false;
-    note.textContent = 'OBS가 Allmind 밖에서 켜져서 클릭 전달·광고 스킵이 꺼져 있어요. 방송 중이 아닐 때 OBS를 닫고 "OBS 시작"으로 다시 켜 주세요.';
+    note.textContent = 'OBS가 Allmind 밖에서 켜져서 클릭 전달·광고 스킵·치지직 리모컨이 꺼져 있어요. 방송 중이 아닐 때 대시보드의 "OBS 다시 켜기"로 다시 켜 주세요. 다음부터 직접 켜도 되게 하려면 아래 OBS 연결 → "OBS 바로가기 고치기".';
   } else if (o.running && !o.connected) {
     note.hidden = false;
     note.textContent = 'OBS에 연결할 수 없어요. 아래 "OBS 연결"의 안내대로 WebSocket 서버를 켜고 비밀번호를 넣어 주세요.';

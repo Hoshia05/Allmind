@@ -171,7 +171,7 @@ export class BGM extends EventEmitter {
   seek(ms) { return this._cmd(() => this._seek(ms)); }
 
   async _select(id) {
-    if (!this.tracks.has(id)) throw new Error('Unknown track');
+    if (!this.tracks.has(id)) throw new Error('셋리스트에 없는 곡이에요 — ↻로 다시 불러와 주세요');
     this.cmdSeq++;
     this.currentId = id;
     this.autoPausedBgm = false;
@@ -308,7 +308,7 @@ export class BGM extends EventEmitter {
     this.autoPausedBgm = false;
     if (!this.currentId) {
       const first = this.order[0];
-      if (!first) throw new Error('No tracks in the setlist');
+      if (!first) throw new Error('셋리스트에 곡이 없어요');
       return this._select(first);
     }
     await this._refresh(true);
@@ -388,7 +388,7 @@ export class BGM extends EventEmitter {
 
   _pickNext(dir) {
     const n = this.order.length;
-    if (!n) throw new Error('No tracks in the setlist');
+    if (!n) throw new Error('셋리스트에 곡이 없어요');
     const i = this.order.indexOf(this.currentId);
     if (this.playMode === 'shuffle' && n > 1) {
       let j;

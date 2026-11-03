@@ -74,7 +74,7 @@
             <input form="settings" type="text" name="obsPath" placeholder="자동으로 찾아요">
           </label>
           <label class="check"><input form="settings" type="checkbox" name="startObs"><span>Allmind를 켤 때 OBS도 같이 켜기</span></label>
-          <div class="hint">영도 클릭 전달·광고 넘기기·치지직 리모컨은 OBS가 <b>Allmind 옵션</b>으로 켜져야 돼요. Allmind의 "OBS 시작"으로 켜면 저절로 붙고, OBS를 바탕화면·작업 표시줄 아이콘으로 직접 켜도 되게 하려면:
+          <div class="hint">영도 클릭 전달·광고 스킵·치지직 리모컨은 OBS가 <b>Allmind 옵션</b>으로 켜져야 돼요. Allmind의 "OBS 시작"으로 켜면 저절로 붙고, OBS를 바탕화면·작업 표시줄 아이콘으로 직접 켜도 되게 하려면:
             <button class="btn ghost small-btn" type="button" id="obsShortcuts">OBS 바로가기 고치기</button> <span id="obsShortcutsOut"></span></div>
         </div>
         <div class="m-save"><button class="btn accent" type="submit" form="settings">저장하고 다시 시작</button></div>
@@ -128,7 +128,7 @@
     <details class="mod" id="m-sources" data-group="basic" data-name="화면 소스" data-icon="🖼️">
       <summary><span class="m-ico">🖼️</span><span class="m-t"><b>화면 소스 (영도 · 알림 · 마이크)</b><small>대시보드에 보여 줄 OBS 소스 이름</small></span><span class="pill" data-pill></span></summary>
       <div class="m-body">
-        <p class="why">대시보드는 이 OBS 소스들의 화면을 받아서 보여 줘요. 영도 화면은 대시보드에서 누르면 OBS 안의 영도 페이지에 그대로 클릭이 전달돼요 (광고 건너뛰기 등). 이름만 맞으면 OBS 쪽은 바꿀 게 없어요.</p>
+        <p class="why">대시보드는 이 OBS 소스들의 화면을 받아서 보여 줘요. 영도 화면은 대시보드에서 누르면 OBS 안의 영도 페이지에 그대로 클릭이 전달돼요 (광고 스킵 등). 이름만 맞으면 OBS 쪽은 바꿀 게 없어요.</p>
         <div class="uses">쓰는 곳 <i>영도 뷰어</i><i>후원 탭 알림 화면</i><i>마이크 상태</i></div>
         <ol class="steps">
           <li data-step="sources.donation">영도 브라우저 소스 이름을 골라요 (입력칸을 누르면 OBS 소스 목록이 나와요).</li>
@@ -355,7 +355,7 @@
         </fieldset>
         <fieldset class="move">
           <legend>이 PC에서 Allmind 지우기 (남의 PC를 빌렸을 때)</legend>
-          <p class="hint" style="margin:0">방송이 끝나고 PC를 돌려주기 전에 눌러 주세요. <b>구글·치지직 로그인을 해제</b>하고 (이 PC에 남은 로그인으로는 더 이상 아무것도 못 해요), Allmind의 <b>설정·로그인 정보·기록·로그</b>, 작업 표시줄용 사본, Windows 시작 시 자동 실행을 지운 뒤 Allmind를 꺼요. <b>OBS 설정과 녹화 파일은 그대로</b>예요. 드라이브에 아직 안 올라간 녹화는 이 PC에만 남아 있으니 먼저 확인하세요.</p>
+          <p class="hint" style="margin:0">방송이 끝나고 PC를 돌려주기 전에 눌러 주세요. <b>Google·치지직 로그인을 해제</b>하고 (이 PC에 남은 로그인으로는 더 이상 아무것도 못 해요), Allmind의 <b>설정·로그인 정보·기록·로그</b>, 작업 표시줄용 사본, Windows 시작 시 자동 실행을 지운 뒤 Allmind를 꺼요. <b>OBS 설정과 녹화 파일은 그대로</b>예요. 드라이브에 아직 안 올라간 녹화는 이 PC에만 남아 있으니 먼저 확인하세요.</p>
           <label class="check"><input type="checkbox" id="rmExe" checked><span>내려받은 Allmind 실행 파일도 지우기 <span class="hint" id="rmExePath"></span></span></label>
           <div class="row-btns tight"><button class="btn danger" type="button" id="rmAll">이 PC에서 지우기</button></div>
           <p class="hint" style="margin:0">내보낸 설정 파일(.allmind)은 직접 지워 주세요 — 비밀번호 없이는 열 수 없지만, 남겨 둘 필요는 없어요.</p>
