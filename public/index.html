@@ -304,6 +304,14 @@
       <div class="row-btns"><button class="btn accent" id="checkRun">다시 점검</button><span class="muted small">OBS가 연결될 때와, 대시보드가 열려 있으면 10분마다 저절로 점검해요.</span></div>
     </div>
   </div>
+  <!-- 🔁 무한 반복: loop points of one setlist track -->
+  <div class="sheet-wrap" id="loopWrap" hidden>
+    <div class="sheet loop-sheet" role="dialog" aria-label="무한 반복">
+      <div class="sheet-head"><b>🔁 무한 반복</b><span class="muted small" id="loopTitle"></span><button class="btn ghost icon" id="loopClose" title="닫기">✕</button></div>
+      <div id="loopBody"></div>
+      <audio id="loopAudio" preload="none"></audio>
+    </div>
+  </div>
   <!-- 할 일: reminder when the stream starts -->
   <div class="sheet-wrap" id="todoPopWrap" hidden>
     <div class="sheet todo-pop" role="dialog" aria-label="오늘 할 것">

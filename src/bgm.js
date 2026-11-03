@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { loadState, saveState, DATA_DIR } from './config.js';
 import { Coverless } from './coverless.js';
+import { BgmLoops } from './bgmloop.js';
 
 const ACTION = (a) => `OBS_WEBSOCKET_MEDIA_INPUT_ACTION_${a}`;
 const PLAY_MODES = ['loop-list', 'shuffle', 'repeat-one'];
@@ -39,6 +40,11 @@ export class BGM extends EventEmitter {
     this.coverless = new Coverless(path.join(DATA_DIR, 'bgm-cache'));
     this.fileOf = new Map(); // song id → file OBS actually loads
     this.idOfFile = new Map(); // and back (normalised path → id)
+    // 무한 루프 (bgmloop.js): a loop-ready track plays file A (intro + loops), then B (loops, OBS looping on)
+    this.loops = new BgmLoops(config);
+    this.loops.on('change', () => this._changed());
+    this.loopPart = null; // 'a' | 'b' while the current track plays its loop files
+    this.loopInfo = null; // { a, b, start, end, len }
 
     const saved = loadState('bgm', {});
     this.order = saved.order || [];
@@ -171,8 +177,12 @@ export class BGM extends EventEmitter {
     this.autoPausedBgm = false;
     this.selectedAt = Date.now();
     this.playedSinceSelect = false;
-    // OBS gets an audio-only copy when the file has cover art (see coverless.js)
-    const file = await this._fileFor(id);
+    // a loop-ready track starts with its loop file A; others get an audio-only copy when the file has cover art (coverless.js)
+    const lp = this.loops.ready(id);
+    this.loopPart = lp ? 'a' : null;
+    this.loopInfo = lp;
+    if (lp) { this._mapLoopFiles(id, lp); this.loops.touch(id); }
+    const file = lp ? lp.a : await this._fileFor(id);
     await this.obs.call('SetInputSettings', {
       inputName: this.sourceName,
       inputSettings: {
@@ -196,7 +206,7 @@ export class BGM extends EventEmitter {
       if (i === 3) await this._action('RESTART').catch(() => {});
     }
     await this._resetMonitoring();
-    console.log(`[bgm] now playing: ${id} (${this.media.state})`);
+    console.log(`[bgm] now playing: ${id}${lp ? ' (🔁 loop)' : ''} (${this.media.state})`);
     this._prepareNext(id);
   }
 
@@ -205,6 +215,68 @@ export class BGM extends EventEmitter {
     this.fileOf.set(id, file);
     this.idOfFile.set(normPath(file), id);
     return file;
+  }
+
+  _mapLoopFiles(id, lp) {
+    this.idOfFile.set(normPath(lp.a), id);
+    this.idOfFile.set(normPath(lp.b), id);
+  }
+
+  // A (intro + loops) ended → B: the loop body, which OBS repeats by itself
+  async _loopB() {
+    const id = this.currentId;
+    const lp = this.loops.ready(id);
+    if (!lp) return this._select(this._pickNext(1));
+    this.cmdSeq++;
+    this.loopPart = 'b';
+    this.loopInfo = lp;
+    this._mapLoopFiles(id, lp);
+    this.selectedAt = Date.now();
+    this.playedSinceSelect = false;
+    await this.obs.call('SetInputSettings', {
+      inputName: this.sourceName,
+      inputSettings: { is_local_file: true, local_file: lp.b, looping: true, restart_on_activate: false, close_when_inactive: false, clear_on_media_end: false },
+    });
+    await this._action('RESTART').catch(() => {});
+    for (let i = 0; i < 6; i++) { await sleep(120); await this._refresh(true); if (this.media.playing) break; }
+    console.log(`[bgm] 🔁 ${id}: looping on (file B)`);
+  }
+
+  // the loop was switched off (or its settings changed) while it plays: go on in the original file at the same spot,
+  // so the song ends naturally and the setlist continues
+  async _leaveLoop() {
+    if (!this.loopPart || !this.currentId) return;
+    const pos = this._loopPos(this.media.cursor);
+    const id = this.currentId;
+    const wasPlaying = this.media.playing;
+    this.cmdSeq++;
+    this.loopPart = null; this.loopInfo = null;
+    const file = await this._fileFor(id);
+    this.selectedAt = Date.now();
+    this.playedSinceSelect = false;
+    await this.obs.call('SetInputSettings', { inputName: this.sourceName, inputSettings: { is_local_file: true, local_file: file, looping: false } });
+    await this._action('RESTART').catch(() => {});
+    await sleep(250);
+    await this.obs.call('SetMediaInputCursor', { inputName: this.sourceName, mediaCursor: Math.round(pos) }).catch(() => {});
+    if (!wasPlaying) await this._action('PAUSE').catch(() => {});
+    await this._refresh(true);
+    console.log(`[bgm] 🔁 ${id}: loop off — back in the original file at ${(pos / 1000).toFixed(1)} s`);
+  }
+
+  // OBS's cursor in file A/B → the position in the original track (intro + one pass), in ms
+  _loopPos(cursor) {
+    const lp = this.loopInfo;
+    if (!lp) return cursor;
+    const S = lp.start * 1000, E = lp.end * 1000, len = E - S;
+    if (this.loopPart === 'a') return cursor < E ? cursor : S + ((cursor - S) % len);
+    return S + (cursor % len);
+  }
+
+  loopChanged(id) {
+    if (id !== this.currentId || !this.loopPart) return;
+    const lp = this.loops.ready(id);
+    const same = lp && this.loopInfo && lp.a === this.loopInfo.a;
+    if (!same) this._cmd(() => this._leaveLoop()).catch((e) => console.warn('[bgm] leave loop:', e.message));
   }
 
   // Make the next song's art-free copy in the background, so it starts at once.
@@ -256,6 +328,15 @@ export class BGM extends EventEmitter {
 
   async _seek(ms) {
     this.cmdSeq++;
+    if (this.loopPart && this.loopInfo) {
+      // a looping track: the bar shows intro + one pass; stay in the pass that's playing
+      await this._refresh(true);
+      const S = this.loopInfo.start * 1000, len = this.loopInfo.len * 1000, c = this.media.cursor;
+      const t = Math.max(0, Math.min(Number(ms), S + len - 500));
+      if (this.loopPart === 'a') ms = c < S + len ? t : S + Math.floor((c - S) / len) * len + Math.max(0, t - S);
+      else ms = Math.floor(c / len) * len + Math.max(0, t - S);
+      this.cmdSeq++;
+    }
     await this.obs.call('SetMediaInputCursor', { inputName: this.sourceName, mediaCursor: Math.max(0, Math.round(ms)) });
     await this._refresh(true);
   }
@@ -328,6 +409,11 @@ export class BGM extends EventEmitter {
     if (Date.now() - this.selectedAt < 2000) return;
     if (!this.currentId || this.endedHandledFor === this.currentId + '@' + this.selectedAt) return;
     this.endedHandledFor = this.currentId + '@' + this.selectedAt;
+    // a looping track never ends: A goes on into B (and B, if OBS ever reports it ended, starts again)
+    if (this.loopPart && this.loops.ready(this.currentId)) {
+      this._cmd(() => this._loopB()).catch((e) => console.warn('[bgm] loop B failed:', e.message));
+      return;
+    }
     const id = this.playMode === 'repeat-one' ? this.currentId : this._pickNext(1);
     console.log(`[bgm] song ended, next: ${id}`);
     this.select(id).catch((e) => console.warn('[bgm] advance failed:', e.message));
@@ -407,6 +493,13 @@ export class BGM extends EventEmitter {
           // an art-free copy from before a Allmind restart: it's the saved current song
           const cached = file.startsWith(normPath(this.coverless.dir) + '/') && this.currentId;
           if (cached && !this.idOfFile.has(file)) this.idOfFile.set(file, this.currentId);
+          // one of our loop files (e.g. after an Allmind restart): which track, and which part
+          if (!this.idOfFile.has(file) && file.startsWith(normPath(this.loops.dir) + '/')) {
+            for (const [tid] of Object.entries(this.loops.st)) {
+              const lp = this.loops.ready(tid);
+              if (lp && (normPath(lp.a) === file || normPath(lp.b) === file)) { this._mapLoopFiles(tid, lp); this.loopInfo = lp; this.loopPart = normPath(lp.b) === file ? 'b' : 'a'; }
+            }
+          }
           const id = this.idOfFile.get(file) || (rel && this.order.find((t) => normPath(t) === rel));
           this.loadedOutside = !id; // a file that isn't in the setlist folder
           if (id && id !== this.currentId) {
@@ -421,7 +514,7 @@ export class BGM extends EventEmitter {
         // Only the position moved → a tiny progress update instead of the whole state
         const { cursor, ...rest } = this.media;
         const key = JSON.stringify([rest, this.currentId, this.sourceActive, this.loadedOutside]);
-        if (key === this.lastKey && !fresh) this.emit('pos', { cursor, duration: this.media.duration, state: this.media.state });
+        if (key === this.lastKey && !fresh) this.emit('pos', { ...this._shownPos(), state: this.media.state });
         else { this.lastKey = key; this._changed(); }
       } catch {
         /* transient */
@@ -432,6 +525,12 @@ export class BGM extends EventEmitter {
     } finally {
       this.refreshing = null;
     }
+  }
+
+  // what the progress bar shows: for a looping track, the original track (intro + one pass)
+  _shownPos() {
+    if (this.loopPart && this.loopInfo) return { cursor: this._loopPos(this.media.cursor), duration: Math.round(this.loopInfo.end * 1000), loop: true };
+    return { cursor: this.media.cursor, duration: this.media.duration };
   }
 
   // ---------- auto-pause ----------
@@ -532,7 +631,9 @@ export class BGM extends EventEmitter {
       folderError: this.folderError,
       tracks: this.order.map((id) => this.tracks.get(id)),
       currentId: this.currentId,
-      media: this.media,
+      media: { ...this.media, ...this._shownPos(), loopPart: this.loopPart },
+      loops: this.loops.summary(),
+      loopTool: this.loops.status(),
       sourceActive: this.sourceActive,
       loadedOutside: !!this.loadedOutside,
       volumeDb: this.volumeDb,

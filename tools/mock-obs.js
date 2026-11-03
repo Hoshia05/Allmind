@@ -6,6 +6,7 @@
 // Run: npm install && npm run mock
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { WebSocketServer } from 'ws';
 
 const DONATION = process.env.MOCK_DONATION || '영도';
@@ -228,6 +229,7 @@ function handle(type, d) {
         if (media.file) broadcast('MediaInputPlaybackEnded', { inputName: BGM }, 1 << 8);
         media.file = d.inputSettings.local_file;
         media.cursor = 0;
+        media.duration = mockDuration(media.file);
         // Like OBS: after a song has ended, loading a new file doesn't start it.
         if (media.state === 'OBS_MEDIA_STATE_ENDED' && process.env.MOCK_STICKY_END) { log('BGM loaded but stays ENDED:', media.file.split(/[\\/]/).pop()); return; }
         media.state = 'OBS_MEDIA_STATE_OPENING';
@@ -296,13 +298,23 @@ function handle(type, d) {
   }
 }
 
-// media clock + end events
+// real length for loop files (and any file when MOCK_REAL_DURATION=1); else MOCK_TRACK_MS
+function mockDuration(file) {
+  if (!(/\.opus$/i.test(file) || process.env.MOCK_REAL_DURATION)) return TRACK_MS;
+  try {
+    const out = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).toString().trim();
+    return Math.round(Number(out) * 1000) || TRACK_MS;
+  } catch { return TRACK_MS; }
+}
+// media clock + end events (MOCK_MEDIA_SPEED=60 plays a minute per second, for loop tests)
 let lastTick = Date.now();
 setInterval(() => {
   const now = Date.now();
   if (media.state === 'OBS_MEDIA_STATE_PLAYING') {
-    media.cursor += now - lastTick;
-    if (media.cursor >= media.duration) {
+    media.cursor += (now - lastTick) * Number(process.env.MOCK_MEDIA_SPEED || 1);
+    const bgmIn = inputs.get(BGM);
+    if (media.cursor >= media.duration && bgmIn?.settings?.looping) { media.cursor -= media.duration; log('BGM looped (OBS looping on)'); }
+    else if (media.cursor >= media.duration) {
       media.cursor = media.duration;
       media.state = 'OBS_MEDIA_STATE_ENDED';
       broadcast('MediaInputPlaybackEnded', { inputName: BGM }, 1 << 8);

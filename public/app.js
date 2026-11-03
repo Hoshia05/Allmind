@@ -205,7 +205,7 @@ function renderBgm() {
   const cur = b.tracks.find((t) => t.id === b.currentId);
   $('bgmSource').textContent = b.sourceName;
   $('nowTitle').textContent = cur ? cur.title : '—';
-  $('nowSub').textContent = cur?.folder || '';
+  $('nowSub').textContent = (b.media.loopPart ? '🔁 무한 반복' + (cur?.folder ? ' · ' : '') : '') + (cur?.folder || '');
   const playing = !!b.media.playing;
   $('playBtn').textContent = playing ? '⏸' : '▶';
   $('playBtn').classList.toggle('loading', !!b.media.loading);
@@ -238,7 +238,7 @@ function renderBgm() {
   $('apState').textContent = !ap.enabled ? '' : ap.active ? (ap.mode === 'duck' ? '영도 재생 중 · 볼륨 낮춤' : '영도 재생 중 · 일시정지') : '대기 중';
 
   $('count').textContent = `(${b.tracks.length})`;
-  const key = b.tracks.map((t) => t.id).join('|') + '#' + b.currentId + '#' + $('search').value;
+  const key = b.tracks.map((t) => t.id).join('|') + '#' + b.currentId + '#' + $('search').value + '#' + JSON.stringify(b.loops || {});
   if (key !== lastTracksKey) {
     lastTracksKey = key;
     renderTracks();
@@ -262,6 +262,7 @@ function renderTracks() {
         <span class="num">${i + 1}</span>
         <span class="t" title="${esc(t.id)}">${esc(t.title)}</span>
         ${t.folder ? `<span class="f">${esc(t.folder)}</span>` : ''}
+        ${loopBtn(t.id)}
       </li>`)
     .join('');
 }
@@ -631,6 +632,7 @@ $('search').addEventListener('input', renderTracks);
 
 $('tracks').addEventListener('click', (ev) => {
   const li = ev.target.closest('li[data-id]');
+  if (li && ev.target.closest('.loop-btn')) { ev.stopPropagation(); openLoop(li.dataset.id); return; }
   if (li && !ev.target.classList.contains('grip')) api('bgm/select', { id: li.dataset.id });
 });
 
@@ -2062,3 +2064,146 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { $('che
   $('todoPopOpen').addEventListener('click', () => { closePop(); openPanel($('todoPopOpen').dataset.tab); });
   render();
 })();
+
+
+// ---------------- 🔁 무한 반복 (game music that loops like in the game) ----------------
+// Per setlist track: find the loop (Allmind analyses the file), listen to the seam, nudge it, then Allmind renders
+// loop files once; the track then plays until stopped or another track is picked. docs/plans/bgm-loop.md
+function loopBtn(id) {
+  const l = S?.bgm?.loops?.[id];
+  const on = l?.enabled;
+  const busy = l && (l.state === 'building' || l.state === 'analyzing');
+  const title = !l ? '무한 반복 설정' : busy ? (l.state === 'building' ? `루프 파일 만드는 중 ${l.progress ?? 0}%` : '루프 찾는 중…') : l.state === 'error' ? '루프 파일을 못 만들었어요 — 눌러서 확인' : on ? (l.ready ? '무한 반복 켜짐' : '무한 반복 켜짐 (파일 준비 전)') : '무한 반복 꺼짐';
+  return `<button class="loop-btn${on ? ' on' : ''}${busy ? ' busy' : ''}${l?.state === 'error' ? ' err' : ''}" title="${esc(title)}">${busy && l.state === 'building' ? `${l.progress ?? 0}%` : '🔁'}</button>`;
+}
+const fmtMs = (s) => { if (s == null || !Number.isFinite(s)) return ''; const m = Math.floor(s / 60); const r = s - m * 60; return `${m}:${r.toFixed(3).padStart(6, '0')}`; };
+const parseMs = (t) => { const m = /^\s*(?:(\d+):)?(\d+(?:\.\d+)?)\s*$/.exec(String(t)); return m ? Number(m[1] || 0) * 60 + Number(m[2]) : NaN; };
+let loopEd = null; // { id, title, start, end, score, source, found, info, ffmpeg, busy }
+
+async function openLoop(id) {
+  const t = S.bgm.tracks.find((x) => x.id === id);
+  loopEd = { id, title: t?.title || id, start: null, end: null, msg: '불러오는 중…' };
+  $('loopTitle').textContent = loopEd.title;
+  $('loopWrap').hidden = false;
+  renderLoop();
+  let r;
+  try { r = await (await fetch(`/api/bgm/loop?id=${encodeURIComponent(id)}`, { cache: 'no-store' })).json(); } catch { r = { ok: false, error: 'Allmind에 연결할 수 없어요' }; }
+  if (!loopEd || loopEd.id !== id) return;
+  if (!r.ok) { loopEd.msg = r.error; renderLoop(); return; }
+  Object.assign(loopEd, { ffmpeg: r.ffmpeg, windows: r.windows, msg: '' });
+  if (r.loop?.start != null) Object.assign(loopEd, { start: r.loop.start, end: r.loop.end, score: r.loop.score, source: r.loop.source, saved: { start: r.loop.start, end: r.loop.end }, enabled: r.loop.enabled });
+  renderLoop();
+  if (loopEd.start == null && r.ffmpeg?.state === 'ok') findLoopPoints();
+}
+
+async function findLoopPoints() {
+  const ed = loopEd;
+  ed.busy = 'detect'; ed.msg = '곡을 분석하는 중… (몇 초 걸려요)'; renderLoop();
+  const r = await api('bgm/loop/detect', { id: ed.id });
+  if (loopEd !== ed) return;
+  ed.busy = null;
+  if (!r.ok) { ed.msg = r.error || '분석하지 못했어요'; renderLoop(); return; }
+  if (r.found) {
+    Object.assign(ed, { start: r.start, end: r.end, score: r.score, source: r.source, msg: '' });
+    ed.found = r.source === 'tag' ? '파일에 적힌 루프 지점을 찾았어요' : `반복 구간을 찾았어요 — 일치도 ${r.score}%`;
+  } else {
+    ed.found = null;
+    ed.msg = r.reason === 'short' ? '곡이 너무 짧아요' : r.start != null ? `반복 구간이 확실하지 않아요 (일치도 ${r.score}%) — 들어 보고 직접 고쳐 주세요` : '반복되는 구간을 못 찾았어요 — 게임 음악이 아니거나 한 번만 연주되는 곡일 수 있어요. 직접 지정할 수 있어요';
+    if (r.start != null) Object.assign(ed, { start: r.start, end: r.end, score: r.score, source: r.source });
+  }
+  renderLoop();
+}
+
+function renderLoop() {
+  const ed = loopEd;
+  if (!ed) return;
+  const live = S?.bgm?.loops?.[ed.id];
+  const ff = ed.ffmpeg;
+  let html = '';
+  if (ff && ff.state !== 'ok') {
+    const dl = ff.state === 'downloading';
+    html += `<div class="loop-note">무한 반복을 만들려면 <b>ffmpeg</b>(음악·영상 도구)가 필요해요. 처음 한 번만 받으면 돼요.</div>
+      ${ed.windows ? `<div class="row-btns"><button class="btn accent" data-lp="ffmpeg" ${dl ? 'disabled' : ''}>${dl ? `받는 중… ${ff.progress ?? 0}%` : 'ffmpeg 받기 (약 100 MB)'}</button></div>` : '<div class="loop-note muted">이 PC에 ffmpeg를 설치해 주세요.</div>'}
+      ${ff.error ? `<div class="loop-note bad">${esc(ff.error)}</div>` : ''}`;
+    $('loopBody').innerHTML = html;
+    return;
+  }
+  const has = ed.start != null && ed.end != null;
+  const nudge = (k) => [-100, -10, 10, 100].map((d) => `<button class="btn ghost small-btn" data-nudge="${k}" data-d="${d}">${d > 0 ? '+' : ''}${d}</button>`).join('');
+  html += `<p class="loop-note muted">게임처럼 끝없이 이어지는 버전을 만들어요. 반복 구간을 찾아서 들어 보고, 괜찮으면 저장하세요. 원본 파일은 그대로예요.</p>`;
+  if (ed.msg) html += `<div class="loop-note${/못|않|없|실패|짧/.test(ed.msg) ? ' warn' : ''}">${esc(ed.msg)}</div>`;
+  if (ed.found) html += `<div class="loop-note good">✔ ${esc(ed.found)}</div>`;
+  html += `<div class="loop-grid">
+      <label>루프 시작<input class="mono" data-f="start" value="${fmtMs(ed.start)}" placeholder="1:15.291"></label><div class="nudges">${nudge('start')}<span class="muted small">ms</span></div>
+      <label>루프 끝<input class="mono" data-f="end" value="${fmtMs(ed.end)}" placeholder="4:14.802"></label><div class="nudges">${nudge('end')}<span class="muted small">ms</span></div>
+    </div>
+    ${has ? `<div class="loop-sum muted small">인트로 ${fmtMs(ed.start)} · 반복 ${fmtMs(ed.end - ed.start)}${ed.score != null ? ` · 일치도 ${ed.score}%` : ''}${ed.source === 'manual' ? ' · 직접 고침' : ed.source === 'tag' ? ' · 파일 태그' : ''}</div>` : ''}
+    <div class="row-btns">
+      <button class="btn" data-lp="listen" ${has ? '' : 'disabled'}>▶ 이음새 듣기</button>
+      <button class="btn ghost" data-lp="detect" ${ed.busy ? 'disabled' : ''}>${ed.busy === 'detect' ? '찾는 중…' : '자동으로 다시 찾기'}</button>
+    </div>
+    <div class="loop-note muted small" id="loopListenHint">${ed.listening ? '이음새는 6초쯤이에요 — 끊기거나 튀는 느낌이 없으면 성공' : ''}</div>`;
+  const building = live?.state === 'building';
+  const dirty = !ed.saved || Math.abs(ed.saved.start - ed.start) > 1e-6 || Math.abs(ed.saved.end - ed.end) > 1e-6;
+  html += `<div class="loop-foot">
+      ${building ? `<div class="loop-progress"><i style="width:${live.progress ?? 0}%"></i></div><div class="muted small">무한 반복 파일 만드는 중… ${live.progress ?? 0}% (1~2분, 방송에는 영향 없어요)</div>` : ''}
+      ${live?.state === 'error' ? `<div class="loop-note bad">파일을 만들지 못했어요: ${esc(live.error || S.bgm.loops[ed.id]?.error || '')}</div>` : ''}
+      ${!building && live?.ready && !dirty ? `<div class="loop-note good">✔ 준비됐어요 — 이 곡은 멈추거나 다른 곡을 고를 때까지 계속 반복돼요</div>` : ''}
+      <div class="row-btns">
+        <button class="btn accent" data-lp="save" ${has && !building && (dirty || !live?.enabled || live?.state === 'error') ? '' : 'disabled'}>${ed.saved && !dirty ? (live?.enabled ? '저장됨' : '무한 반복 켜기') : '저장하고 만들기'}</button>
+        ${ed.saved && live?.enabled ? '<button class="btn ghost" data-lp="off">무한 반복 끄기</button>' : ''}
+        ${ed.saved ? '<button class="btn ghost danger" data-lp="remove" style="margin-left:auto">루프 지우기</button>' : ''}
+      </div>
+    </div>`;
+  $('loopBody').innerHTML = html;
+}
+
+$('loopBody').addEventListener('click', async (ev) => {
+  const ed = loopEd;
+  if (!ed) return;
+  const n = ev.target.closest('[data-nudge]');
+  if (n) {
+    const k = n.dataset.nudge;
+    if (ed[k] == null) return;
+    ed[k] = Math.max(0, ed[k] + Number(n.dataset.d) / 1000);
+    ed.source = 'manual'; ed.score = null; ed.found = null;
+    renderLoop();
+    return;
+  }
+  const b = ev.target.closest('[data-lp]');
+  if (!b) return;
+  const what = b.dataset.lp;
+  if (what === 'ffmpeg') { const r = await api('bgm/loop/ffmpeg'); if (r.ok) { toast('ffmpeg 준비됐어요'); openLoop(ed.id); } return; }
+  if (what === 'detect') return findLoopPoints();
+  if (what === 'listen') {
+    const a = $('loopAudio');
+    a.src = `/api/bgm/loop/preview?id=${encodeURIComponent(ed.id)}&start=${ed.start}&end=${ed.end}&t=${Date.now()}`;
+    ed.listening = true; renderLoop();
+    a.play().catch(() => toast('미리듣기를 재생하지 못했어요', true));
+    return;
+  }
+  if (what === 'save') {
+    const r = await api('bgm/loop/save', { id: ed.id, start: ed.start, end: ed.end, source: ed.source || 'manual', score: ed.score ?? null });
+    if (r.ok) { ed.saved = { start: ed.start, end: ed.end }; toast(r.loop.state === 'building' ? '무한 반복 파일을 만들기 시작했어요' : '무한 반복 켰어요'); if (r.loop.state !== 'building' && !r.loop.ready) await api('bgm/loop/enable', { id: ed.id, on: true }); renderLoop(); }
+    return;
+  }
+  if (what === 'off') { const r = await api('bgm/loop/enable', { id: ed.id, on: false }); if (r.ok) toast('무한 반복을 껐어요 — 이 곡은 원래대로 끝나요'); return; }
+  if (what === 'remove') {
+    if (!confirm('이 곡의 루프 설정과 만든 파일을 지울까요?')) return;
+    const r = await api('bgm/loop/remove', { id: ed.id });
+    if (r.ok) { Object.assign(ed, { saved: null, start: null, end: null, found: null, score: null }); renderLoop(); }
+  }
+});
+$('loopBody').addEventListener('change', (ev) => {
+  const i = ev.target.closest('[data-f]');
+  if (!i || !loopEd) return;
+  const v = parseMs(i.value);
+  if (!Number.isFinite(v)) { toast('시간은 분:초.밀리초 (예: 1:15.291)로 써 주세요', true); renderLoop(); return; }
+  loopEd[i.dataset.f] = v; loopEd.source = 'manual'; loopEd.score = null; loopEd.found = null;
+  renderLoop();
+});
+const closeLoop = () => { $('loopWrap').hidden = true; $('loopAudio').pause(); loopEd = null; };
+$('loopClose').addEventListener('click', closeLoop);
+$('loopWrap').addEventListener('click', (ev) => { if (ev.target === $('loopWrap')) closeLoop(); });
+// keep the sheet's build progress live
+setInterval(() => { if (loopEd && !$('loopWrap').hidden && !document.activeElement?.matches?.('#loopBody input')) renderLoop(); }, 1000);

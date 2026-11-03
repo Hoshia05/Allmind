@@ -945,3 +945,25 @@ body.xy-open .layout { display: none !important; }
 .todo-edit .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .todo-pop ol { margin: 8px 0 4px; padding-left: 22px; line-height: 1.9; font-size: 15px; }
 @media (pointer: coarse) { .td-item { padding: 9px 6px; } .td-act { padding: 5px 10px; } }
+
+/* ---------- 🔁 무한 반복 ---------- */
+.tracks .loop-btn { flex: none; border: 1px solid transparent; background: transparent; color: var(--muted); border-radius: 6px; padding: 0 5px; font-size: 12px; cursor: pointer; opacity: .35; min-width: 26px; }
+.tracks li:hover .loop-btn, .tracks .loop-btn.on, .tracks .loop-btn.busy, .tracks .loop-btn.err { opacity: 1; }
+.tracks .loop-btn.on { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.tracks .loop-btn.busy { color: var(--accent-2); font-variant-numeric: tabular-nums; }
+.tracks .loop-btn.err { border-color: var(--bad); }
+@media (pointer: coarse) { .tracks .loop-btn { opacity: .7; padding: 4px 8px; } }
+.loop-sheet { max-width: 520px; }
+.loop-note { font-size: 13px; line-height: 1.55; margin: 6px 0; }
+.loop-note.good { color: var(--ok); } .loop-note.warn { color: var(--warn); } .loop-note.bad { color: var(--bad); }
+.loop-grid { display: grid; grid-template-columns: minmax(150px, 1fr) auto; gap: 8px 10px; align-items: end; margin: 10px 0 4px; }
+.loop-grid label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.loop-grid input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 15px; outline: none; }
+.loop-grid input:focus { border-color: var(--accent); }
+.loop-grid .nudges { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
+.loop-grid .nudges .btn { padding: 4px 7px; font-size: 12px; }
+.loop-sum { margin: 6px 0 2px; }
+.loop-foot { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; display: grid; gap: 6px; }
+.loop-progress { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.loop-progress i { display: block; height: 100%; background: var(--accent); transition: width .5s; }
+@media (max-width: 520px) { .loop-grid { grid-template-columns: 1fr; } }

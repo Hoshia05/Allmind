@@ -86,6 +86,13 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/obs.js` — obs-websocket client (`call`, events re-emitted by name).
 - `src/bgm.js` — BGM setlist on one OBS Media Source; 영도 auto-pause (sound level of the
   영도 source, `introHoldMs`, 리모컨 hold). Emits `change` (full state) and `pos` (progress only).
+- **🔁 무한 반복** (`docs/plans/bgm-loop.md`, 0.40): `src/bgmloop.js` `BgmLoops` (settings `bgm-loops.json`, files `DATA_DIR/bgm-loops/<key>-a|b.opus`,
+  ffmpeg from `bgm.ffmpeg` / `DATA_DIR/tools` / PATH / one-time gyan.dev download with SHA-256 check, Windows only) + `src/bgmloop-worker.js`
+  `findLoop()` (runs via `new Worker(findLoop.toString(), {eval:true})` — keep it self-contained, no imports/outside refs). bgm.js: loop-ready
+  track → file A, A ended → B with `looping:true`, `_loopPos()` maps OBS's cursor to the original track for the bar/seek, `loopChanged()` →
+  `_leaveLoop()` continues in the original at the same spot. Routes `/api/bgm/loop*` (ids checked against the setlist — they're paths).
+  Verified on the owner's ZERO (loop 179.511 s, seam 254.80→75.29 s); mock: `MOCK_MEDIA_SPEED=60`, real durations for `.opus`, `looping`
+  honoured. A→B / B-restart gap in real OBS unmeasured.
 - `src/soundboard.js` — soundboard: one Media Source "Soundboard", folder watched.
 - `src/coverless.js` — art-free copies of MP3/FLAC (cover art made OBS audio buffering creep).
 - `src/donation.js` — 영도 viewer (OBS screenshots), `Interact` (DevTools: click-through,
