@@ -65,8 +65,8 @@ node tools/dev/sse-stats.mjs 10    # what the dashboard receives per second
 ```
 Logs: `.dev/server.log`, `.dev/mock.log`. Playwright + Chromium are available for UI
 checks and screenshots (no WebKit, so Safari/iPad behaviour can't be tested here).
-Use **Python** Playwright (`python3 -I script.py`, `from playwright.sync_api import sync_playwright`);
-there is no Node Playwright package. Put test scripts in the scratchpad, not the repo.
+Use **Python** Playwright (`python3 -I script.py`, `from playwright.sync_api import sync_playwright`) where it's installed;
+in cloud sessions only Node Playwright may be there (`require('playwright')`, run a `.cjs` from the scratchpad). Put test scripts in the scratchpad, not the repo.
 
 Useful mock switches (`tools/mock-obs.js`): `MOCK_YD_INTRO=1` (영도 = alert, silence, video),
 `MOCK_SKIP_EVERY_MS` / `MOCK_SKIP_TRANSITION=1` / `MOCK_OBS_STRUGGLES=1` (OBS skipped
@@ -184,7 +184,14 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - **Request guard** (0.39.1, `docs/plans/security.md`): every request passes `guard()` in `server.js` — Host must be an
   IP / localhost / this PC's name / `server.allowedHosts`; non-GET requests with an `Origin` must be same-origin; `GET /deck/<action>`
   refused for cross-site `Sec-Fetch-Site`. New client code: same-origin fetches just work; never add CORS headers or an
-  Origin-less exception for a browser path. `findObs()` only starts `obs64.exe`. Next steps in the plan: optional PIN, deck token.
+  Origin-less exception for a browser path. `findObs()` only starts `obs64.exe`. Next steps in the plan: deck token on by default.
+- **Optional PIN for other devices** (0.41.0, `src/access.js`, `docs/plans/security.md`): checked right after `guard()` by
+  `pinNeeded(path)` — new `/api/*` routes are covered automatically; an endpoint an **OBS overlay** calls must go in
+  `PIN_FREE_API`, a new dashboard-like page in `PIN_PAGES`. `isSelf(req)` (loopback or this PC's own addresses) is never
+  asked; `isLocal` (loopback only) still guards the settings routes. `/deck/*` relies on `deck.token` (`authorized(params,
+  trusted)` — the stream PC needs no key). Test as "another device": `ALLMIND_SELF_LOOPBACK_ONLY=1 sh tools/dev/up.sh`, then
+  use `http://$(hostname -I | awk '{print $1}'):8080`.
+
 - Never ask for or keep `service.json` / Multi-RTMP config — they contain stream keys. Same for
   `google-auth.json` / `chzzk-auth.json` (refresh tokens). The YouTube key Allmind creates is shown
   only in the local settings window and never stored (only the stream id).

@@ -34,13 +34,14 @@ import { TextBoxes } from './textbox.js';
 import { TodoList } from './todo.js';
 import { ObsLogWatch } from './obslog.js';
 import { Deck } from './deck.js';
+import { Access, isSelf, cookieHeader, newDeckToken } from './access.js';
 import { VTS } from './vts.js';
 import { VTSThrow } from './vtsthrow.js';
 import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.40.1';
+const VERSION = '0.41.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -148,6 +149,17 @@ function guard(req, url) {
   }
   return null;
 }
+// Which requests the optional PIN covers (only for devices other than the stream PC — see src/access.js):
+// the API (minus OAuth callbacks, the PIN page's own calls and what OBS overlays use) and the pages that use it.
+// Static files (scripts, styles, icons, overlay pages, the Stream Deck plugin download) hold nothing private.
+// /deck/* is covered by config.deck.token instead.
+const PIN_PAGES = new Set(['/', '/index.html', '/xylem', '/xylem/', '/xylem/index.html', '/mark', '/mark.html', '/launcher', '/launcher.html']);
+const PIN_FREE_API = new Set([
+  '/api/ping', '/api/access', '/api/access/pair', '/api/google/callback', '/api/chzzk-open/callback',
+  // overlays (OBS browser sources): their event channels and the two acknowledgements they send
+  '/api/roulette/events', '/api/roulette/board-events', '/api/text/events', '/api/dogfight/events', '/api/roulette/shown', '/api/dogfight/result',
+]);
+const pinNeeded = (p) => (p.startsWith('/api/') ? !PIN_FREE_API.has(p) : PIN_PAGES.has(p));
 const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
 // ---------- main ----------
@@ -434,6 +446,7 @@ async function main() {
   });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
   const deck = new Deck({ config, bgm, soundboard, markers });
+  const access = new Access(); // optional PIN for other devices (src/access.js)
   let chatWasUp = null;
   chzzk.on('change', () => {
     const up = chzzk.chatState === 'connected';
@@ -840,7 +853,30 @@ async function main() {
   }
 
   // Launcher / settings: stream PC only (they expose the OBS password).
+  // PIN turned on / all devices logged out: drop every connection from other devices (open dashboards, streams),
+  // so they reconnect and meet the PIN page instead of carrying on with the live feed they already had.
+  const kickOtherDevices = () => { for (const s of sockets) if (!isSelf({ socket: s })) s.destroy(); };
+  const accessView = () => ({ ...access.status(), deckToken: !!deck.token, lanAccess: !['127.0.0.1', 'localhost', '::1'].includes(String(config.server.host || '0.0.0.0')) });
   const localRoutes = {
+    // ---------- optional PIN for other devices (다른 기기에서 열기 card) ----------
+    'GET /api/launcher/access': () => accessView(),
+    'POST /api/launcher/access-save': (b) => {
+      const was = access.enabled;
+      access.configure({ enabled: !!b.enabled, pin: b.pin });
+      let deckTokenCreated = '';
+      if (access.enabled && !deck.token) { // the Stream Deck plugin can't type a PIN: it needs the key instead
+        deckTokenCreated = newDeckToken();
+        saveConfig({ deck: { token: deckTokenCreated } });
+        config.deck = { ...(config.deck || {}), token: deckTokenCreated };
+      }
+      if (access.enabled && !was) kickOtherDevices();
+      return { ...accessView(), deckTokenCreated };
+    },
+    'POST /api/launcher/access-logout': () => {
+      const n = access.logoutAll();
+      kickOtherDevices();
+      return { ...accessView(), loggedOut: n };
+    },
     'GET /api/launcher': async () => {
       const info = await obsInfo();
       let inputs = [];
@@ -1072,6 +1108,31 @@ async function main() {
       return res.end('Allmind: 다른 사이트에서 온 요청은 받지 않아요');
     }
 
+    // ---------- optional PIN for other devices (src/access.js) ----------
+    if (key === 'GET /api/access') {
+      const self = isSelf(req);
+      return json(res, 200, { ok: true, required: access.enabled && !self, paired: self || !access.enabled || access.check(req).ok });
+    }
+    if (key === 'POST /api/access/pair') {
+      const r = access.pair(req, (await readBody(req)).pin);
+      if (!r.ok) return json(res, r.status, { ok: false, error: r.error });
+      res.setHeader('Set-Cookie', cookieHeader(r.token));
+      return json(res, 200, { ok: true });
+    }
+    if (key === 'GET /pin') {
+      res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
+      return res.end(readAsset('public/pin.html'));
+    }
+    if (access.enabled && !isSelf(req) && pinNeeded(url.pathname)) {
+      const c = access.check(req);
+      if (!c.ok) {
+        if (url.pathname.startsWith('/api/')) return json(res, 401, { ok: false, pin: true, error: '이 기기는 PIN을 넣어야 해요 — 페이지를 새로고침해 주세요' });
+        res.writeHead(302, { Location: `/pin?next=${encodeURIComponent(url.pathname + url.search)}`, 'Cache-Control': 'no-store' });
+        return res.end();
+      }
+      if (c.refresh) res.setHeader('Set-Cookie', cookieHeader(c.refresh)); // keeps a device that's in use remembered
+    }
+
     // ⭐ Mark moment: one request from anywhere on the LAN (a hotkey, a Stream
     // Deck key, the /mark page). 200 {ok,t,count} or 409 {ok:false,reason}.
     if (key === 'POST /api/mark') {
@@ -1131,12 +1192,12 @@ async function main() {
 
     // Allmind Stream Deck plugin: live BGM/soundboard state + lists
     if (key === 'GET /deck/events') {
-      if (!deck.authorized(url.searchParams)) return json(res, 403, { ok: false, error: '키(key)가 맞지 않아요' });
+      if (!deck.authorized(url.searchParams, isSelf(req))) return json(res, 403, { ok: false, error: '키(key)가 맞지 않아요' });
       return deck.attach(req, res, VERSION);
     }
     // Stream Deck: GET (or POST) /deck/<action>[?name=…&key=…]
     if (url.pathname.startsWith('/deck/') && (req.method === 'GET' || req.method === 'POST')) {
-      const r = await deck.run(decodeURIComponent(url.pathname.slice(6)), url.searchParams);
+      const r = await deck.run(decodeURIComponent(url.pathname.slice(6)), url.searchParams, isSelf(req));
       if (r.status === 200) stateChanged();
       return json(res, r.status, r.body);
     }

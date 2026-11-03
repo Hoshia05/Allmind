@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070b0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-192.png">
+<title>PIN · Allmind</title>
+<style>
+  :root { --bg:#070b0c; --panel:#0d1416; --line:#20333a; --text:#dcefec; --muted:#7b9b9a; --accent:#2fd8c8; --bad:#ff5f5f; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); min-height: 100vh; }
+  form { width: 100%; max-width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px 22px; display: flex; flex-direction: column; gap: 14px; }
+  h1 { margin: 0; font-size: 19px; letter-spacing: .02em; }
+  h1 span { color: var(--accent); }
+  p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  input { width: 100%; background: #070b0c; border: 1px solid var(--line); border-radius: 10px; color: var(--text); font: inherit; font-size: 28px;
+    letter-spacing: .35em; text-align: center; padding: 10px 8px; outline: none; font-variant-numeric: tabular-nums; }
+  input:focus { border-color: var(--accent); }
+  button { border: 0; border-radius: 10px; padding: 12px; font: inherit; font-weight: 700; background: var(--accent); color: #031a18; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .err { color: var(--bad); font-size: 13.5px; min-height: 1.5em; }
+</style>
+</head>
+<body>
+<form id="f" autocomplete="off">
+  <h1><span>ALLMIND</span> · PIN</h1>
+  <p>다른 기기에서 대시보드를 열려면 PIN이 필요해요. 방송 PC의 Allmind 설정 창(<b>다른 기기에서 열기</b>)에서 정한 PIN을 넣어 주세요. 한 번 넣으면 이 기기는 기억해요.</p>
+  <input id="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" aria-label="PIN" autofocus>
+  <div class="err" id="err"></div>
+  <button id="go" type="submit">확인</button>
+</form>
+<script>
+const next = (() => {
+  const n = new URLSearchParams(location.search).get('next') || '/';
+  return n.startsWith('/') && !n.startsWith('//') && !n.startsWith('/\\') ? n : '/';
+})();
+const $ = (id) => document.getElementById(id);
+$('pin').addEventListener('input', () => { $('pin').value = $('pin').value.replace(/\D/g, ''); $('err').textContent = ''; });
+$('f').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const pin = $('pin').value;
+  if (pin.length < 4) { $('err').textContent = 'PIN은 숫자 4~8자리예요'; return; }
+  $('go').disabled = true;
+  try {
+    const r = await (await fetch('/api/access/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) })).json();
+    if (r.ok) { location.replace(next); return; }
+    $('err').textContent = r.error || '실패했어요';
+    $('pin').value = ''; $('pin').focus();
+  } catch { $('err').textContent = 'Allmind에 연결할 수 없어요'; }
+  $('go').disabled = false;
+});
+// PIN turned off meanwhile (or this device is already paired): go straight on
+fetch('/api/access', { cache: 'no-store' }).then((r) => r.json()).then((a) => { if (!a.required || a.paired) location.replace(next); }).catch(() => {});
+</script>
+</body>
+</html>

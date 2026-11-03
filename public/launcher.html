@@ -167,6 +167,18 @@
           <li><i>(추천)</i> 크롬 <b>⋮ → 저장 및 공유 → 바로가기 만들기…</b> → <b>창으로 열기</b> 체크 → 바탕화면 아이콘으로 탭 없는 창이 바로 열려요.</li>
         </ol>
         <p class="tip-line">💡 공유기에서 방송 PC의 IP를 고정해 두면 주소가 안 바뀌어요.</p>
+        <fieldset class="move" id="pinBox">
+          <legend>PIN (선택)</legend>
+          <label class="check"><input type="checkbox" id="pinOn"><span><b>다른 기기는 PIN을 넣어야 열려요</b> — 메인 PC·아이패드·폰이 처음 한 번 PIN을 넣으면 그 기기는 기억해요. 방송 PC, OBS 오버레이(룰렛·공중전·텍스트), 스트림덱은 PIN 없이 그대로예요.</span></label>
+          <div class="deck-row">
+            <label class="small" for="pinValue">PIN</label>
+            <input id="pinValue" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" placeholder="숫자 4~8자리">
+            <button class="btn" type="button" id="pinSave">저장</button>
+          </div>
+          <div class="muted small" id="pinInfo"></div>
+          <div class="row-btns tight"><button class="btn ghost small-btn" type="button" id="pinLogout">모든 기기 로그아웃</button></div>
+          <div class="tip-line" id="pinDeck" hidden></div>
+        </fieldset>
       </div>
     </details>
 

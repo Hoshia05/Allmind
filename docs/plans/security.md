@@ -36,6 +36,16 @@ So the question is: **who can make it do those things?**
   `/api/launcher/save`, `<img>` → `/deck/mark`, `Host: evil.example` → all 403; dashboard, settings, Xylem, overlays,
   viewer card, Google login, Stream Deck-style GET and curl/no-Origin POSTs unaffected (0 refusals in the e2e runs).
 
+- **0.41.0 — step 3 (optional PIN):** `src/access.js` + `pinNeeded()` in `server.js` right after `guard()`. Settings card
+  다른 기기에서 열기 → PIN (off by default): scrypt PIN hash + SHA-256 device-token hashes in `DATA_DIR/access.json`;
+  `POST /api/access/pair` → cookie `allmind_device` (HttpOnly, SameSite=Lax, 400 days, renewed hourly while used).
+  Exempt: the stream PC (`isSelf`: loopback **or one of its own interface addresses**, so OBS sources / Edge on the LAN
+  address count), static files, overlay pages + their channels (`PIN_FREE_API`), OAuth callbacks, `/deck/*` (deck token;
+  turning the PIN on creates one if empty; the stream PC itself needs no key now). Unpaired: pages 302 → `/pin?next=`,
+  `/api/*` 401 `{pin:true}`; the dashboard follows 401s and checks `/api/access` when its SSE drops. Wrong guesses: 5 per
+  address → 5 min lock (doubling, max 1 h), 30 per hour overall. Turning it on and "모든 기기 로그아웃" destroy every
+  connection from other devices. Mock: `ALLMIND_SELF_LOOPBACK_ONLY=1` makes the container's own LAN address act as another device.
+
 ## Plan (each step small, testable on the mock)
 
 1. **Same-origin guard (fixes 1 + 2, invisible to the owner):** for every non-GET `/api/*`: require

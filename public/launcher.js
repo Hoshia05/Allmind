@@ -497,6 +497,53 @@ $('deckTokenSave').addEventListener('click', async () => {
 });
 loadDeck(); // token + addresses (the URL list itself is only shown when the details are opened)
 
+// ---------------- optional PIN for other devices (다른 기기에서 열기 card, src/access.js) ----------------
+const ago = (t) => {
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 60 ? '방금 전' : m < 60 * 24 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`;
+};
+function renderAccess(a, created = '') {
+  $('pinOn').checked = a.enabled;
+  $('pinValue').placeholder = a.hasPin ? '바꿀 때만 입력 (숫자 4~8자리)' : '숫자 4~8자리';
+  const devs = a.devices.slice().sort((x, y) => y.lastSeen - x.lastSeen);
+  $('pinInfo').textContent = !a.lanAccess ? '지금은 이 PC에서만 열려서 PIN이 필요 없어요 (위의 "다른 기기에서 대시보드 열기 허용"이 꺼져 있어요)'
+    : !a.enabled ? '꺼짐 — 같은 네트워크의 누구나 주소만 알면 대시보드를 열 수 있어요'
+    : devs.length ? `기억하는 기기 ${devs.length}대: ${devs.map((d) => `${d.name} (${ago(d.lastSeen)})`).join(' · ')}`
+    : '켜짐 — 아직 PIN을 넣은 기기가 없어요';
+  $('pinLogout').disabled = !devs.length;
+  const note = $('pinDeck');
+  note.hidden = !a.enabled;
+  if (created) note.innerHTML = `🎚️ 스트림덱용 <b>비밀 키</b>를 만들었어요: <code>${escapeAttr(created)}</code> — 메인 PC 스트림덱의 Allmind 키 설정 → <b>연결 → 비밀 키</b>에 넣어 주세요. 방송 PC의 스트림덱은 그대로 돼요.`;
+  else if (a.enabled) note.innerHTML = '🎚️ 메인 PC의 스트림덱은 PIN 대신 아래 <a href="#m-deck" data-goto>스트림덱</a> 칸의 <b>비밀 키</b>로 연결돼요.';
+}
+async function loadAccess() {
+  const r = await call('/access');
+  if (r.ok) renderAccess(r);
+}
+async function saveAccess() {
+  const pin = $('pinValue').value.trim();
+  const r = await call('/access-save', { enabled: $('pinOn').checked, pin });
+  if (!r.ok) { loadAccess(); return; }
+  $('pinValue').value = '';
+  renderAccess(r, r.deckTokenCreated);
+  if (r.deckTokenCreated) loadDeck();
+  toast(r.enabled ? (pin ? 'PIN을 저장했어요 — 다른 기기는 처음 한 번 PIN을 넣어야 해요' : 'PIN을 켰어요') : pin ? 'PIN을 바꿨어요 (지금은 꺼져 있어요)' : 'PIN을 껐어요');
+}
+$('pinOn').addEventListener('change', saveAccess);
+const savePinTyped = () => { if ($('pinValue').value) $('pinOn').checked = true; saveAccess(); }; // a typed PIN + 저장 turns it on
+$('pinSave').addEventListener('click', savePinTyped);
+$('pinValue').addEventListener('input', () => { $('pinValue').value = $('pinValue').value.replace(/\D/g, ''); });
+$('pinValue').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); savePinTyped(); } });
+$('pinLogout').addEventListener('click', async () => {
+  if (!confirm('PIN을 넣었던 기기를 모두 로그아웃할까요? 다시 쓰려면 기기마다 PIN을 한 번 더 넣어야 해요.')) return;
+  const r = await call('/access-logout', {});
+  if (!r.ok) return;
+  renderAccess(r);
+  toast(`기기 ${r.loggedOut}대를 로그아웃했어요`);
+});
+loadAccess();
+setInterval(loadAccess, 60000); // "방금 전" / newly paired devices
+
 
 // ---------------- settings export / import ----------------
 $('expBtn').addEventListener('click', async () => {

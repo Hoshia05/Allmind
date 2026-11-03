@@ -94,6 +94,7 @@ function tick() {
 async function load() {
   try {
     const r = await fetch('/api/marks', { cache: 'no-store' });
+    if (r.status === 401) return location.replace('/pin?next=/mark'); // PIN for other devices (again) needed
     S = await r.json(); gotAt = Date.now(); render();
   } catch { $('stateText').textContent = 'Allmind 연결 끊김'; }
 }
@@ -108,6 +109,7 @@ $('mark').onclick = async () => {
   try { navigator.vibrate?.(40); } catch {}
   try {
     const r = await fetch('/api/mark', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.status === 401) return location.replace('/pin?next=/mark');
     const j = await r.json();
     $('msg').textContent = j.ok ? `⭐ ${fmt(j.t)} 에 마크했어요` : j.reason === 'not recording' ? '녹화 중이 아니에요' : `마크 실패: ${j.reason}`;
   } catch { $('msg').textContent = 'Allmind에 연결할 수 없어요'; }

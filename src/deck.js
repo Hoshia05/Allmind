@@ -6,7 +6,8 @@
 // Stream Deck's built-in "Website" action (with "Access in background") only sends GET, and the
 // dashboard's /api/* routes want POST + JSON — so these are thin GET aliases. Same Allmind
 // instance for every deck/PC; state lives on the stream PC. Optional secret: config.deck.token,
-// then every URL needs `?key=<token>` (a web page could otherwise trigger them with an <img>).
+// then every URL from another device needs `?key=<token>` (the stream PC itself doesn't). Turning on the optional
+// PIN for other devices creates a token if there is none — the plugin has no browser to enter a PIN in.
 import crypto from 'node:crypto';
 
 const norm = (s) => String(s ?? '').normalize('NFC').trim().toLowerCase();
@@ -46,8 +47,10 @@ export class Deck {
 
   get token() { return String(this.config.deck?.token || ''); }
 
-  authorized(params) {
-    if (!this.token) return true;
+  // trusted = the request comes from the stream PC itself (its own Stream Deck plugin needs no key; another site's
+  // <img> on this PC is already refused by server.js guard() via Sec-Fetch-Site)
+  authorized(params, trusted = false) {
+    if (!this.token || trusted) return true;
     const a = Buffer.from(String(params.get('key') || ''));
     const b = Buffer.from(this.token);
     return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -121,8 +124,8 @@ export class Deck {
   }
 
   // → { status, body }
-  async run(name, params) {
-    if (!this.authorized(params)) return { status: 403, body: { ok: false, error: '키(key)가 맞지 않아요' } };
+  async run(name, params, trusted = false) {
+    if (!this.authorized(params, trusted)) return { status: 403, body: { ok: false, error: '키(key)가 맞지 않아요' } };
     const a = this.actions[name];
     if (!a) return { status: 404, body: { ok: false, error: `없는 동작이에요: ${name}`, actions: Object.keys(this.actions) } };
     try {

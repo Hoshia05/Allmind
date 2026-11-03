@@ -11,6 +11,7 @@ async function api(path, body = {}) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (res.status === 401) return toPin();
     const data = await res.json();
     if (!data.ok) toast(data.error || '요청이 실패했어요', true);
     return data;
@@ -48,6 +49,21 @@ const pref = {
   set(k, v) { try { localStorage.setItem('sd.' + k, JSON.stringify(v)); } catch {} },
 };
 
+// ---------------- optional PIN for other devices ----------------
+// The server answers 401 once this device must (again) enter the PIN — PIN just turned on, or "모든 기기 로그아웃".
+// EventSource can't see status codes, so after a dropped connection ask /api/access.
+function toPin() {
+  location.replace('/pin?next=' + encodeURIComponent(location.pathname + location.search));
+  return { ok: false };
+}
+let pinChecking = false;
+async function checkPin() {
+  if (pinChecking) return;
+  pinChecking = true;
+  try { const a = await (await fetch('/api/access', { cache: 'no-store' })).json(); if (a.required && !a.paired) toPin(); } catch {}
+  pinChecking = false;
+}
+
 // ---------------- live state ----------------
 function connectEvents() {
   const es = new EventSource('/api/events');
@@ -68,7 +84,8 @@ function connectEvents() {
   es.addEventListener('donations', (e) => donAdd(JSON.parse(e.data)));
   es.addEventListener('donation-read', (e) => donRead(JSON.parse(e.data)));
   es.onerror = () => {
-    $('chips').innerHTML = '<span class="chip bad">Helper offline — retrying</span>';
+    $('chips').innerHTML = '<span class="chip bad">Allmind 연결 끊김 — 다시 연결하는 중</span>';
+    checkPin();
   };
 }
 
