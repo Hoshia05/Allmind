@@ -1,4 +1,4 @@
-// Allmind Stream Deck plugin: BGM + soundboard keys that show what's playing.
+// Allmind Stream Deck plugin: BGM + soundboard + 할 일 keys that show what's playing / what's next.
 //
 // Stream Deck starts this file with Node (bundled to bin/plugin.js by tools/build-streamdeck.mjs) and
 // these arguments: -port <n> -pluginUUID <id> -registerEvent <name> -info <json>. We speak the plain
@@ -17,7 +17,9 @@ const UUID = arg('pluginUUID');
 const REGISTER = arg('registerEvent');
 const ACT_BGM = 'com.hoshia.allmind.bgm';
 const ACT_SB = 'com.hoshia.allmind.sb';
+const ACT_TODO = 'com.hoshia.allmind.todo';
 const NEED = '0.31.0';
+const NEED_LOOP_TODO = '0.42.0'; // bgm-loop, todo-next/undo (older Allmind answers "없는 동작")
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
@@ -180,10 +182,12 @@ function call(action, params = {}) {
 
 // ---------- what a key does ----------
 const OPS = {
-  [ACT_BGM]: { toggle: 'bgm-toggle', track: 'bgm-select', next: 'bgm-next', prev: 'bgm-prev', 'vol-up': 'bgm-vol-up', 'vol-down': 'bgm-vol-down' },
+  [ACT_BGM]: { toggle: 'bgm-toggle', track: 'bgm-select', next: 'bgm-next', prev: 'bgm-prev', 'vol-up': 'bgm-vol-up', 'vol-down': 'bgm-vol-down', loop: 'bgm-loop' },
   [ACT_SB]: { play: 'sb-play', stop: 'sb-stop', 'vol-up': 'sb-vol-up', 'vol-down': 'sb-vol-down' },
+  [ACT_TODO]: { next: 'todo-next', undo: 'todo-undo' },
 };
-const defaultOp = (action) => (action === ACT_BGM ? 'toggle' : 'play');
+const defaultOp = (action) => (action === ACT_BGM ? 'toggle' : action === ACT_TODO ? 'next' : 'play');
+const tooOld = () => am.version && cmpVersion(am.version, NEED_LOOP_TODO) < 0;
 
 async function press(context) {
   const k = keys.get(context);
@@ -197,7 +201,8 @@ async function press(context) {
   if (name === 'sb-play') { if (!k.settings.sound) return send('showAlert', context); params.name = k.settings.sound; }
   if (/vol-/.test(name) && Number(k.settings.step) > 0) params.step = String(Number(k.settings.step));
   const r = await call(name, params);
-  if (!r.ok) { log(name, 'failed:', r.error); send('showAlert', context); }
+  if (!r.ok) { log(name, 'failed:', r.error); send('showAlert', context); return; }
+  if (name === 'todo-next' || name === 'todo-undo') send('showOk', context);
 }
 
 // ---------- drawing ----------
@@ -213,6 +218,14 @@ const G = {
   bell: (c) => `<path d="M72 22 C52 22 46 40 46 56 L46 70 L38 80 L106 80 L98 70 L98 56 C98 40 92 22 72 22 Z" fill="${c}"/><circle cx="72" cy="88" r="7" fill="${c}"/>`,
   vol: (c, up) => `<path d="M34 46 L50 46 L70 30 L70 82 L50 66 L34 66 Z" fill="${c}"/>${up ? `<path d="M86 56 h26 M99 43 v26" stroke="${c}" stroke-width="8" stroke-linecap="round"/>` : `<path d="M86 56 h26" stroke="${c}" stroke-width="8" stroke-linecap="round"/>`}`,
   off: (c) => `<path d="M40 40 L104 104 M104 40 L40 104" stroke="${c}" stroke-width="8" stroke-linecap="round" opacity=".7"/>`,
+  // 🔁 two arrows chasing each other
+  loop: (c) => `<path d="M40 62 V54 Q40 40 54 40 H92" stroke="${c}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M88 28 L104 40 L88 52 Z" fill="${c}"/><path d="M104 50 V58 Q104 72 90 72 H52" stroke="${c}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M56 60 L40 72 L56 84 Z" fill="${c}"/>`,
+  // a progress ring under the loop while the loop files are being made (p 0–100)
+  ring: (c, p) => { const r = 44, L = 2 * Math.PI * r; return `<circle cx="72" cy="56" r="${r}" stroke="${C.dim}" stroke-width="5" fill="none"/><circle cx="72" cy="56" r="${r}" stroke="${c}" stroke-width="5" fill="none" stroke-dasharray="${(L * p) / 100} ${L}" transform="rotate(-90 72 56)"/>`; },
+  check: (c, done) => `<rect x="38" y="22" width="68" height="68" rx="12" stroke="${c}" stroke-width="7" fill="none"/>${done ? `<path d="M52 56 L66 70 L92 40" stroke="${c}" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` : ''}`,
+  undo: (c) => `<path d="M50 44 H86 Q104 44 104 62 Q104 80 86 80 H58" stroke="${c}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M58 28 L38 44 L58 60 Z" fill="${c}"/>`,
+  // small count in the top-right corner
+  badge: (n, bg, fg) => `<circle cx="116" cy="26" r="20" fill="${bg}"/><text x="116" y="34" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="${fg}">${n}</text>`,
 };
 
 // Stream Deck doesn't wrap titles: split into short lines ourselves, at spaces where possible.
@@ -243,8 +256,16 @@ const db = (v) => (Number.isFinite(v) ? `${Math.round(v)} dB` : '');
 
 function view(k) {
   const op = k.settings.op || defaultOp(k.action);
-  if (!am.up) return { image: svg(C.bg, (k.action === ACT_BGM ? G.note : G.bell)(C.dim) + G.off(C.red)), title: '연결\n안 됨' };
+  if (!am.up) return { image: svg(C.bg, (k.action === ACT_BGM ? G.note : k.action === ACT_TODO ? (c) => G.check(c, false) : G.bell)(C.dim) + G.off(C.red)), title: '연결\n안 됨' };
   const st = am.state || { bgm: {}, sb: {} };
+  if ((k.action === ACT_TODO || op === 'loop') && tooOld()) return { image: svg(C.bg, (k.action === ACT_TODO ? (c) => G.check(c, false) : G.loop)(C.dim)), title: 'Allmind\n업데이트 필요' };
+  if (k.action === ACT_TODO) {
+    const t = st.todo || { total: 0, left: 0, next: '' };
+    if (op === 'undo') return { image: svg(C.bg, G.undo(t.total > t.left ? C.teal : C.mute)), title: '체크\n되돌리기' };
+    if (!t.total) return { image: svg(C.bg, G.check(C.dim, false)), title: '오늘 할 것\n없음' };
+    if (!t.left) return { image: svg('#0f2a1b', G.check(C.on, true)), title: '다 했어요!' };
+    return { image: svg(C.bg, G.check(C.teal, false) + G.badge(t.left, C.teal, '#031a18')), title: wrap(t.next) };
+  }
   if (k.action === ACT_BGM) {
     const b = st.bgm || {};
     if (!b.ok && op !== 'vol-up' && op !== 'vol-down') return { image: svg(C.bg, G.note(C.dim)), title: 'BGM 소스\n없음' };
@@ -260,6 +281,15 @@ function view(k) {
       case 'next': return { image: svg(C.bg, G.next(C.teal)), title: '다음 곡' };
       case 'prev': return { image: svg(C.bg, G.prev(C.teal)), title: '이전 곡' };
       case 'vol-up': case 'vol-down': return { image: svg(C.bg, G.vol(C.teal, op === 'vol-up')), title: `BGM\n${db(b.volumeDb)}` };
+      case 'loop': {
+        const l = b.loop || { set: false };
+        if (!b.currentId) return { image: svg(C.bg, G.loop(C.dim)), title: '곡을\n고르세요' };
+        if (!l.set) return { image: svg(C.bg, G.loop(C.dim)), title: '반복 설정\n필요' };
+        if (l.state === 'error') return { image: svg(C.bg, G.loop(C.red)), title: '반복\n실패' };
+        if (l.enabled && !l.ready) return { image: svg(C.bg, G.loop(C.amber) + G.ring(C.amber, l.progress || 0)), title: l.state === 'building' ? `만드는 중\n${l.progress || 0}%` : '준비 중' };
+        if (l.enabled) return { image: svg('#0f2a1b', G.loop(C.on)), title: '무한 반복\n켜짐' };
+        return { image: svg(C.bg, G.loop(C.mute)), title: '무한 반복\n꺼짐' };
+      }
     }
   } else {
     const s = st.sb || {};

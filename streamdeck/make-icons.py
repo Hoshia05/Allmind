@@ -29,6 +29,12 @@ def bell(d, s, c):
     d.ellipse([65 * w, 84 * w, 79 * w, 98 * w], fill=c)
 
 
+def check(d, s, c):  # 할 일: a rounded box with a tick
+    w = s / 144
+    d.rounded_rectangle([38 * w, 22 * w, 106 * w, 90 * w], radius=int(12 * w), outline=c, width=int(8 * w))
+    d.line([(52 * w, 56 * w), (66 * w, 70 * w), (92 * w, 40 * w)], fill=c, width=int(10 * w), joint='curve')
+
+
 def glyph(fn, size, fg, bg=None, scale=1.0, dy=0):
     big = size * S
     im = Image.new('RGBA', (big, big), bg or (0, 0, 0, 0))
@@ -63,8 +69,10 @@ for n, s in [('category', 28), ('category@2x', 56)]:
 for n, s in [('', 20), ('@2x', 40)]:
     save(glyph(note, s, (255, 255, 255, 255), scale=1.25, dy=0.05), f'action-bgm{n}.png')
     save(glyph(bell, s, (255, 255, 255, 255), scale=1.25, dy=0.0), f'action-sb{n}.png')
+    save(glyph(check, s, (255, 255, 255, 255), scale=1.25, dy=0.05), f'action-todo{n}.png')
 BG = (16, 26, 29, 255)
 for n, s in [('', 72), ('@2x', 144)]:
     save(glyph(note, s, (47, 216, 200, 255), BG), f'key-bgm{n}.png')
     save(glyph(bell, s, (47, 216, 200, 255), BG), f'key-sb{n}.png')
+    save(glyph(check, s, (47, 216, 200, 255), BG), f'key-todo{n}.png')
 print('wrote', sorted(os.listdir(OUT)))

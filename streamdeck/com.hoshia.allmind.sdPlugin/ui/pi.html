@@ -43,6 +43,8 @@
     <div class="row"><label for="step">한 번에</label><input id="step" type="number" min="1" max="20" step="1" placeholder="3"><span style="margin-left:6px">dB</span></div>
   </div>
 
+  <div class="hint hide" id="opHint"></div>
+
   <div class="status" id="status">연결 확인 중…</div>
 
   <details id="conn">
@@ -57,8 +59,14 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 const OPS = {
-  'com.hoshia.allmind.bgm': [['toggle', '재생 / 일시정지'], ['track', '이 곡 재생'], ['next', '다음 곡'], ['prev', '이전 곡'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기']],
+  'com.hoshia.allmind.bgm': [['toggle', '재생 / 일시정지'], ['track', '이 곡 재생'], ['next', '다음 곡'], ['prev', '이전 곡'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기'], ['loop', '🔁 무한 반복 켜기/끄기']],
   'com.hoshia.allmind.sb': [['play', '사운드 재생'], ['stop', '정지'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기']],
+  'com.hoshia.allmind.todo': [['next', '다음 항목 체크'], ['undo', '마지막 체크 되돌리기']],
+};
+const HINTS = {
+  loop: '지금 재생 중인 곡의 무한 반복을 켜고 꺼요. 대시보드 셋리스트의 🔁에서 한 번 저장해 둔 곡만 돼요. 끄면 지금 위치에서 원곡으로 이어져요.',
+  next: '대시보드 "오늘 할 것"에서 아직 안 한 첫 항목을 체크해요. 키에 그 항목과 남은 개수가 보여요. 녹화 중이면 ⭐ 마크도 남아요.',
+  undo: '실수로 눌렀을 때: 가장 최근에 체크한 항목을 다시 안 한 것으로.',
 };
 let ws, uuid, action, settings = {}, info = { tracks: [], sounds: [] };
 
@@ -71,6 +79,9 @@ function show() {
   $('trackBox').classList.toggle('hide', op !== 'track');
   $('soundBox').classList.toggle('hide', !(action.endsWith('.sb') && op === 'play'));
   $('stepBox').classList.toggle('hide', !op.startsWith('vol-'));
+  const hint = HINTS[op] && (op !== 'next' || action.endsWith('.todo')) ? HINTS[op] : '';
+  $('opHint').textContent = hint;
+  $('opHint').classList.toggle('hide', !hint);
 }
 
 function fillTracks() {

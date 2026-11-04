@@ -14,11 +14,12 @@ const norm = (s) => String(s ?? '').normalize('NFC').trim().toLowerCase();
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== '' && v != null ? Number(v) : d);
 
 export class Deck {
-  constructor({ config, bgm, soundboard, markers }) {
+  constructor({ config, bgm, soundboard, markers, todo }) {
     this.config = config;
     this.bgm = bgm;
     this.sb = soundboard;
     this.markers = markers;
+    this.todo = todo;
     // Live state for the Allmind Stream Deck plugin (GET /deck/events). Separate from the dashboard's
     // SSE on purpose: a deck plugin is always connected, and must not count as "a dashboard is open".
     this.clients = new Set();
@@ -27,6 +28,7 @@ export class Deck {
     const changed = () => this.clients.size && this._schedule();
     bgm.on('change', changed);
     soundboard.on('change', changed);
+    todo?.on('change', changed); // (🔁 loop changes arrive as bgm 'change')
     // name → { label, args?, run(params) }
     this.actions = {
       'bgm-toggle': { label: 'BGM 재생/일시정지', run: async () => { await this.bgm.toggle(); } },
@@ -41,6 +43,9 @@ export class Deck {
       'sb-stop': { label: '사운드보드 정지', run: async () => { await this.sb.stop(); } },
       'sb-vol-up': { label: '사운드보드 볼륨 +3dB', run: (p) => this._vol(this.sb, num(p.get('step'), 3)) },
       'sb-vol-down': { label: '사운드보드 볼륨 −3dB', run: (p) => this._vol(this.sb, -num(p.get('step'), 3)) },
+      'bgm-loop': { label: 'BGM 🔁 무한 반복 켜기/끄기 (지금 곡)', run: (p) => this._bgmLoop(p.get('on')) },
+      'todo-next': { label: '할 일: 오늘 할 것 다음 항목 체크', run: () => this._todoNext() },
+      'todo-undo': { label: '할 일: 마지막 체크 되돌리기', run: () => this._todoUndo() },
       'mark': { label: '⭐ 순간 표시', run: async (p) => { const r = await this.markers.mark(p.get('label')); if (!r.ok) throw new Error(r.reason === 'not recording' ? '녹화 중이 아니에요' : r.reason === 'OBS not connected' ? 'OBS에 연결되어 있지 않아요' : r.reason || '표시하지 못했어요'); return { t: r.t }; } },
     };
   }
@@ -82,12 +87,50 @@ export class Deck {
     return { track: this.bgm.tracks.get(id).title };
   }
 
+  // 🔁 무한 반복 for the track that's on now (on=1/0 forces a side; otherwise it flips). Only for a track whose loop
+  // points were already set once in the dashboard's 🔁 editor — a key press shouldn't put an unchecked seam on stream.
+  _bgmLoop(on) {
+    const id = this.bgm.currentId;
+    if (!id || !this.bgm.tracks.has(id)) throw new Error('지금 고른 곡이 없어요');
+    const v = this.bgm.loops.view(id);
+    if (!v || v.start == null) throw new Error('이 곡은 아직 무한 반복 설정이 없어요 — 대시보드 셋리스트의 🔁에서 먼저 저장해 주세요');
+    const want = on === '1' || on === 'true' ? true : on === '0' || on === 'false' ? false : !v.enabled;
+    const r = this.bgm.loops.setEnabled(id, want);
+    this.bgm.loopChanged(id);
+    return { track: this.bgm.tracks.get(id).title, enabled: r.enabled, state: r.state };
+  }
+
+  // 오늘 할 것, in the dashboard's order (oldest first); the next one is the first unchecked
+  _tonight() { return this.todo ? this.todo.items.filter((x) => x.status === 'tonight').sort((a, b) => a.moved - b.moved) : []; }
+  async _todoNext() {
+    if (!this.todo) throw new Error('할 일을 쓸 수 없어요');
+    const it = this._tonight().find((x) => !x.done);
+    if (!it) throw new Error('오늘 할 것을 다 했어요');
+    const r = await this.todo.check(it.id, true);
+    return { item: it.title, marked: r.marked };
+  }
+  async _todoUndo() {
+    if (!this.todo) throw new Error('할 일을 쓸 수 없어요');
+    const last = this._tonight().filter((x) => x.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0))[0];
+    if (!last) throw new Error('되돌릴 체크가 없어요');
+    await this.todo.check(last.id, false);
+    return { item: last.title };
+  }
+
   // ---------- live state for the plugin ----------
   summary() {
     const b = this.bgm, sb = this.sb;
+    const lv = b.currentId ? b.loops?.view(b.currentId) : null;
+    const tonight = this._tonight();
+    const next = tonight.find((x) => !x.done);
     return {
-      bgm: { ok: !!b.sourceOk, playing: !!b.media.playing, currentId: b.currentId, title: b.tracks.get(b.currentId)?.title || '', volumeDb: b.volumeDb },
+      bgm: {
+        ok: !!b.sourceOk, playing: !!b.media.playing, currentId: b.currentId, title: b.tracks.get(b.currentId)?.title || '', volumeDb: b.volumeDb,
+        // 🔁 for the current track: set = loop points saved once; state idle/analyzing/building/ready/error; progress 0–100 while building
+        loop: lv && lv.start != null ? { set: true, enabled: lv.enabled, ready: !!lv.ready, state: lv.state, progress: lv.progress, error: lv.error } : { set: false },
+      },
       sb: { ok: !!sb.sourceOk, playing: sb.playing, volumeDb: sb.volumeDb },
+      todo: { total: tonight.length, left: tonight.filter((x) => !x.done).length, next: next?.title || '' },
     };
   }
   lists() {
@@ -149,6 +192,7 @@ export class Deck {
           ...['sb-stop', 'sb-vol-up', 'sb-vol-down'].map((n) => ({ label: this.actions[n].label, path: mk(n) })),
         ],
       },
+      { title: '🔁 무한 반복 · 할 일', items: ['bgm-loop', 'todo-next', 'todo-undo'].map((n) => ({ label: this.actions[n].label, path: mk(n) })) },
       { title: '녹화', items: [{ label: this.actions.mark.label, path: mk('mark') }] },
     ];
     return { hasToken: !!this.token, groups };

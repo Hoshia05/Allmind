@@ -1,10 +1,10 @@
 {
   "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
   "Name": "Allmind",
-  "Version": "1.0.0.0",
+  "Version": "1.1.0.0",
   "Author": "Hoshia",
   "UUID": "com.hoshia.allmind",
-  "Description": "Allmind의 BGM과 사운드보드를 스트림덱 키로 — 지금 재생 중인 곡과 사운드가 키에 보여요.",
+  "Description": "Allmind의 BGM·사운드보드·할 일을 스트림덱 키로 — 지금 재생 중인 곡, 무한 반복, 오늘 할 것이 키에 보여요.",
   "Icon": "imgs/plugin",
   "Category": "Allmind",
   "CategoryIcon": "imgs/category",
@@ -26,7 +26,7 @@
     {
       "UUID": "com.hoshia.allmind.bgm",
       "Name": "BGM",
-      "Tooltip": "재생/일시정지, 특정 곡 재생, 다음/이전 곡, 볼륨",
+      "Tooltip": "재생/일시정지, 특정 곡 재생, 다음/이전 곡, 볼륨, 🔁 무한 반복",
       "Icon": "imgs/action-bgm",
       "PropertyInspectorPath": "ui/pi.html",
       "Controllers": [
@@ -54,6 +54,24 @@
       "States": [
         {
           "Image": "imgs/key-sb",
+          "TitleAlignment": "bottom",
+          "FontSize": 11
+        }
+      ]
+    },
+    {
+      "UUID": "com.hoshia.allmind.todo",
+      "Name": "할 일",
+      "Tooltip": "오늘 할 것의 다음 항목 체크, 마지막 체크 되돌리기",
+      "Icon": "imgs/action-todo",
+      "PropertyInspectorPath": "ui/pi.html",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": true,
+      "States": [
+        {
+          "Image": "imgs/key-todo",
           "TitleAlignment": "bottom",
           "FontSize": 11
         }

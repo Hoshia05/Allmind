@@ -41,7 +41,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.41.0';
+const VERSION = '0.42.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -445,7 +445,7 @@ async function main() {
     vts: { ...vts.status(), throw: vtsThrow.status() },
   });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
-  const deck = new Deck({ config, bgm, soundboard, markers });
+  const deck = new Deck({ config, bgm, soundboard, markers, todo });
   const access = new Access(); // optional PIN for other devices (src/access.js)
   let chatWasUp = null;
   chzzk.on('change', () => {
