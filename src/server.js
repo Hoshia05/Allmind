@@ -5,6 +5,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { loadConfig, saveConfig, readAsset, configPath, ROOT, DATA_DIR, CONFIG_DIR, IS_EXE } from './config.js';
@@ -41,7 +42,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.43.1';
+const VERSION = '0.43.2';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -105,6 +106,15 @@ function readBody(req) {
       try { resolve(raw ? JSON.parse(raw) : {}); } catch { resolve({}); }
     });
   });
+}
+// Static files: "no-cache" + an ETag from the content, so a reload (or a phone reconnecting) gets "304 not modified"
+// instead of every script again; a new exe or Xylem pack changes the content and so the tag. (Hashing is far cheaper
+// than sending: ~0.3 ms for app.js.)
+function sendStatic(req, res, body, type, extra = {}) {
+  const tag = `"${crypto.createHash('sha1').update(body).digest('base64url').slice(0, 20)}"`;
+  if (req.headers['if-none-match'] === tag) { res.writeHead(304, { ETag: tag, 'Cache-Control': 'no-cache' }); return res.end(); }
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache', ETag: tag, ...extra });
+  res.end(body);
 }
 function json(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -1177,8 +1187,7 @@ async function main() {
       const name = url.pathname === '/xylem' || url.pathname === '/xylem/' ? 'index.html' : url.pathname.startsWith('/xylem/') ? decodeURIComponent(url.pathname.slice(7)) : `${url.pathname.slice(1)}.html`;
       const body = xylem.file(name);
       if (!body) return json(res, 404, { error: 'Not found' });
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(name)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
-      return res.end(body);
+      return sendStatic(req, res, body, MIME[path.extname(name)] || 'application/octet-stream');
     }
     if (key === 'GET /api/xylem/state') return json(res, 200, { ok: true, ...xylemState() }); // polled by the Xylem page; no dashboard broadcast
     if (key === 'GET /api/xylem/events') return xylemPage.attach(req, res);
@@ -1311,9 +1320,7 @@ async function main() {
         const body = readAsset(path.posix.join('public', rel));
         if (body) {
           const dl = rel.endsWith('.streamDeckPlugin') ? { 'Content-Disposition': 'attachment; filename="Allmind.streamDeckPlugin"' } : {};
-          res.writeHead(200, { 'Content-Type': MIME[path.extname(rel)] || 'application/octet-stream', 'Cache-Control': 'no-cache', ...dl });
-          res.end(body);
-          return;
+          return sendStatic(req, res, body, MIME[path.extname(rel)] || 'application/octet-stream', dl);
         }
       }
     }

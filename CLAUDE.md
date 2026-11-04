@@ -139,6 +139,9 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   `config.example.json`. `src/win.js` — Windows bits (tray, firewall, pickers).
 - **할 일** (`docs/plans/todo.md`, 0.39): `src/todo.js` — 창고/오늘/한 것 idea list (`todo.json`), SSE `todo` + `todo-start` reminder, ⭐ mark on check while recording, report `plan`, `archive()` at stream end. Dashboard panel `#todoPanel` (tab with 사운드보드 in the free layout via `tabWith`, folded in fixed layouts, phone tab `mp-todo`).
 - **Xylem inside the dashboard** (0.38.1): `#xylemBtn` / phone tab `data-mp="xylem"` → `setXylem()` shows `#xyView` (iframe `/xylem?embed=1`, loaded once, then only hidden) and hides `.layout`; mirrors don't run while `body.xy-open`; the embedded page (`EMBED` in `public/xylem/xylem.js`) skips polling while hidden (`postMessage` `xylem-visible`), shows a ↗ new-window button. Ctrl/Shift/middle-click = separate window as before.
+- Static files (public/, Xylem pack) go through `sendStatic()` in `server.js`: `no-cache` + a content-hash `ETag` → `304` on reloads
+  (0.43.2). Audit 2026-11-04 (mock): idle without a dashboard ≈ 9 OBS requests / 20 s; with one dashboard the 방송 화면 mirror is
+  ~99 % of OBS requests (screenshots); idle JS ≈ 1.5 % of a core, mostly parsing `InputVolumeMeters` (needed for auto-pause).
 - `public/index.html`, `app.js`, `style.css` — dashboard. `dock.js` — free panel layout
   (columns, slots, tabs; saved per browser in `localStorage['sd.dock']`; only on wide
   landscape screens). `launcher.*` — settings window on the stream PC. `mark.html` — /mark page.
