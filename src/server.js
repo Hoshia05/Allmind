@@ -41,7 +41,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.42.0';
+const VERSION = '0.43.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -1146,6 +1146,13 @@ async function main() {
     if (key === 'GET /api/bgm/loop') {
       try { const id = loopId(url.searchParams.get('id')); await bgm.loops.ffmpeg(); return json(res, 200, { ok: true, loop: bgm.loops.view(id), ffmpeg: bgm.loops.status().ffmpeg, windows: process.platform === 'win32' }); }
       catch (e) { return json(res, 200, { ok: false, error: e.message }); }
+    }
+    // waveform around the seam for the editor (peaks only — a few KB)
+    if (key === 'GET /api/bgm/loop/peaks') {
+      try {
+        const q = url.searchParams;
+        return json(res, 200, { ok: true, ...(await bgm.loops.peaks(loopId(q.get('id')), q.get('start'), q.get('end'), q.get('span'), q.get('bins'))) });
+      } catch (e) { return json(res, 400, { ok: false, error: e.message }); }
     }
     // what the loop will sound like: a few seconds before the seam, then on from the loop start (MP3, for the browser)
     if (key === 'GET /api/bgm/loop/preview') {

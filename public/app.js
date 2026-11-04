@@ -2154,7 +2154,15 @@ function renderLoop() {
       <label>루프 시작<input class="mono" data-f="start" value="${fmtMs(ed.start)}" placeholder="1:15.291"></label><div class="nudges">${nudge('start')}<span class="muted small">ms</span></div>
       <label>루프 끝<input class="mono" data-f="end" value="${fmtMs(ed.end)}" placeholder="4:14.802"></label><div class="nudges">${nudge('end')}<span class="muted small">ms</span></div>
     </div>
-    ${has ? `<div class="loop-sum muted small">인트로 ${fmtMs(ed.start)} · 반복 ${fmtMs(ed.end - ed.start)}${ed.score != null ? ` · 일치도 ${ed.score}%` : ''}${ed.source === 'manual' ? ' · 직접 고침' : ed.source === 'tag' ? ' · 파일 태그' : ''}</div>` : ''}
+    ${has ? `<div class="loop-sum muted small">인트로 ${fmtMs(ed.start)} · 반복 ${fmtMs(ed.end - ed.start)}${ed.score != null ? ` · 일치도 ${ed.score}%` : ''}${ed.source === 'manual' ? ' · 직접 고침' : ed.source === 'tag' ? ' · 파일 태그' : ''}</div>
+    <div class="loop-wave">
+      <canvas id="loopWave" height="120"></canvas>
+      <div class="loop-wave-bar">
+        <span class="lw-key"><i class="heard"></i>들리는 소리</span><span class="lw-key"><i class="ghost"></i>원곡 (반대쪽)</span>
+        <span class="lw-zoom">${[[2, '±2초'], [0.5, '±0.5초'], [0.1, '±0.1초']].map(([z, t]) => `<button class="btn ghost small-btn${(ed.zoom || 2) === z ? ' on' : ''}" data-zoom="${z}">${t}</button>`).join('')}</span>
+      </div>
+      <div class="muted small">가운데 세로선이 이음새예요. 두 선이 양쪽에서 겹치면 자연스럽게 이어져요 — 어긋나면 ±10/±100으로 맞춰 보세요.</div>
+    </div>` : ''}
     <div class="row-btns">
       <button class="btn" data-lp="listen" ${has ? '' : 'disabled'}>▶ 이음새 듣기</button>
       <button class="btn ghost" data-lp="detect" ${ed.busy ? 'disabled' : ''}>${ed.busy === 'detect' ? '찾는 중…' : '자동으로 다시 찾기'}</button>
@@ -2173,11 +2181,78 @@ function renderLoop() {
       </div>
     </div>`;
   $('loopBody').innerHTML = html;
+  if (has) wantWave();
+}
+
+// ---- waveform around the seam (server sends min/max peaks for the current points: GET /api/bgm/loop/peaks) ----
+let waveT = null, waveSeq = 0;
+function wantWave() {
+  const ed = loopEd;
+  if (!ed || ed.start == null || ed.end == null) return;
+  const zoom = ed.zoom || 2;
+  const key = `${ed.start}|${ed.end}|${zoom}`;
+  drawWave(ed.waveKey !== key);
+  if (ed.waveKey === key || ed.waveWant === key) return;
+  ed.waveWant = key;
+  clearTimeout(waveT);
+  waveT = setTimeout(async () => { // nudges come in bursts: ask once they settle
+    const seq = ++waveSeq;
+    let r;
+    try { r = await (await fetch(`/api/bgm/loop/peaks?id=${encodeURIComponent(ed.id)}&start=${ed.start}&end=${ed.end}&span=${zoom}&bins=600`, { cache: 'no-store' })).json(); } catch { r = { ok: false, error: 'Allmind에 연결할 수 없어요' }; }
+    if (loopEd !== ed || seq !== waveSeq) return;
+    ed.waveWant = null;
+    if (r.ok) { ed.wave = r; ed.waveKey = key; ed.waveErr = null; } else ed.waveErr = r.error;
+    drawWave(ed.waveKey !== key);
+  }, ed.wave ? 150 : 0);
+}
+window.addEventListener('resize', () => { if (loopEd) drawWave(loopEd.waveKey !== `${loopEd.start}|${loopEd.end}|${loopEd.zoom || 2}`); });
+function drawWave(stale) {
+  const ed = loopEd, c = $('loopWave');
+  if (!ed || !c) return;
+  const dpr = window.devicePixelRatio || 1, w = c.clientWidth || 400, h = 120;
+  if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement);
+  const accent = css.getPropertyValue('--accent').trim() || '#2fd8c8', muted = css.getPropertyValue('--muted').trim() || '#7b9b9a', warn = css.getPropertyValue('--warn').trim() || '#ffb547';
+  const mid = h / 2;
+  g.fillStyle = 'rgba(255,255,255,.03)'; g.fillRect(0, 0, w / 2, h); // left = before the jump
+  g.strokeStyle = 'rgba(255,255,255,.08)'; g.beginPath(); g.moveTo(0, mid + .5); g.lineTo(w, mid + .5); g.stroke();
+  const W = ed.wave;
+  if (W) {
+    g.globalAlpha = stale ? 0.35 : 1;
+    const bw = w / W.bins;
+    const lane = (arr, color, alpha, outline) => {
+      g.globalAlpha = (stale ? 0.35 : 1) * alpha;
+      if (outline) { g.strokeStyle = color; g.lineWidth = 1.25; }
+      else g.fillStyle = color;
+      for (let b = 0; b < W.bins; b++) {
+        const lo = arr[b * 2], hi = arr[b * 2 + 1];
+        if (lo == null) continue;
+        const y1 = mid - (hi / 127) * (mid - 6), y2 = mid - (lo / 127) * (mid - 6);
+        if (outline) { g.beginPath(); g.moveTo(b * bw + bw / 2, y1); g.lineTo(b * bw + bw / 2, Math.max(y2, y1 + 1)); g.stroke(); }
+        else g.fillRect(b * bw, y1, Math.max(1, bw), Math.max(1, y2 - y1));
+      }
+    };
+    lane(W.ghost, muted, 0.55, false);
+    lane(W.heard, accent, 0.85, true);
+    g.globalAlpha = 1;
+  }
+  g.strokeStyle = warn; g.lineWidth = 2; g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w / 2, h); g.stroke(); // the seam
+  g.fillStyle = muted; g.font = '11px system-ui, sans-serif';
+  const span = W?.span ?? (ed.zoom || 2);
+  const lab = (s) => (span < 1 ? `${Math.round(s * 1000)}ms` : `${s}초`);
+  g.textAlign = 'left'; g.fillText(`← 루프 끝 전 −${lab(span)}`, 6, 14);
+  g.textAlign = 'right'; g.fillText(`루프 시작 후 +${lab(span)} →`, w - 6, 14);
+  if (!W || ed.waveErr) { g.textAlign = 'center'; g.fillText(ed.waveErr || '파형 불러오는 중…', w / 2, h - 10); }
 }
 
 $('loopBody').addEventListener('click', async (ev) => {
   const ed = loopEd;
   if (!ed) return;
+  const z = ev.target.closest('[data-zoom]');
+  if (z) { ed.zoom = Number(z.dataset.zoom); renderLoop(); return; }
   const n = ev.target.closest('[data-nudge]');
   if (n) {
     const k = n.dataset.nudge;

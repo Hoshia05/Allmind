@@ -955,6 +955,15 @@ body.xy-open .layout { display: none !important; }
 .loop-grid .nudges { display: flex; gap: 3px; align-items: center; flex-wrap: wrap; }
 .loop-grid .nudges .btn { padding: 4px 7px; font-size: 12px; }
 .loop-sum { margin: 6px 0 2px; }
+.loop-wave { margin: 10px 0 4px; display: grid; gap: 6px; }
+.loop-wave canvas { width: 100%; height: 120px; display: block; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.loop-wave-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.lw-key { display: inline-flex; align-items: center; gap: 5px; }
+.lw-key i { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
+.lw-key i.heard { background: var(--accent); } .lw-key i.ghost { background: var(--muted); opacity: .6; }
+.lw-zoom { margin-left: auto; display: inline-flex; gap: 3px; }
+.lw-zoom .btn { padding: 3px 8px; font-size: 12px; }
+.lw-zoom .btn.on { border-color: var(--accent); color: var(--accent); }
 .loop-foot { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; display: grid; gap: 6px; }
 .loop-progress { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
 .loop-progress i { display: block; height: 100%; background: var(--accent); transition: width .5s; }

@@ -225,6 +225,47 @@ export class BgmLoops extends EventEmitter {
     return this._encode(out, ['-c:a', 'libmp3lame', '-b:a', '192k', '-f', 'mp3', '-']);
   }
 
+  // Waveform around the seam for the editor (min/max peaks, not audio). Time axis −span…+span s around the jump:
+  //   heard: what plays — the last `span` s before the loop end, then `span` s from the loop start
+  //   ghost: the other side of the loop at the same moments — before the loop start, and after the loop end in the
+  //          original track. A good seam makes the two lines match on both sides.
+  // → { span, bins, heard:[min,max,…], ghost:[min,max,… | null where the track has no audio] } in −127…127,
+  //   both scaled by the same factor (loudest of the two)
+  async peaks(id, start, end, span = 2, bins = 600) {
+    start = Number(start); end = Number(end);
+    span = Math.min(4, Math.max(0.05, Number(span) || 2));
+    bins = Math.min(1200, Math.max(50, Math.round(Number(bins) || 600)));
+    if (!(end - start > 1)) throw new Error('루프 끝은 시작보다 뒤여야 해요');
+    const pcm = await this._pcm(id);
+    const n = pcm.length / 2, S = Math.round(start * SR), E = Math.round(end * SR), W = Math.round(span * SR);
+    if (E > n || S < 0) throw new Error('루프 지점이 곡 밖에 있어요');
+    const per = (2 * W) / bins;
+    // sample index in the track for window position k (0…2W): left half counts back from one point, right half on from another
+    const read = (leftFrom, rightFrom) => {
+      const out = new Float32Array(bins * 2);
+      let peak = 0;
+      for (let b = 0; b < bins; b++) {
+        let lo = Infinity, hi = -Infinity;
+        const k0 = Math.floor(b * per), k1 = Math.max(k0 + 1, Math.floor((b + 1) * per));
+        for (let k = k0; k < k1; k++) {
+          const i = k < W ? leftFrom - W + k : rightFrom + (k - W);
+          if (i < 0 || i >= n) continue;
+          const v = (pcm[i * 2] + pcm[i * 2 + 1]) / 2;
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        if (lo === Infinity) { out[b * 2] = NaN; out[b * 2 + 1] = NaN; continue; }
+        out[b * 2] = lo; out[b * 2 + 1] = hi;
+        peak = Math.max(peak, -lo, hi);
+      }
+      return { out, peak };
+    };
+    const heard = read(E, S), ghost = read(S, E);
+    const scale = 127 / Math.max(1, heard.peak, ghost.peak);
+    const pack = (a) => Array.from(a, (v) => (Number.isNaN(v) ? null : Math.round(v * scale)));
+    return { span, bins, heard: pack(heard.out), ghost: pack(ghost.out) };
+  }
+
   // the last XF samples before `fromEnd` faded out while the XF samples before `toStart` fade in → out[at…]
   _blend(pcm, fromEnd, toStart, out, at) {
     for (let i = 0; i < XF; i++) {

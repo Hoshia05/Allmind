@@ -94,6 +94,9 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   `findLoop()` (runs via `new Worker(findLoop.toString(), {eval:true})` — keep it self-contained, no imports/outside refs). bgm.js: loop-ready
   track → file A, A ended → B with `looping:true`, `_loopPos()` maps OBS's cursor to the original track for the bar/seek, `loopChanged()` →
   `_leaveLoop()` continues in the original at the same spot. Routes `/api/bgm/loop*` (ids checked against the setlist — they're paths).
+  0.43: seam waveform in the editor — `peaks(id,start,end,span,bins)` from `pcmCache` → `GET /api/bgm/loop/peaks` (min/max −127…127, ~10 KB):
+  `heard` = before the loop end | from the loop start, `ghost` = before the start | after the end (a good seam = both overlap); client
+  `wantWave()`/`drawWave()` in `app.js` (150 ms debounce, zoom ±2/±0.5/±0.1 s).
   Verified on the owner's ZERO (loop 179.511 s, seam 254.80→75.29 s); mock: `MOCK_MEDIA_SPEED=60`, real durations for `.opus`, `looping`
   honoured. A→B / B-restart gap in real OBS unmeasured.
 - `src/soundboard.js` — soundboard: one Media Source "Soundboard", folder watched.
