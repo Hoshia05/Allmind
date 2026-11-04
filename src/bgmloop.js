@@ -14,6 +14,7 @@ import { loadState, saveState, DATA_DIR } from './config.js';
 import { findLoop } from './bgmloop-worker.js';
 
 const SR = 48000;
+const PCM_KEEP_MS = 90 * 1000;                // decoded track kept this long after its last use
 const XF = Math.round(0.03 * SR);            // crossfade at every seam
 const A_MIN_S = 20 * 60, B_MIN_S = 60 * 60;   // file lengths
 const CACHE_MAX = 4 * 1024 ** 3;
@@ -32,7 +33,8 @@ export class BgmLoops extends EventEmitter {
     this.toolsDir = path.join(DATA_DIR, 'tools');
     this.st = loadState('bgm-loops', {}); // id → settings
     this.jobs = new Map(); // id → { kind, progress }
-    this.pcmCache = null; // { id, mtime, pcm } — the track being edited (previews)
+    this.pcmCache = null; // { id, mtime, pcm } — the track being edited (previews, waveform); ~46 MB for 4 min,
+    this.pcmTimer = null; // so it's dropped PCM_KEEP_MS after the editor last used it
     this.ffmpegPath = null;
     this.ffmpegState = { state: 'unknown', error: null, progress: null }; // unknown|ok|missing|downloading|error
     for (const v of Object.values(this.st)) if (v.state === 'building') { v.state = v.files ? 'ready' : 'idle'; } // interrupted
@@ -150,22 +152,41 @@ export class BgmLoops extends EventEmitter {
   async _pcm(id) {
     const file = this._src(id);
     const st = fs.statSync(file);
-    if (this.pcmCache?.id === id && this.pcmCache.mtime === st.mtimeMs) return this.pcmCache.pcm;
+    if (this.pcmCache?.id === id && this.pcmCache.mtime === st.mtimeMs) { this._keepPcm(); return this.pcmCache.pcm; }
+    this.pcmCache = null; // a different track: let the old one go before decoding the new one
     const ff = await this._needFfmpeg();
+    // size it once from the duration (+2 s margin): no doubling buffers, no second copy at the end
+    const probe = await run(ff, ['-hide_banner', '-i', file], { timeout: 15000 });
+    const dm = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(probe.stderr);
+    const dur = dm ? Number(dm[1]) * 3600 + Number(dm[2]) * 60 + Number(dm[3]) : 0;
+    const guess = dur > 0 && dur < 3 * 3600 ? Math.ceil((dur + 2) * SR) * 4 : 16 * 1024 * 1024;
     const pcm = await new Promise((resolve, reject) => {
       const p = spawn(ff, ['-v', 'error', '-i', file, '-map', '0:a:0', '-f', 's16le', '-ac', '2', '-ar', String(SR), '-'], { windowsHide: true });
-      const parts = []; let err = '';
-      p.stdout.on('data', (c) => parts.push(c));
+      // one buffer instead of hundreds of 64 KB chunks + a concat (grows only if the duration was wrong)
+      let buf = new Uint8Array(guess), len = 0, err = '';
+      p.stdout.on('data', (c) => {
+        if (len + c.length > buf.length) { const b = new Uint8Array(Math.max(Math.ceil(buf.length * 1.5), len + c.length)); b.set(buf.subarray(0, len)); buf = b; }
+        buf.set(c, len); len += c.length;
+      });
       p.stderr.on('data', (c) => { err += c; });
       p.on('error', reject);
       p.on('close', (code) => {
-        const buf = Buffer.concat(parts);
-        if (code !== 0 || buf.length < SR * 4) return reject(new Error(`이 파일을 읽지 못했어요 (${err.trim().slice(0, 160) || code})`));
-        resolve(new Int16Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 2)));
+        const n = len - (len % 2);
+        // a little spare at the end is fine; only copy when the guess was far off
+        const out = code === 0 && len >= SR * 4 ? (buf.length - n > 4 * 1024 * 1024 ? buf.slice(0, n) : buf.subarray(0, n)) : null;
+        buf = null; // the child process (and these handlers) can outlive this: don't let them hold the working buffer
+        if (!out) return reject(new Error(`이 파일을 읽지 못했어요 (${err.trim().slice(0, 160) || code})`));
+        resolve(new Int16Array(out.buffer, out.byteOffset, n / 2));
       });
     });
     this.pcmCache = { id, mtime: st.mtimeMs, pcm };
+    this._keepPcm();
     return pcm;
+  }
+  _keepPcm() {
+    clearTimeout(this.pcmTimer);
+    this.pcmTimer = setTimeout(() => { this.pcmCache = null; }, PCM_KEEP_MS);
+    this.pcmTimer.unref?.();
   }
 
   // loop points written into the file by game rips (LOOPSTART / LOOPLENGTH or LOOPEND, in samples of the file's rate)
@@ -198,7 +219,8 @@ export class BgmLoops extends EventEmitter {
             parentPort.once('message', (m) => { try { parentPort.postMessage({ ok: findLoop(m) }); } catch (e) { parentPort.postMessage({ err: String(e && e.stack || e) }); } });`, { eval: true });
           w.once('message', (m) => { w.terminate(); m.err ? reject(new Error(m.err)) : resolve(m.ok); });
           w.once('error', reject);
-          w.postMessage({ pcm: pcm.slice(), sr: SR });
+          const copy = pcm.slice(); // the worker gets this copy outright (transfer), not a second clone of it
+          w.postMessage({ pcm: copy, sr: SR }, [copy.buffer]);
         });
         r.source = 'auto';
       }

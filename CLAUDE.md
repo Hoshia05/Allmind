@@ -97,6 +97,10 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   0.43: seam waveform in the editor — `peaks(id,start,end,span,bins)` from `pcmCache` → `GET /api/bgm/loop/peaks` (min/max −127…127, ~10 KB):
   `heard` = before the loop end | from the loop start, `ghost` = before the start | after the end (a good seam = both overlap); client
   `wantWave()`/`drawWave()` in `app.js` (150 ms debounce, zoom ±2/±0.5/±0.1 s).
+  **Memory (0.43.1):** the decoded track (~46 MB per 4 min) is dropped `PCM_KEEP_MS` (90 s) after its last use; `_pcm()` sizes one
+  buffer from ffmpeg's `Duration:` and nulls it in the `close` handler — before, the chunk list stayed reachable through the child
+  process's handlers and ~95 MB stayed for good after one editor session. The worker gets its copy by transfer. Measure with
+  `node --expose-gc` + `process.memoryUsage().arrayBuffers` (Linux RSS keeps freed memory, so it isn't a fair number).
   Verified on the owner's ZERO (loop 179.511 s, seam 254.80→75.29 s); mock: `MOCK_MEDIA_SPEED=60`, real durations for `.opus`, `looping`
   honoured. A→B / B-restart gap in real OBS unmeasured.
 - `src/soundboard.js` — soundboard: one Media Source "Soundboard", folder watched.
