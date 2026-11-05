@@ -1033,3 +1033,9 @@ body.xy-open .layout { display: none !important; }
 .obs-pick label.grp { padding-left: 22px; }
 .obs-pick input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
 @media (pointer: coarse) { .obs-eye { width: 44px; height: 32px; } .obs-row { padding: 7px 4px; } }
+
+/* 방송 준비: 같이 바꾸기 */
+.sync-row { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); cursor: pointer; }
+.sync-row input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.sync-row .hint { font-weight: 400; color: var(--muted); }
+#prepSheet.no-sync .sync-dep { opacity: .45; }

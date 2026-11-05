@@ -363,11 +363,12 @@
         <div class="cat-list" id="prepCats" hidden></div>
       </div>
       <label class="field">태그 <span class="hint">쉼표로 구분 · 띄어쓰기와 특수문자는 빠져요</span><input id="prepTags" autocomplete="off" placeholder="예: 아머드코어, 수다"></label>
-      <div class="field">
+      <label class="sync-row"><input type="checkbox" id="prepSync"><span>유튜브 제목 · 녹화 파일 이름도 같이 바꾸기<span class="hint" id="syncHint"></span></span></label>
+      <div class="field sync-dep">
         <span>유튜브 제목 <span class="hint" id="ytHint"></span></span>
         <div class="auto-row"><input id="prepYt" maxlength="100" autocomplete="off"><button type="button" class="btn ghost small-btn" id="prepYtAuto" title="치지직 제목을 따라가게 되돌리기">↺ 자동</button></div>
       </div>
-      <div class="field">
+      <div class="field sync-dep">
         <span>녹화 파일 이름 <span class="hint" id="fileHint"></span></span>
         <div class="auto-row"><input id="prepFile" maxlength="150" autocomplete="off"><span class="muted ext">.mp4</span><button type="button" class="btn ghost small-btn" id="prepFileAuto" title="치지직 제목을 따라가게 되돌리기">↺ 자동</button></div>
       </div>

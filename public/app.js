@@ -764,6 +764,8 @@ const fillTpl = (tpl, title) => String(tpl || '{date} - {title}').replace(/\{dat
 
 async function openPrep() {
   $('prepWrap').hidden = false;
+  // mid-stream title changes (switching content) usually shouldn't rename the YouTube archive or the recording
+  $('prepSync').checked = !S?.obsPanel?.stream?.active;
   $('prepResults').innerHTML = '';
   renderPrepTargets();
   renderUploads();
@@ -776,6 +778,7 @@ async function openPrep() {
   prepState.category = r.category || null;
   $('prepTags').value = (r.tags || []).join(', ');
   // separately typed YouTube title / file name from the last apply (else they follow the Chzzk title)
+  prepState.saved = null; // the loaded values are the ones to restore when 같이 바꾸기 is turned on
   prepState.autoYt = !r.ytTitle;
   prepState.autoFile = !r.fileName;
   if (r.ytTitle) $('prepYt').value = r.ytTitle;
@@ -795,10 +798,25 @@ function renderPrepTargets() {
   const yt = S.google?.youtube && S.youtube?.hasKey && S.youtube?.enabled;
   // same clean-up as the upload (Windows can't have \\ / : * ? " < > | in names)
   const safe = (s) => s.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
-  if (prepState.autoYt) $('prepYt').value = title ? fillTpl(S.prep?.ytTemplate, title) : '';
-  if (prepState.autoFile) $('prepFile').value = title ? safe(fillTpl(S.prep?.fileTemplate, safe(title))) : '';
+  const keep = !$('prepSync').checked;
+  if (keep && !prepState.saved) prepState.saved = { yt: $('prepYt').value, file: $('prepFile').value };
+  if (!keep && prepState.saved) { $('prepYt').value = prepState.saved.yt; $('prepFile').value = prepState.saved.file; prepState.saved = null; }
+  if (keep) {
+    // show what stays, not what the new title would make
+    $('prepYt').value = S.youtube?.b?.title || '';
+    $('prepFile').value = '';
+  } else {
+    if (prepState.autoYt) $('prepYt').value = title ? fillTpl(S.prep?.ytTemplate, title) : '';
+    if (prepState.autoFile) $('prepFile').value = title ? safe(fillTpl(S.prep?.fileTemplate, safe(title))) : '';
+  }
+  $('prepYt').placeholder = keep ? '지금 제목 그대로' : '';
+  $('prepFile').placeholder = keep ? '지금 녹화 이름 그대로' : '';
   $('prepYtAuto').hidden = prepState.autoYt;
   $('prepFileAuto').hidden = prepState.autoFile;
+  const sync = $('prepSync').checked;
+  $('prepSheet').classList.toggle('no-sync', !sync);
+  for (const id of ['prepYt', 'prepFile', 'prepYtAuto', 'prepFileAuto']) $(id).disabled = !sync;
+  $('syncHint').textContent = sync ? '' : S.obsPanel?.stream?.active ? ' · 방송 중이라 꺼 뒀어요 — 치지직만 바뀌어요' : ' · 치지직만 바뀌어요';
   $('ytHint').textContent = !yt ? '· 연동 안 됨 (설정 창에서 Google 로그인 + 스트림 키)' : prepState.autoYt ? '· 자동 (치지직 제목)' : '· 직접 입력';
   $('fileHint').textContent = prepState.autoFile ? '· 자동 (치지직 제목) — 드라이브에 올릴 때 이름' : '· 직접 입력 — 드라이브에 올릴 때 이름';
   $('prepCatQ').disabled = !S.chzzkOpen?.configured;
@@ -828,6 +846,7 @@ $('prepCatQ').addEventListener('input', () => {
   }, 300);
 });
 $('prepTitle').addEventListener('input', renderPrepTargets);
+$('prepSync').addEventListener('change', renderPrepTargets);
 // typing in the YouTube / file field detaches it from the Chzzk title; ↺ 자동 re-attaches
 $('prepYt').addEventListener('input', () => { prepState.autoYt = false; renderPrepTargets(); }); // left empty = automatic on apply
 $('prepFile').addEventListener('input', () => { prepState.autoFile = false; renderPrepTargets(); }); // left empty = automatic on apply
@@ -841,7 +860,7 @@ $('prepApply').addEventListener('click', async () => {
   const btn = $('prepApply');
   btn.disabled = true;
   $('prepNote').textContent = '적용 중…';
-  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value, ytTitle: prepState.autoYt ? '' : $('prepYt').value, fileName: prepState.autoFile ? '' : $('prepFile').value });
+  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value, ytTitle: prepState.autoYt ? '' : $('prepYt').value, fileName: prepState.autoFile ? '' : $('prepFile').value, sync: $('prepSync').checked });
   btn.disabled = false;
   $('prepNote').textContent = '';
   if (!r.ok) return;
@@ -849,8 +868,10 @@ $('prepApply').addEventListener('click', async () => {
   $('prepResults').innerHTML =
     line('치지직', r.results.chzzk, '제목·카테고리·태그 적용') +
     line('유튜브', r.results.youtube, r.results.youtube.title || '') +
-    line('녹화 파일', r.results.file, `${r.results.file.name}.mp4 (녹화가 끝나면 이 이름으로 올려요)`);
-  if (r.results.chzzk.ok !== false && r.results.youtube.ok !== false) toast('방송 준비 적용 완료');
+    line('녹화 파일', r.results.file, r.results.file.longest
+      ? `녹화 중이라, 끝나면 이번 녹화에서 가장 오래 걸려 있던 제목으로 올려요 (예: ${r.results.file.name}.mp4)`
+      : `${r.results.file.name}.mp4 (녹화가 끝나면 이 이름으로 올려요)`);
+  if (r.results.chzzk.ok !== false && r.results.youtube.ok !== false) toast($('prepSync').checked ? '방송 준비 적용 완료' : '치지직 제목을 바꿨어요');
 });
 
 function renderUploads() {

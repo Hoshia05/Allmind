@@ -43,7 +43,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.44.0';
+const VERSION = '0.44.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -756,15 +756,24 @@ async function main() {
       const tags = cleanTags(b.tags);
       const ytTitle = String(b.ytTitle || '').replace(/\s+/g, ' ').trim().slice(0, 100) || null; // empty = automatic
       const fileName = safeName(String(b.fileName || '').replace(/\.(mp4|mkv|mov|flv|ts)$/i, '')) || null;
-      Object.assign(prep, { title, category, tags, ytTitle, fileName, appliedAt: Date.now() });
+      // "유튜브 제목·녹화 파일 이름도 같이 바꾸기" off (the default mid-stream): only Chzzk changes; the recording in
+      // progress keeps the name it has now (held before Chzzk shows the new title)
+      const sync = b.sync !== false;
+      const held = sync ? (markers.releaseTitle(), null) : markers.holdTitle();
+      if (sync) Object.assign(prep, { ytTitle, fileName });
+      Object.assign(prep, { title, category, tags, appliedAt: Date.now() });
       const results = {};
       if (chzzkOpen.loggedIn()) {
         try { await chzzkOpen.setSetting({ title, category, tags }); results.chzzk = { ok: true }; } catch (e) { results.chzzk = { ok: false, error: e.message }; }
       } else results.chzzk = { skipped: true, error: '치지직 연동 안 됨 (설정 창에서 로그인)' };
-      if (youtube.enabled()) {
+      if (!sync) results.youtube = { skipped: true, error: '그대로 둬요 (같이 바꾸기 꺼짐)' };
+      else if (youtube.enabled()) {
         try { const r = await youtube.setTitle(title, ytTitle); results.youtube = { ok: true, title: r.title }; } catch (e) { results.youtube = { ok: false, error: e.message }; }
       } else results.youtube = { skipped: true, error: 'YouTube 아카이브 연동 안 됨' };
-      results.file = { ok: true, name: fileName || safeName(fillTemplate(config.drive?.nameTemplate || '{date} - {title}', { date: new Date(), title: safeName(title) })) };
+      const nameFor = (t) => safeName(fillTemplate(config.drive?.nameTemplate || '{date} - {title}', { date: new Date(), title: safeName(t) }));
+      const recording = !!(markers.cur && !markers.cur.done);
+      if (!sync) results.file = { skipped: true, error: prepFile() ? `그대로 둬요: ${prepFile()}.mp4` : held ? `그대로 둬요 — 지금 녹화는 이 이름으로 올려요: ${nameFor(held)}.mp4` : '그대로 둬요' };
+      else results.file = { ok: true, name: fileName || nameFor(title), longest: !fileName && recording };
       prep.results = results;
       saveState('prep', prep);
       setTimeout(() => chzzk._poll().catch?.(() => {}), 1500); // show the new title soon

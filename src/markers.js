@@ -168,7 +168,22 @@ export class Markers extends EventEmitter {
     r.title = this._titleNow();
   }
 
+  // 방송 준비 with "같이 바꾸기" off: this recording keeps the name it has now, whatever the Chzzk title becomes
+  holdTitle() {
+    const r = this.cur && !this.cur.done ? this.cur : null;
+    if (!r) return null;
+    if (!r.heldTitle) { this._noteTitle(r); r.heldTitle = this.bestTitle(r); }
+    return r.heldTitle;
+  }
+
+  releaseTitle() {
+    const r = this.cur && !this.cur.done ? this.cur : null;
+    if (r) r.heldTitle = null;
+    return !!r;
+  }
+
   bestTitle(r) {
+    if (r.heldTitle) return r.heldTitle;
     let best = '';
     let ms = -1;
     for (const [k, v] of Object.entries(r.titles)) if (v > ms) { best = k; ms = v; }
