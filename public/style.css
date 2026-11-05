@@ -223,6 +223,13 @@ input[type=search]:focus { border-color: var(--accent); }
   background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
 }
 .live-pill.on { background: #e5263f; border-color: #e5263f; color: #fff; }
+button.live-pill { cursor: pointer; font: inherit; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; }
+button.live-pill:hover { border-color: var(--accent); }
+.live-pill .rec { display: inline-flex; align-items: center; gap: 4px; color: #ff5a6e; }
+.live-pill.on .rec { color: #fff; }
+.live-pill .rec::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.live-pill .rec.paused::before { border-radius: 1px; width: 6px; background: none; border-left: 2px solid; border-right: 2px solid; height: 7px; box-sizing: border-box; }
+.live-pill.busy { opacity: .7; }
 .stat { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .stat-label { color: var(--muted); font-size: 12px; }
 .stat-num { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
@@ -551,12 +558,15 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
   body.mp-chat .layout.no-chat .chat-panel { display: flex; }
   /* 할 일 has its own tab on phones (the 음악 tab is full already) */
   body.mp-todo .chat-panel, body.mp-todo .music, body.mp-todo .sb-panel, body.mp-todo .alert-panel,
-  body.mp-chat .todo-panel, body.mp-music .todo-panel, body.mp-alert .todo-panel { display: none !important; }
+  body.mp-chat .todo-panel, body.mp-music .todo-panel, body.mp-alert .todo-panel,
+  body.mp-chat .obs-panel, body.mp-music .obs-panel, body.mp-alert .obs-panel { display: none !important; }
+  body.mp-todo .obs-panel { flex: none; max-height: 50%; }
+  body.mp-todo .obs-fold { display: inline-flex; }
   body.mp-todo .todo-panel { flex: 1 1 auto; }
   body.mp-todo .todo-panel .todo-body { display: flex; }
   body.mp-todo .todo-fold { display: none; }
   body.mp-todo .todo-list { max-height: none; flex: 1 1 auto; }
-  .mnav button { font-size: 12.5px; }
+  .mnav button { font-size: 12.5px; white-space: nowrap; }
   .mnav {
     display: flex; flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel);
     padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -968,3 +978,58 @@ body.xy-open .layout { display: none !important; }
 .loop-progress { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
 .loop-progress i { display: block; height: 100%; background: var(--accent); transition: width .5s; }
 @media (max-width: 520px) { .loop-grid { grid-template-columns: 1fr; } }
+
+/* ---------- 방송 · 녹화 sheet ---------- */
+.out-sheet { max-width: 440px; }
+.out-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 12px; border-radius: 10px; background: var(--panel-2); }
+.out-row .k { font-weight: 800; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.out-row .k .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
+.out-row.on .k .dot { background: #e5263f; box-shadow: 0 0 0 3px #e5263f44; }
+.out-row.paused .k .dot { background: var(--warn); box-shadow: none; }
+.out-row .s { grid-column: 1; font-size: 12.5px; color: var(--muted); }
+.out-row .b { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.out-row .b .btn { min-width: 76px; }
+.out-row .btn.danger, .obs-row .btn.danger { border-color: var(--bad); color: var(--bad); }
+.out-row .btn.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
+.out-warn { font-size: 12.5px; line-height: 1.5; color: var(--warn); }
+.out-warn a { color: inherit; cursor: pointer; text-decoration: underline; }
+
+/* ---------- OBS panel ---------- */
+.obs-panel { flex: none; display: flex; flex-direction: column; min-height: 0; }
+.obs-panel .panel-head { justify-content: flex-start; }
+.obs-panel .panel-head #obsPick { margin-left: auto; }
+.obs-panel .panel-head .obs-fold { margin-left: 0; }
+.obs-panel.folded .obs-body { display: none; }
+.obs-panel.folded .obs-fold { transform: rotate(-90deg); }
+.layout.docked .obs-fold { display: none; }
+.layout.docked .obs-panel .obs-body { display: flex; }
+.obs-body { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+.obs-sec { font-size: 11.5px; color: var(--muted); font-weight: 700; padding: 6px 4px 2px; }
+.obs-row { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 8px; }
+.obs-row:hover { background: var(--panel-2); }
+.obs-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obs-row .nm small { color: var(--muted); margin-left: 6px; font-size: 11px; }
+.obs-row.missing .nm { color: var(--muted); text-decoration: line-through; }
+.obs-eye { flex: none; width: 36px; height: 26px; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; }
+.obs-eye.on { border-color: color-mix(in srgb, var(--accent) 70%, transparent); background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
+.obs-au { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; gap: 2px 8px; align-items: center; padding: 6px 4px; border-radius: 8px; }
+.obs-au:hover { background: var(--panel-2); }
+.obs-au .nm { grid-column: 2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.obs-au .db { grid-column: 3; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 52px; text-align: right; }
+.obs-au .mute { grid-row: 1 / span 2; width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: transparent; cursor: pointer; font-size: 15px; }
+.obs-au.muted .mute { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 22%, transparent); }
+.obs-au .vol { grid-column: 2 / span 2; position: relative; height: 18px; }
+.obs-au .vol input { position: absolute; inset: 0; width: 100%; margin: 0; background: transparent; }
+.obs-au .lvl { position: absolute; left: 0; right: 0; top: 7px; height: 4px; border-radius: 2px; background: var(--panel-2); overflow: hidden; pointer-events: none; }
+.obs-au .lvl i { display: block; height: 100%; width: 0; background: var(--ok); transition: width .08s linear; }
+.obs-au.muted .lvl i { background: var(--muted); }
+.obs-au.missing { opacity: .5; }
+.obs-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 14px 8px; line-height: 1.6; }
+.obs-pick { display: flex; flex-direction: column; gap: 10px; }
+.obs-pick h4 { margin: 4px 0 2px; font-size: 13px; }
+.obs-pick details { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; }
+.obs-pick summary { cursor: pointer; font-weight: 700; font-size: 13px; }
+.obs-pick label { display: flex; align-items: center; gap: 8px; padding: 4px 2px; font-size: 13.5px; cursor: pointer; }
+.obs-pick label.grp { padding-left: 22px; }
+.obs-pick input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
+@media (pointer: coarse) { .obs-eye { width: 44px; height: 32px; } .obs-row { padding: 7px 4px; } }

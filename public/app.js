@@ -122,6 +122,7 @@ function render() {
   renderStudio();
   renderMarks();
   renderSoundboard();
+  window.renderObs?.();
   if (typeof followDonation === 'function') followDonation();
   window.syncAlertMirror?.();
 }
@@ -288,7 +289,8 @@ function renderTracks() {
 const dbToPct = (db) => Math.max(0, Math.min(100, ((db + 60) / 60) * 100));
 const pctToDb = (p) => Math.round((p / 100) * 60 - 60);
 
-function renderLevel({ db, mic }) {
+function renderLevel({ db, mic, obs }) {
+  if (obs) window.obsLevels?.(obs);
   if (mic !== undefined) {
     // mic meter: -60..0 dB; turns orange near clipping
     const pct = dbToPct(mic);
@@ -948,8 +950,14 @@ donationLoop.kick();
 function renderLive() {
   const { live, history } = S.chzzk;
   const on = !!live?.isLive;
-  $('livePill').textContent = on ? 'LIVE' : 'OFFLINE';
-  $('livePill').classList.toggle('on', on);
+  // the pill also shows OBS's own outputs and opens the 방송 · 녹화 sheet
+  const op = S.obsPanel || { stream: {}, record: {} };
+  const sending = !!op.stream.active;
+  const rec = op.record.active ? `<span class="rec${op.record.paused ? ' paused' : ''}">${op.record.paused ? '녹화 멈춤' : 'REC'}</span>` : '';
+  $('livePill').innerHTML = (on ? 'LIVE' : sending ? '송출 중' : 'OFFLINE') + rec;
+  $('livePill').classList.toggle('on', on || sending);
+  $('livePill').classList.toggle('busy', !!(op.stream.busy || op.record.busy));
+  $('livePill').title = '방송 · 녹화 켜기/끄기' + (sending && !on ? '\nOBS는 송출 중이지만 치지직에는 아직 방송이 안 보여요' : '');
   $('viewers').textContent = on ? live.viewers.toLocaleString('ko-KR') : '–';
   $('peak').textContent = on && live.peak != null ? live.peak.toLocaleString('ko-KR') : '–';
   $('liveTitle').textContent = live?.title || (S.chzzk.channelId ? '' : '채널을 연결하면 방송 정보가 보여요');
@@ -2299,3 +2307,178 @@ $('loopClose').addEventListener('click', closeLoop);
 $('loopWrap').addEventListener('click', (ev) => { if (ev.target === $('loopWrap')) closeLoop(); });
 // keep the sheet's build progress live
 setInterval(() => { if (loopEd && !$('loopWrap').hidden && !document.activeElement?.matches?.('#loopBody input')) renderLoop(); }, 1000);
+
+
+// ---------------- OBS: 방송 · 녹화 켜기/끄기 + pinned sources/audio (docs/plans/obs-controls.md) ----------------
+(() => {
+  // --- 방송 · 녹화 sheet (opened from the LIVE pill) ---
+  let armed = null; // 'stream:stop' / 'record:stop' after the first press
+  let armT = null;
+  const arm = (k) => { armed = k; clearTimeout(armT); armT = setTimeout(() => { armed = null; renderOut(); }, 4000); renderOut(); };
+  const since = (ms) => fmtT(ms / 1000);
+  function renderOut() {
+    if ($('outWrap').hidden || !S) return;
+    const op = S.obsPanel;
+    const box = $('outBody');
+    if (!S.obs.connected || !op) { box.innerHTML = '<div class="obs-empty">OBS에 연결되어 있지 않아요</div>'; return; }
+    const st = op.stream, rc = op.record;
+    const pf = S.preflight;
+    const btn = (k, label, cls = '') => `<button class="btn ${cls}${armed === k ? ' armed' : ''}" data-out="${k}"${(k.startsWith('stream') ? st.busy : rc.busy) ? ' disabled' : ''}>${armed === k ? '한 번 더 누르면 꺼져요' : label}</button>`;
+    const live = S.chzzk.live?.isLive;
+    const warn = !st.active && pf && (pf.bad || pf.warn)
+      ? `<div class="out-warn">방송 전 점검: ${pf.bad ? `문제 ${pf.bad}개` : ''}${pf.bad && pf.warn ? ', ' : ''}${pf.warn ? `확인할 것 ${pf.warn}개` : ''} · <a data-out="check">점검 보기</a></div>` : '';
+    box.innerHTML = `
+      <div class="out-row${st.active ? ' on' : ''}">
+        <div class="k"><span class="dot"></span>방송</div>
+        <div class="s">${st.busy ? 'OBS가 처리하는 중…' : st.reconnecting ? '다시 연결하는 중…' : st.active ? (live ? '송출 중 · 치지직 방송 중' : '송출 중 · 치지직에는 아직 안 보여요') : '꺼져 있어요'}</div>
+        <div class="b">${st.active ? btn('stream:stop', '방송 끄기', 'danger') : btn('stream:start', '방송 시작', 'accent')}</div>
+      </div>
+      ${warn}
+      <div class="out-row${rc.active ? (rc.paused ? ' paused' : ' on') : ''}">
+        <div class="k"><span class="dot"></span>녹화</div>
+        <div class="s">${rc.busy ? 'OBS가 처리하는 중…' : rc.active ? (rc.paused ? '일시정지' : '녹화 중') + (S.marks?.recording ? ` · ${since(S.marks.elapsedMs + (rc.paused ? 0 : Date.now() - marksGotAt))}` : '') : '꺼져 있어요'}</div>
+        <div class="b">${rc.active ? (rc.paused ? btn('record:resume', '이어서') : btn('record:pause', '일시정지')) + btn('record:stop', '녹화 끄기', 'danger') : btn('record:start', '녹화 시작', 'accent')}</div>
+      </div>
+      <div class="muted small">끄는 버튼은 실수하지 않게 두 번 눌러야 해요.</div>`;
+  }
+  $('outBody').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-out]');
+    if (!b) return;
+    const k = b.dataset.out;
+    if (k === 'check') { $('outWrap').hidden = true; $('checkBtn').click(); return; }
+    const [what, action] = k.split(':');
+    if (action === 'stop' && armed !== k) { arm(k); buzz(); return; }
+    armed = null; clearTimeout(armT);
+    buzz();
+    b.disabled = true;
+    const r = await api('obs/output', { what, action });
+    if (r.ok) toast({ 'stream:start': '방송을 시작했어요', 'stream:stop': '방송을 껐어요', 'record:start': '녹화를 시작했어요', 'record:stop': '녹화를 껐어요', 'record:pause': '녹화를 멈췄어요', 'record:resume': '녹화를 이어서 해요' }[k]);
+    renderOut();
+  });
+  $('livePill').addEventListener('click', () => { armed = null; $('outWrap').hidden = false; renderOut(); });
+  const closeOut = () => { $('outWrap').hidden = true; armed = null; };
+  $('outClose').addEventListener('click', closeOut);
+  $('outWrap').addEventListener('click', (ev) => { if (ev.target === $('outWrap')) closeOut(); });
+  setInterval(() => { if (!$('outWrap').hidden && S?.obsPanel?.record.active && !armed) renderOut(); }, 1000);
+
+  // --- OBS panel ---
+  const panel = $('obsPanel');
+  const fold = (on) => { panel.classList.toggle('folded', on); pref.set('obsFolded', on); };
+  fold(pref.get('obsFolded', true));
+  $('obsFold').addEventListener('click', () => fold(!panel.classList.contains('folded')));
+  let shapeKey = '';
+  let dragging = null;     // audio name whose slider is held
+  const sendVol = {};      // name → pending dB (sent at most every 120 ms)
+  const fmtDb = (db) => (db <= -100 ? '-∞' : `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`);
+  const ak = (n) => esc(n);
+  function render() {
+    const op = S?.obsPanel;
+    if (!op) return;
+    const body = $('obsBody');
+    const key = JSON.stringify([S.obs.connected, op.items.map((x) => [x.scene, x.source, x.ok]), op.audio.map((x) => [x.name, x.ok])]);
+    if (key !== shapeKey) {
+      shapeKey = key;
+      if (!op.items.length && !op.audio.length) {
+        body.innerHTML = '<div class="obs-empty">자주 켜고 끄는 소스(웹캠, 공지 텍스트…)와<br>오디오(디스코드, 데스크톱 소리…)를 <b>＋ 고르기</b>로 골라 두세요.</div>';
+      } else {
+        const multi = new Set(op.items.map((x) => x.scene)).size > 1;
+        body.innerHTML =
+          (op.items.length ? '<div class="obs-sec">소스</div>' + op.items.map((x, i) => `<div class="obs-row${x.ok ? '' : ' missing'}" data-i="${i}">
+            <button class="obs-eye" data-do="eye" title="보이기 / 숨기기"${x.ok ? '' : ' disabled'}>👁</button>
+            <span class="nm" title="${esc(x.scene)} › ${esc(x.source)}${x.ok ? '' : '\n(OBS에서 찾지 못했어요)'}">${esc(x.source)}${multi ? `<small>${esc(x.scene)}</small>` : ''}</span></div>`).join('') : '') +
+          (op.audio.length ? '<div class="obs-sec">오디오</div>' + op.audio.map((a) => `<div class="obs-au${a.ok ? '' : ' missing'}" data-a="${ak(a.name)}">
+            <button class="mute" data-do="mute" title="음소거 켜기/끄기"${a.ok ? '' : ' disabled'}></button>
+            <span class="nm" title="${esc(a.name)}${a.ok ? '' : '\n(OBS에서 찾지 못했어요)'}">${esc(a.name)}</span><span class="db mono"></span>
+            <div class="vol"><div class="lvl"><i></i></div><input type="range" min="-60" max="0" step="0.5"${a.ok ? '' : ' disabled'} title="볼륨"></div></div>`).join('') : '');
+      }
+    }
+    op.items.forEach((x, i) => {
+      const row = body.querySelector(`.obs-row[data-i="${i}"]`);
+      row?.querySelector('.obs-eye').classList.toggle('on', !!x.enabled);
+      if (row) row.querySelector('.obs-eye').textContent = x.enabled ? '👁' : '—';
+    });
+    for (const a of op.audio) {
+      const row = [...body.querySelectorAll('.obs-au')].find((r) => r.dataset.a === a.name);
+      if (!row) continue;
+      row.classList.toggle('muted', !!a.muted);
+      row.querySelector('.mute').textContent = a.muted ? '🔇' : '🔊';
+      const db = dragging === a.name ? Number(row.querySelector('input').value) : a.db;
+      row.querySelector('.db').textContent = fmtDb(db);
+      if (dragging !== a.name && sendVol[a.name] === undefined) row.querySelector('input').value = Math.max(-60, Math.min(0, a.db));
+    }
+    renderOut();
+  }
+  window.renderObs = render;
+  window.obsLevels = (lv) => {
+    if (panel.classList.contains('folded') && !document.body.classList.contains('mp-todo') && !panel.closest('.layout.docked')) return;
+    for (const row of $('obsBody').querySelectorAll('.obs-au')) {
+      const v = lv[row.dataset.a];
+      if (v !== undefined) row.querySelector('.lvl i').style.width = dbToPct(v) + '%';
+    }
+  };
+  $('obsBody').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-do]');
+    if (!b || !S?.obsPanel) return;
+    buzz();
+    if (b.dataset.do === 'eye') {
+      const x = S.obsPanel.items[Number(b.closest('.obs-row').dataset.i)];
+      if (x) { x.enabled = !x.enabled; render(); await api('obs/item', { scene: x.scene, source: x.source, on: x.enabled }); }
+    } else if (b.dataset.do === 'mute') {
+      const name = b.closest('.obs-au').dataset.a;
+      const a = S.obsPanel.audio.find((y) => y.name === name);
+      if (a) { a.muted = !a.muted; render(); await api('obs/mute', { name, muted: a.muted }); }
+    }
+  });
+  let volT = null;
+  const flushVol = () => {
+    volT = null;
+    for (const [name, db] of Object.entries(sendVol)) { delete sendVol[name]; api('obs/volume', { name, db }); }
+  };
+  $('obsBody').addEventListener('input', (ev) => {
+    if (ev.target.type !== 'range') return;
+    const row = ev.target.closest('.obs-au');
+    const name = row.dataset.a;
+    dragging = name;
+    const db = Number(ev.target.value);
+    row.querySelector('.db').textContent = fmtDb(db);
+    const a = S.obsPanel.audio.find((y) => y.name === name); if (a) a.db = db;
+    sendVol[name] = db;
+    if (!volT) volT = setTimeout(flushVol, 120);
+  });
+  $('obsBody').addEventListener('change', (ev) => { if (ev.target.type === 'range') { dragging = null; } });
+
+  // --- picker ---
+  let cat = null;
+  $('obsPick').addEventListener('click', async () => {
+    $('obsPickWrap').hidden = false;
+    $('obsPickBody').innerHTML = '<div class="obs-empty">OBS에서 목록을 가져오는 중…</div>';
+    try {
+      const r = await fetch('/api/obs/catalog', { cache: 'no-store' });
+      if (r.status === 401) return toPin();
+      cat = await r.json();
+      if (!cat.ok) throw new Error(cat.error);
+    } catch (e) { $('obsPickBody').innerHTML = `<div class="obs-empty">${esc(e.message || 'OBS 목록을 가져오지 못했어요')}</div>`; return; }
+    const pinned = new Set(cat.pins.items.map((x) => x.scene + '\u0000' + x.source));
+    const pa = new Set(cat.pins.audio);
+    $('obsPickBody').innerHTML = '<h4>소스 (보이기 / 숨기기)</h4>' + cat.scenes.map((sc) => {
+      const n = sc.items.filter((x) => pinned.has(x.scene + '\u0000' + x.source)).length;
+      return `<details${n ? ' open' : ''}><summary>${esc(sc.name)}${n ? ` · ${n}개` : ''}</summary>${sc.items.length ? sc.items.map((x) =>
+        `<label class="${x.group ? 'grp' : ''}"><input type="checkbox" data-scene="${esc(x.scene)}" data-source="${esc(x.source)}"${pinned.has(x.scene + '\u0000' + x.source) ? ' checked' : ''}>${esc(x.source)}</label>`).join('') : '<div class="muted small">소스가 없어요</div>'}</details>`;
+    }).join('') + '<h4>오디오 (음소거 · 볼륨)</h4>' + (cat.audio.length ? cat.audio.map((n) =>
+      `<label><input type="checkbox" data-audio="${esc(n)}"${pa.has(n) ? ' checked' : ''}>${esc(n)}</label>`).join('') : '<div class="muted small">소리가 있는 소스가 없어요</div>');
+  });
+  $('obsPickSave').addEventListener('click', async () => {
+    const box = $('obsPickBody');
+    // keep pins of scenes OBS doesn't have right now (another scene collection); the shown ones are replaced
+    const shown = new Set(cat ? cat.scenes.flatMap((sc) => [sc.name, ...sc.items.map((x) => x.scene)]) : []);
+    const items = (cat?.pins.items || []).filter((x) => !shown.has(x.scene));
+    for (const c of box.querySelectorAll('input[data-source]:checked')) items.push({ scene: c.dataset.scene, source: c.dataset.source });
+    const audio = [...box.querySelectorAll('input[data-audio]:checked')].map((c) => c.dataset.audio);
+    const r = await api('obs/pins', { items, audio });
+    if (r.ok) { $('obsPickWrap').hidden = true; fold(false); if (window.dockShow) window.dockShow('obs'); }
+  });
+  const closePick = () => { $('obsPickWrap').hidden = true; };
+  $('obsPickClose').addEventListener('click', closePick);
+  $('obsPickWrap').addEventListener('click', (ev) => { if (ev.target === $('obsPickWrap')) closePick(); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { closeOut(); closePick(); } });
+})();

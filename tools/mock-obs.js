@@ -20,6 +20,18 @@ const inputs = new Map([
   ['Mic', { kind: 'wasapi_input_capture', settings: {}, volumeDb: 0 }],
   ['도네 알림', { kind: 'browser_source', settings: { url: 'https://weflab.com/page/alert', width: 1280, height: 720 }, volumeDb: 0 }],
 ]);
+// more sources for the OBS panel (pins): audio ones + video-only ones (GetInputVolume fails for those, like OBS)
+inputs.set('Desktop Audio', { kind: 'wasapi_output_capture', settings: {}, volumeDb: -3 });
+inputs.set('Discord', { kind: 'wasapi_process_output_capture', settings: {}, volumeDb: -8 });
+inputs.set('Webcam', { kind: 'dshow_input', settings: {}, noAudio: true });
+inputs.set('공지 텍스트', { kind: 'text_gdiplus_v3', settings: {}, noAudio: true });
+inputs.set('Game Capture', { kind: 'game_capture', settings: {}, noAudio: true });
+// scene items with an enabled state (ids ≥ 10; the BGM items keep 2/3)
+const items = {
+  Main: [{ sourceName: 'Game Capture', sceneItemId: 10, enabled: true }, { sourceName: 'Webcam', sceneItemId: 11, enabled: true }, { sourceName: '공지 텍스트', sceneItemId: 12, enabled: false }],
+  'Just Chatting': [{ sourceName: 'Webcam', sceneItemId: 10, enabled: true }, { sourceName: '공지 텍스트', sceneItemId: 11, enabled: true }],
+};
+const findItem = (sceneName, pred) => (items[sceneName] || []).find(pred);
 if (!process.env.MOCK_NO_BGM) inputs.set(BGM, { kind: 'ffmpeg_source', settings: {}, volumeDb: 0 });
 
 let statSkips = 0;
@@ -243,7 +255,26 @@ function handle(type, d) {
       // Main / Just Chatting hold the BGM directly; BRB has it inside the "Music" group
       const has = inputs.has(BGM);
       if (d.sceneName === 'BRB') return { sceneItems: [{ sourceName: 'Music', isGroup: true, sceneItemId: 1 }] };
-      return { sceneItems: [...(has && ['Main', 'Just Chatting'].includes(d.sceneName) ? [{ sourceName: BGM, isGroup: false, sceneItemId: 2 }] : []), ...(sceneAdds[d.sceneName] || [])] };
+      return { sceneItems: [...(items[d.sceneName] || []).map((x) => ({ sourceName: x.sourceName, isGroup: false, sceneItemId: x.sceneItemId, sceneItemEnabled: x.enabled })),
+        ...(has && ['Main', 'Just Chatting'].includes(d.sceneName) ? [{ sourceName: BGM, isGroup: false, sceneItemId: 2 }] : []), ...(sceneAdds[d.sceneName] || [])] };
+    }
+    case 'GetSceneItemId': {
+      const it = findItem(d.sceneName, (x) => x.sourceName === d.sourceName);
+      if (it) return { sceneItemId: it.sceneItemId };
+      if (d.sourceName === BGM && ['Main', 'Just Chatting'].includes(d.sceneName)) return { sceneItemId: 2 };
+      if (d.sourceName === BGM && d.sceneName === 'Music') return { sceneItemId: 3 };
+      throw Object.assign(new Error('No scene items were found in the specified scene by that name or offset.'), { code: 600 });
+    }
+    case 'GetSceneItemEnabled': {
+      const it = findItem(d.sceneName, (x) => x.sceneItemId === d.sceneItemId);
+      return { sceneItemEnabled: it ? it.enabled : true };
+    }
+    case 'SetSceneItemEnabled': {
+      const it = findItem(d.sceneName, (x) => x.sceneItemId === d.sceneItemId);
+      if (!it) throw Object.assign(new Error('No scene item'), { code: 600 });
+      it.enabled = !!d.sceneItemEnabled; log('item', d.sceneName, it.sourceName, it.enabled ? 'on' : 'off');
+      setTimeout(() => broadcast('SceneItemEnableStateChanged', { sceneName: d.sceneName, sceneItemId: d.sceneItemId, sceneItemEnabled: it.enabled }, 1 << 7), 20);
+      return;
     }
     case 'GetGroupSceneItemList': return { sceneItems: d.sceneName === 'Music' ? [{ sourceName: BGM, isGroup: false, sceneItemId: 3 }] : [] };
     case 'CreateSceneItem': {
@@ -262,8 +293,18 @@ function handle(type, d) {
     }
     case 'SetInputAudioMonitorType': need(d.inputName).monitor = d.monitorType; log('monitor', d.inputName, '→', d.monitorType.replace('OBS_MONITORING_TYPE_', '')); return;
     case 'GetInputAudioMonitorType': return { monitorType: need(d.inputName).monitor || 'OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT' };
-    case 'SetInputVolume': need(d.inputName).volumeDb = d.inputVolumeDb; log(`volume ${d.inputName} → ${d.inputVolumeDb} dB`); return;
-    case 'GetInputVolume': return { inputVolumeDb: need(d.inputName).volumeDb };
+    case 'SetInputVolume': {
+      const i = need(d.inputName); if (i.noAudio) throw new Error('The specified input does not support audio.');
+      i.volumeDb = d.inputVolumeDb; log(`volume ${d.inputName} → ${d.inputVolumeDb} dB`);
+      setTimeout(() => broadcast('InputVolumeChanged', { inputName: d.inputName, inputVolumeMul: 10 ** (i.volumeDb / 20), inputVolumeDb: i.volumeDb }, 1 << 3), 20);
+      return;
+    }
+    case 'GetInputVolume': { const i = need(d.inputName); if (i.noAudio) throw new Error('The specified input does not support audio.'); return { inputVolumeDb: i.volumeDb ?? 0 }; }
+    case 'SetInputMute': {
+      const i = need(d.inputName); i.muted = !!d.inputMuted; log('mute', d.inputName, i.muted);
+      setTimeout(() => broadcast('InputMuteStateChanged', { inputName: d.inputName, inputMuted: i.muted }, 1 << 3), 20);
+      return;
+    }
     case 'GetSourceActive': return { videoActive: !process.env.MOCK_BGM_INACTIVE || d.sourceName !== BGM, videoShowing: true };
     case 'GetMediaInputStatus': need(d.inputName); return { mediaState: media.state, mediaCursor: Math.round(media.cursor), mediaDuration: media.file ? media.duration : null };
     case 'SetMediaInputCursor': media.cursor = d.mediaCursor; return;
@@ -333,6 +374,8 @@ setInterval(() => {
     inputs: [
       { inputName: DONATION, inputLevelsMul: [[amp * 0.6, amp, amp], [amp * 0.6, amp, amp]] },
       ...(inputs.has(BGM) ? [{ inputName: BGM, inputLevelsMul: [[bgmAmp, bgmAmp, bgmAmp]] }] : []),
+      { inputName: 'Desktop Audio', inputLevelsMul: inputs.get('Desktop Audio')?.muted ? [[0, 0, 0]] : [[0.1, 0.05 + Math.random() * 0.15, 0.3]] },
+      { inputName: 'Discord', inputLevelsMul: inputs.get('Discord')?.muted || Math.random() < 0.6 ? [[0, 0, 0]] : [[0.1, 0.1 + Math.random() * 0.3, 0.4]] },
       { inputName: 'Mic', inputLevelsMul: inputs.get('Mic')?.muted ? [[0, 0, 0]] : [[0.05, Math.random() < 0.5 ? 0.02 + Math.random() * 0.3 : 0.003, 0.3]] },
     ],
   }, 1 << 16);

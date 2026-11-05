@@ -24,7 +24,7 @@
   </header>
 
   <div class="livebar" id="livebar">
-    <span class="live-pill" id="livePill">OFFLINE</span>
+    <button class="live-pill" id="livePill" title="방송 · 녹화 켜기/끄기">OFFLINE</button>
     <button class="mic-btn" id="micBtn" title="OBS 마이크 켜기/끄기"><span class="mic-ico" aria-hidden="true"></span><span class="mic-label" id="micLabel">마이크</span><span class="mic-meter"><i id="micFill"></i></span></button>
     <div class="markgrp" id="markGrp" hidden>
       <button class="mark-btn" id="markBtn" title="지금 순간을 녹화에 마크 (M) · 유튜브 편집용"><span class="rec-dot"></span><span>★ 마크</span><b id="markCount"></b><span class="mark-time mono" id="markTime"></span></button>
@@ -247,6 +247,17 @@
         </div>
       </section>
 
+      <!-- OBS: only the sources and audio picked by the owner (docs/plans/obs-controls.md) -->
+      <section class="panel obs-panel" id="obsPanel">
+        <div class="panel-head">
+          <span class="dock-grip" title="끌어서 패널 위치 옮기기">⠿</span>
+          <h2>OBS</h2>
+          <button class="btn ghost small-btn" id="obsPick" title="여기에 보일 소스와 오디오 고르기">＋ 고르기</button>
+          <button class="btn ghost icon small-btn obs-fold" id="obsFold" title="접기 / 펴기">▾</button>
+        </div>
+        <div class="obs-body" id="obsBody"></div>
+      </section>
+
       <section class="panel alert-panel">
         <div class="resizer h" data-r="alert-h" title="드래그해서 크기 조절 · 더블클릭으로 초기화"></div>
         <div class="panel-head">
@@ -270,7 +281,7 @@
     <button data-mp="chat" class="on">채팅<span class="tab-count" id="mnavUnread"></span></button>
     <button data-mp="music">음악</button>
     <button data-mp="alert">알림 화면</button>
-    <button data-mp="todo">할 일<span class="tab-count" id="mnavTodo"></span></button>
+    <button data-mp="todo">할 일·OBS<span class="tab-count" id="mnavTodo"></span></button>
     <button data-mp="xylem">🎮 Xylem</button>
   </nav>
 
@@ -310,6 +321,21 @@
       <div class="sheet-head"><b>🔁 무한 반복</b><span class="muted small" id="loopTitle"></span><button class="btn ghost icon" id="loopClose" title="닫기">✕</button></div>
       <div id="loopBody"></div>
       <audio id="loopAudio" preload="none"></audio>
+    </div>
+  </div>
+  <!-- 방송 · 녹화 켜기/끄기 -->
+  <div class="sheet-wrap" id="outWrap" hidden>
+    <div class="sheet out-sheet" role="dialog" aria-label="방송 · 녹화">
+      <div class="sheet-head"><b>방송 · 녹화</b><span class="muted small">OBS</span><button class="btn ghost icon" id="outClose" title="닫기">✕</button></div>
+      <div id="outBody"></div>
+    </div>
+  </div>
+  <!-- OBS 패널에 보일 것 고르기 -->
+  <div class="sheet-wrap" id="obsPickWrap" hidden>
+    <div class="sheet" role="dialog" aria-label="OBS 패널에 보일 것">
+      <div class="sheet-head"><b>OBS 패널에 보일 것</b><button class="btn ghost icon" id="obsPickClose" title="닫기">✕</button></div>
+      <div id="obsPickBody" class="obs-pick"></div>
+      <div class="row-btns"><button class="btn accent" id="obsPickSave">저장</button><span class="muted small">자주 켜고 끄는 것만 고르세요. 장면 전환은 위의 장면 버튼으로 해요.</span></div>
     </div>
   </div>
   <!-- 할 일: reminder when the stream starts -->

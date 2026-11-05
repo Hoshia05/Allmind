@@ -16,6 +16,7 @@ import { Chzzk, parseChannelId } from './chzzk.js';
 import { FrameFeed } from './feed.js';
 import { ChzzkRemote } from './remote.js';
 import { Studio } from './studio.js';
+import { ObsPanel } from './obspanel.js';
 import { Markers } from './markers.js';
 import { writeLogBundle, redact, obsConfigDir } from './logbundle.js';
 import { Soundboard } from './soundboard.js';
@@ -42,7 +43,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.43.2';
+const VERSION = '0.44.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -208,6 +209,7 @@ async function main() {
   // footage), so it gets its own light, fixed settings instead of the 영도 quality.
   const program = new ProgramViewer(obs);
   const studio = new Studio(obs, { mic: config.sources.mic });
+  const obsPanel = new ObsPanel(obs);
   const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
 
@@ -318,6 +320,7 @@ async function main() {
     obs: obs.status(),
     bgm: bgmState(),
     studio: studio.status(),
+    obsPanel: obsPanel.status(),
     marks: markers.status(),
     soundboard: soundboard.status(),
     donation: viewer.status(),
@@ -471,7 +474,8 @@ async function main() {
   chzzk.on('donation-read', (d) => sendAll('donation-read', d));
   chzzk.on('donations-reset', () => sendAll('donations-history', chzzk.donationList()));
   interact.on('skipped', (sel) => sendAll('toast', { text: '광고 스킵 완료', detail: sel }));
-  setInterval(() => clients.size && sendAll('level', { db: bgm.levelDb(), active: bgm.autoActive, mic: studio.micDb() }), 100);
+  setInterval(() => clients.size && sendAll('level', { db: bgm.levelDb(), active: bgm.autoActive, mic: studio.micDb(), obs: obsPanel.levels() }), 100);
+  obsPanel.on('change', () => stateChanged());
   setInterval(() => clients.size && sendAll('ping', Date.now()), 15000);
   // Safety net: anything still "not found" is looked up again every 10 s while a dashboard is open —
   // OBS can finish loading after it said it was ready, or the owner adds/renames a source in OBS.
@@ -723,6 +727,13 @@ async function main() {
     'POST /api/sb/volume': (b) => soundboard.setVolume(b.db),
     'POST /api/sb/create-source': async () => ({ scenes: await soundboard.createSource() }),
     'POST /api/mic/toggle': async () => ({ muted: await studio.toggleMic() }),
+    // OBS controls (docs/plans/obs-controls.md)
+    'POST /api/obs/output': (b) => obsPanel.output(String(b.what || ''), String(b.action || '')),
+    'POST /api/obs/item': (b) => obsPanel.toggleItem(String(b.scene || ''), String(b.source || ''), b.on),
+    'POST /api/obs/mute': (b) => obsPanel.setMute(String(b.name || ''), !!b.muted),
+    'POST /api/obs/volume': (b) => obsPanel.setVolume(String(b.name || ''), b.db),
+    'POST /api/obs/pins': (b) => obsPanel.setPins(b || {}),
+    'GET /api/obs/catalog': () => obsPanel.catalog(),
     'POST /api/chzzk/donation-read': (b) => chzzk.markRead(b.key, b.read !== false),
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
     'GET /api/update': () => updater.state(),

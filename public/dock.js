@@ -16,13 +16,14 @@
     sb: { el: document.getElementById('sbPanel'), title: '사운드보드', minH: 90 },
     alert: { el: document.querySelector('.alert-panel'), title: '알림 화면', minH: 100 },
     todo: { el: document.getElementById('todoPanel'), title: '할 일', minH: 120, tabWith: 'sb' },
+    obs: { el: document.getElementById('obsPanel'), title: 'OBS', minH: 100, tabWith: 'sb' },
   };
   const slot = (ids, h = 1) => ({ ids, active: ids[0], h });
   const DEFAULT = () => ({
     cols: [
       { w: null, slots: [slot(['viewer'])] },
       { w: 340, slots: [slot(['chat'])] },
-      { w: 340, slots: [slot(['music'], 0.9), slot(['sb', 'todo'], 0.85), slot(['alert'])] },
+      { w: 340, slots: [slot(['music'], 0.9), slot(['sb', 'todo', 'obs'], 0.85), slot(['alert'])] },
     ],
   });
   const KEY = 'sd.dock';
