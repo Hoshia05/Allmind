@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>시청자 추첨 · Xylem</title>
+<!--
+  시청자 추첨 — OBS browser source overlay, 1920×1080, transparent (docs/plans/draw.md).
+  The server has ALREADY picked the winners; this page only stages the result:
+    sortie   — every entrant launches as a jet, the losers are shot down on the way (SAMs, flak, fighters,
+               lightning, a canyon pinch, an orbital beam), only the winners reach the gate (~30–45 s)
+    roulette — a slot-machine name roll that lands on each winner
+  The whole show is a pure function of time, built from the seed Allmind sends, so a reload replays it identically.
+  Then the winners' chat lines appear as radio calls and the voice (TTS, a WAV made on the stream PC) is played here,
+  so OBS mixes it like any browser source ("OBS를 통해 오디오 제어" for its own track).
+  URL options:  ?demo=1&n=40&w=2&seed=7  → a preview without chat   (&style=roulette|sortie  &quick=1)
+                &phase=entry|ready|winners (demo: show that screen)   &t=12 (demo: freeze the staging at 12 s)
+  Original art in the 공중전 style — no assets, music, names or logos from any game.
+-->
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+'use strict';
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const Q = new URLSearchParams(location.search);
+const DEMO = Q.get('demo') === '1';
+const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif';
+
+// ---------- helpers ----------
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeOut = (k) => 1 - Math.pow(1 - clamp(k, 0, 1), 3);
+const easeOut4 = (k) => 1 - Math.pow(1 - clamp(k, 0, 1), 4);
+const easeInOut = (k) => { k = clamp(k, 0, 1); return k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; };
+const invEaseInOut = (p) => { p = clamp(p, 0, 1); return p < 0.5 ? Math.sqrt(p / 2) : 1 - Math.sqrt((1 - p) / 2); };
+function mulberry32(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// stateless randomness for the effects (so a frame depends on the time only, never on what was drawn before)
+function hash(a, b = 0) { let x = (a ^ Math.imul(b + 1, 0x9e3779b1)) >>> 0; x = Math.imul(x ^ (x >>> 16), 0x85ebca6b); x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35); return ((x ^ (x >>> 16)) >>> 0) / 4294967296; }
+function shuffle(a, rng) { for (let i = a.length - 1; i > 0; i--) { const k = Math.floor(rng() * (i + 1)); [a[i], a[k]] = [a[k], a[i]]; } return a; }
+function hueOf(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h % 360; }
+const fmtClock = (sec) => { sec = Math.max(0, Math.ceil(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; };
+
+function text(s, x, y, size, color, align = 'left', weight = 700, maxW = 0) {
+  g.font = `${weight} ${size}px ${FONT}`; g.textAlign = align; g.textBaseline = 'middle';
+  if (maxW) { const w = g.measureText(s).width; if (w > maxW) { size = Math.max(10, size * maxW / w); g.font = `${weight} ${size}px ${FONT}`; } }
+  g.lineJoin = 'round'; g.lineWidth = Math.max(3, size / 5); g.strokeStyle = 'rgba(3,10,12,.85)';
+  g.strokeText(s, x, y); g.fillStyle = color; g.fillText(s, x, y);
+}
+function panel(x, y, w, h, border = 'rgba(47,216,200,.45)', fill = 'rgba(7,14,16,.72)') {
+  g.fillStyle = fill; g.strokeStyle = border; g.lineWidth = 2;
+  g.beginPath(); g.roundRect(x, y, w, h, 14); g.fill(); g.stroke();
+}
+
+// =====================================================================================================
+//  state
+// =====================================================================================================
+let S = { phase: 'idle', count: 0, last: [], keyword: '!참여', mode: 'keyword', recentMin: 10, style: 'sortie', winners: [], endsAt: 0, chatEndsAt: 0, tts: { on: true, volume: 80 } };
+let skew = 0;                        // server clock − local clock
+const nowMs = () => Date.now() + skew;
+let anim = null;                     // the staging being played: { id, kind, style, script, t0, fixed, done, winners, total }
+let result = null;                   // { winners, since } what the cards show once a staging is over
+let radio = [];                      // winners' chat lines: { nick, text, emojis, at }
+let speaking = null;                 // nick being read aloud right now
+let bannerA = 0;                     // fade of the entry banner
+let doneSent = new Set();
+
+// =====================================================================================================
+//  sortie — the script (all in "script seconds"; the same seed always gives the same show)
+// =====================================================================================================
+const AREA = { x0: 140, x1: 1780, y0: 190, y1: 960 };
+const SLOW = 0.4;                    // speed of the dramatic last kill
+const WAVES = [
+  { k: 'sam', w: 1.0 }, { k: 'flak', w: 1.2 }, { k: 'fighter', w: 1.5 }, { k: 'storm', w: 2.0 }, { k: 'canyon', w: 2.6 }, { k: 'beam', w: 3.4 },
+];
+const WAVE_SETS = [ // which hazards appear, by how many jets have to be removed (escalating)
+  [2, ['sam']], [6, ['sam', 'fighter', 'storm']], [14, ['sam', 'flak', 'fighter', 'canyon']], [30, ['sam', 'flak', 'fighter', 'storm', 'beam']], [1e9, ['sam', 'flak', 'fighter', 'storm', 'canyon', 'beam']],
+];
+const PER_EVENT = { sam: 6, flak: 6, fighter: 5, storm: 4, canyon: 30, beam: 40 };
+const JOKES = ['연료 부족…', '교신 두절', '화장실 급해서 귀환', '배고파서 귀환', '옆 기체와 충돌!', '조종간을 놓쳤어요', '졸다가 이탈'];
+const CAUSE_TEXT = {
+  sam: ['격추!', '미사일 피격!'], flak: ['대공포 피격!', '파편에 격추!'], fighter: ['적기에 격추!', '기총 사격 피격!'],
+  storm: ['낙뢰 피격!', '번개에 맞았어요!'], canyon: ['협곡 충돌!', '암벽에 충돌!'], beam: ['궤도포에 증발!', '초병기 직격!'], ace: ['최후의 격추!', '적 에이스에 격추!'],
+};
+
+function buildSortie(names, winnerFlags, seed, quick) {
+  const rng = mulberry32(seed);
+  const n = names.length;
+  const w = winnerFlags.filter(Boolean).length;
+  const L = n - w;
+  // ---- formation: a grid of slots, shuffled so winners sit anywhere
+  const areaW = AREA.x1 - AREA.x0, areaH = AREA.y1 - AREA.y0;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n * 2.1)));
+  const rows = Math.ceil(n / cols);
+  const spx = clamp((areaW * 0.6) / cols, 52, 170), spy = clamp((areaH * 0.82) / rows, 46, 130);
+  const xc = AREA.x0 + areaW * 0.42, yc = (AREA.y0 + AREA.y1) / 2 + 10;
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    const inRow = r === rows - 1 ? n - cols * (rows - 1) : cols;
+    for (let c = 0; c < inRow; c++) cells.push({ x: xc + (c - (inRow - 1) / 2) * spx, y: yc + (r - (rows - 1) / 2) * spy + (c % 2 ? spy * 0.22 : 0) });
+  }
+  shuffle(cells, rng);
+  const amp = clamp(Math.min(spx, spy) * 0.2, 3, 16);
+  const scale = n <= 6 ? 1.7 : n <= 16 ? 1.4 : n <= 30 ? 1.1 : n <= 60 ? 0.85 : n <= 100 ? 0.65 : 0.52;
+  const jets = names.map((nm, i) => ({
+    i, nick: nm.n, uid: nm.u, win: !!winnerFlags[i], hue: hueOf(nm.n), sx: cells[i].x, sy: cells[i].y,
+    ax: amp * (0.5 + rng()), ay: amp * (0.5 + rng()), fx: 0.5 + rng() * 0.7, fy: 0.6 + rng() * 0.8, p1: rng() * 6.28, p2: rng() * 6.28,
+    l0: rng() * 1.1, ly: (rng() - 0.5) * 240, deathT: Infinity, cause: null, ev: -1, joke: '',
+  }));
+  const sc = { n, w, L, jets, scale, seed, spx, spy, events: [], tLaunch: quick ? 2.0 : 3.0 };
+  const posAt = (j, s) => jetPos(sc, j, s, true);
+
+  // ---- hazards: the planned events, then who they hit
+  const Lk = Math.max(0, L - 1);                      // everyone but the last loser dies in the waves
+  const g0 = sc.tLaunch + 0.6;
+  const Gd = L === 0 ? 5 : quick ? 6 : 11 + Math.min(Lk, 40) * 0.2;
+  const plan = []; // { type, t, target }
+  let ejokes = Lk >= 30 ? 3 : Lk >= 10 ? 2 : Lk >= 4 ? 1 : 0;
+  const waveKills = Lk - ejokes;
+  if (waveKills > 0) {
+    const kinds = (WAVE_SETS.find(([lim]) => waveKills <= lim) || WAVE_SETS.at(-1))[1];
+    const ws = kinds.map((k) => WAVES.find((x) => x.k === k));
+    const tot = ws.reduce((a, x) => a + x.w, 0);
+    const sizes = ws.map((x) => Math.max(1, Math.round((waveKills * x.w) / tot)));
+    // rounding: make the sizes add up exactly (more in the last, biggest wave; fewer from the biggest ones)
+    let total = sizes.reduce((a, b) => a + b, 0);
+    for (let guard = 0; total !== waveKills && guard < 1000; guard++) {
+      if (total < waveKills) { sizes[sizes.length - 1]++; total++; }
+      else { const at = sizes.indexOf(Math.max(...sizes)); if (sizes[at] <= 1) break; sizes[at]--; total--; }
+    }
+    let t = g0;
+    ws.forEach((x, wi) => {
+      const slice = (Gd * x.w) / tot;
+      const nEv = clamp(Math.ceil(sizes[wi] / PER_EVENT[x.k]), 1, Math.max(1, Math.floor(slice / 0.55)));
+      let left = sizes[wi];
+      for (let e = 0; e < nEv; e++) {
+        const target = Math.ceil(left / (nEv - e));
+        left -= target;
+        plan.push({ type: x.k, t: t + (slice * (e + 0.35 + rng() * 0.3)) / nEv, target });
+      }
+      t += slice;
+    });
+  }
+  for (let q = 0; q < ejokes; q++) plan.push({ type: 'joke', t: g0 + 1.2 + (Gd - 2.4) * ((q + 0.3 + rng() * 0.4) / ejokes), target: 1 });
+  // near misses, so a gauntlet with few kills still looks like one
+  const fillers = L === 0 ? 7 : Math.max(0, 5 - Lk);
+  for (let q = 0; q < fillers; q++) plan.push({ type: 'miss', t: g0 + 0.8 + (Gd - 1.6) * ((q + rng() * 0.8) / Math.max(1, fillers)), target: 0, kind: ['sam', 'flak', 'fighter'][q % 3] });
+  plan.sort((a, b) => a.t - b.t);
+
+  const losers = jets.filter((j) => !j.win);
+  const z = L >= 1 ? losers[Math.floor(rng() * losers.length)] : null; // the last one down — reserved
+  const protectedJet = (j) => j.win || j === z;
+  const isAvail = (j, t) => !protectedJet(j) && j.deathT === Infinity;
+  const present = (t) => jets.filter((j) => !(j.deathT <= t));
+  let evId = 0;
+  const kill = (ev, j, t, extra = {}) => { j.deathT = t; j.cause = ev.type; j.ev = ev.id; Object.assign(j, extra); ev.victims.push({ i: j.i, t }); };
+  const pickRandom = (list, k) => { const a = list.slice(); shuffle(a, rng); return a.slice(0, k); };
+  // consecutive run of available jets along one axis (the band a beam / fighter / pinch covers): no protected jet inside
+  function runAlong(axis, seed0, target, t, minGap) {
+    const list = present(t).map((j) => ({ j, c: posAt(j, t)[axis] })).sort((a, b) => a.c - b.c);
+    let a = list.findIndex((e) => e.j === seed0), b = a;
+    if (a < 0) return [];
+    const grow = (dir) => { const nx = list[dir < 0 ? a - 1 : b + 1]; return nx && isAvail(nx.j, t) ? nx : null; };
+    while (b - a + 1 < target) {
+      const l = grow(-1), r = grow(1);
+      if (!l && !r) break;
+      if (l && (!r || rng() < 0.5)) a--; else b++;
+    }
+    for (let guard = 0; guard < 400; guard++) { // neighbours too close to the band: a loser joins it, anything else shrinks it
+      const lo = list[a], hi = list[b], ln = list[a - 1], rn = list[b + 1];
+      if (ln && lo.c - ln.c < minGap) { if (isAvail(ln.j, t)) { a--; continue; } if (b > a) { a++; continue; } return []; }
+      if (rn && rn.c - hi.c < minGap) { if (isAvail(rn.j, t)) { b++; continue; } if (b > a) { b--; continue; } return []; }
+      break;
+    }
+    return list.slice(a, b + 1).map((e) => e.j);
+  }
+  function makeEvent(p) {
+    const ev = { id: evId++, type: p.type, t: p.t, victims: [], ...(p.kind ? { kind: p.kind } : {}) };
+    const t = p.t;
+    const avail = present(t).filter((j) => isAvail(j, t));
+    if (p.type === 'miss') { sc.events.push(ev); return ev; }
+    if (!avail.length) return null;
+    if (p.type === 'sam' || p.type === 'storm' || p.type === 'joke') {
+      const vs = pickRandom(avail, p.target);
+      vs.forEach((j, q) => {
+        if (p.type === 'sam') kill(ev, j, t + 0.95 + q * 0.12);
+        else if (p.type === 'storm') kill(ev, j, t + 0.9 + q * 0.2);
+        else kill(ev, j, t + 0.4, { joke: JOKES[Math.floor(rng() * JOKES.length)] });
+      });
+    } else if (p.type === 'flak') {
+      for (let tries = 0; tries < 6 && !ev.victims.length; tries++) {
+        const s0 = avail[Math.floor(rng() * avail.length)];
+        const c0 = posAt(s0, t + 0.9);
+        const pres = present(t).map((j) => ({ j, p: posAt(j, t + 0.9) }));
+        let r = 38, best = 0;
+        for (; r <= 150; r += 8) {
+          const inside = pres.filter((e) => Math.hypot(e.p.x - c0.x, e.p.y - c0.y) < r + 16);
+          if (inside.some((e) => !isAvail(e.j, t)) || inside.length > p.target) break;
+          best = r;
+        }
+        if (!best) continue;
+        ev.cx = c0.x; ev.cy = c0.y; ev.r = best;
+        pres.filter((e) => Math.hypot(e.p.x - c0.x, e.p.y - c0.y) < best + 4).forEach((e, q) => kill(ev, e.j, t + 0.9 + q * 0.04));
+      }
+    } else if (p.type === 'fighter' || p.type === 'beam') {
+      const beam = p.type === 'beam';
+      for (let tries = 0; tries < 8 && !ev.victims.length; tries++) {
+        const s0 = avail[Math.floor(rng() * avail.length)];
+        const run = runAlong('y', s0, p.target, t + 0.9, beam ? 30 : 34);
+        if (!run.length) continue;
+        const ys = run.map((j) => posAt(j, t + 0.9).y);
+        ev.y0 = Math.min(...ys) - (beam ? 16 : 14); ev.y1 = Math.max(...ys) + (beam ? 16 : 14);
+        const head = beam ? 3200 : 1250, x0 = beam ? 1930 : 2050;
+        ev.speed = head; ev.xs = x0;
+        run.forEach((j) => { const xj = posAt(j, t + 1.2).x; kill(ev, j, t + 0.9 + (x0 - xj) / head); });
+      }
+    } else if (p.type === 'canyon') {
+      for (let tries = 0; tries < 8 && !ev.victims.length; tries++) {
+        const s0 = avail[Math.floor(rng() * avail.length)];
+        const run = runAlong('x', s0, p.target, t + 1.0, 40);
+        if (!run.length) continue;
+        const xs = run.map((j) => posAt(j, t + 1.0).x);
+        ev.x0 = Math.min(...xs) - 26; ev.x1 = Math.max(...xs) + 26;
+        // the rock walls close from the top and the bottom: a jet is crushed when the edge of its wall reaches it
+        const midY = (AREA.y0 + AREA.y1) / 2, top0 = AREA.y0 - 50, bot0 = AREA.y1 + 50;
+        run.forEach((j) => {
+          const yj = posAt(j, t + 0.6).y;
+          const edge = yj < midY ? (yj - top0) / (midY - 26 - top0) : (bot0 - yj) / (bot0 - (midY + 26));
+          kill(ev, j, t + invEaseInOut(edge) * 1.0 + 0.04);
+        });
+      }
+    }
+    if (!ev.victims.length) return null;
+    sc.events.push(ev);
+    return ev;
+  }
+  for (const p of plan) makeEvent(p);
+  // anything the waves could not reach is taken out by SAM salvos (the count must come out exactly)
+  let tm = Math.max(g0 + Gd, ...jets.filter((j) => j.deathT < Infinity).map((j) => j.deathT)) - 0.3;
+  for (let guard = 0; guard < 60; guard++) {
+    const left = jets.filter((j) => isAvail(j, tm));
+    if (!left.length) break;
+    tm += 0.55;
+    makeEvent({ type: 'sam', t: tm, target: Math.min(8, left.length) });
+  }
+  // ---- the dramatic end: slow motion on the last loser, then the dash
+  const lastDeath = Math.max(g0 + Gd - 0.4, ...jets.filter((j) => j.deathT < Infinity).map((j) => j.deathT));
+  if (z) {
+    sc.sA = lastDeath + 0.9; sc.sB = sc.sA + 3.6;
+    const ev = { id: evId++, type: 'ace', t: sc.sA + 0.2, victims: [] };
+    kill(ev, z, sc.sB - 0.45);
+    sc.events.push(ev);
+  } else { sc.sA = sc.sB = lastDeath + 0.9; }
+  sc.sDash = sc.sB + 0.35;
+  sc.sForm = sc.sDash + 1.7;           // the winners are in formation
+  sc.sGate = sc.sForm + 0.7;           // …and pass the gate
+  sc.sEnd = sc.sGate + (quick ? 2.4 : 3.4);
+  sc.events.sort((a, b) => a.t - b.t);
+  // the V formation of the winners
+  const wj = jets.filter((j) => j.win).sort((a, b) => a.sy - b.sy);
+  const gap = clamp(560 / Math.max(1, wj.length), 70, 130);
+  wj.forEach((j, k) => { const rank = Math.ceil(k / 2), side = k % 2 ? 1 : -1; j.vx = 1440 - rank * 62; j.vy = (AREA.y0 + AREA.y1) / 2 + (k === 0 ? 0 : side * rank * gap * 0.62); });
+  // radio lines (one per event; a group becomes "○○ 외 N기")
+  sc.radio = [{ t: sc.tLaunch + 0.2, text: `관제: 전 기체 출격! ${n}기`, c: '#8fe9ff' }];
+  for (const ev of sc.events) {
+    if (!ev.victims.length) { if (ev.type === 'miss') sc.radio.push({ t: ev.t + 1.4, text: '회피 성공!', c: '#bfe9a8' }); continue; }
+    const first = ev.victims.reduce((a, v) => (v.t < a.t ? v : a));
+    const nm = jets[first.i].nick;
+    const k = ev.victims.length;
+    if (ev.type === 'joke') sc.radio.push({ t: first.t, text: `${nm}: ${jets[first.i].joke}`, c: '#ffd98a' });
+    else {
+      const pick = CAUSE_TEXT[ev.type][Math.floor(hash(seed, ev.id) * CAUSE_TEXT[ev.type].length)];
+      sc.radio.push({ t: first.t, text: k >= 4 ? `${nm} 외 ${k - 1}기 ${ev.type === 'beam' ? '증발!' : ev.type === 'canyon' ? '협곡 충돌!' : '격추!'}` : `${nm} ${pick}`, c: ev.type === 'ace' ? '#ff9d8a' : '#ffb4a8' });
+    }
+  }
+  sc.radio.push({ t: sc.sGate, text: '관제: 임무 완수! 생존 기체 귀환', c: '#8fe9ff' });
+  sc.radio.sort((a, b) => a.t - b.t);
+  return sc;
+}
+
+// where a jet is at script time s
+function jetPos(sc, j, s, noAngle) {
+  const f = (ss) => {
+    let x = j.sx + j.ax * Math.sin(j.fx * ss + j.p1), y = j.sy + j.ay * Math.sin(j.fy * ss + j.p2);
+    const k = easeOut((ss - j.l0) / 2.1);
+    x = lerp(-180 - j.l0 * 140, x, k); y = lerp(j.sy + j.ly, y, k);
+    if (j.win && ss > sc.sDash) {
+      const p = easeInOut((ss - sc.sDash) / 1.7);
+      x = lerp(x, j.vx, p); y = lerp(y, j.vy, p);
+      if (ss > sc.sForm) x += Math.pow(ss - sc.sForm, 1.5) * 560;
+    }
+    return { x, y };
+  };
+  const p = f(s);
+  if (noAngle) return p;
+  const q = f(s + 0.04);
+  p.a = clamp(Math.atan2(q.y - p.y, Math.max(1, q.x - p.x)), -0.9, 0.9);
+  return p;
+}
+
+// real time → script time (the last kill runs in slow motion)
+const toScript = (sc, T) => {
+  if (!(sc.sB > sc.sA)) return T;
+  if (T <= sc.sA) return T;
+  const slowLen = (sc.sB - sc.sA) / SLOW;
+  if (T <= sc.sA + slowLen) return sc.sA + (T - sc.sA) * SLOW;
+  return sc.sB + (T - sc.sA - slowLen);
+};
+const realLen = (sc) => (sc.sB > sc.sA ? sc.sEnd + (sc.sB - sc.sA) * (1 / SLOW - 1) : sc.sEnd);
+
+// =====================================================================================================
+//  sortie — drawing
+// =====================================================================================================
+const SHAPE = [[22,0],[6,-4],[-3,-17],[-9,-17],[-6,-5],[-14,-8],[-17,-8],[-14,0],[-17,8],[-14,8],[-6,5],[-9,17],[-3,17],[6,4]];
+function drawShape(x, y, a, sc, fill, alpha = 1, flame = 0) {
+  g.save(); g.translate(x, y); g.rotate(a); g.scale(sc, sc); g.globalAlpha = alpha;
+  if (flame) { g.fillStyle = 'rgba(255,170,60,.9)'; g.beginPath(); g.moveTo(-14, -3); g.lineTo(-14 - flame, 0); g.lineTo(-14, 3); g.fill(); }
+  g.beginPath(); SHAPE.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); g.closePath();
+  g.fillStyle = fill; g.strokeStyle = 'rgba(3,10,12,.9)'; g.lineWidth = 2.5 / sc; g.fill(); g.stroke();
+  g.fillStyle = 'rgba(10,30,40,.85)'; g.beginPath(); g.ellipse(7, 0, 5, 2.2, 0, 0, Math.PI * 2); g.fill();
+  g.restore(); g.globalAlpha = 1;
+}
+function explosion(x, y, age, size, key) {
+  if (age < 0 || age > 1.5) return;
+  const k = age / 1.5;
+  if (age < 0.18) { g.fillStyle = `rgba(255,${230 - age * 400},150,${1 - age / 0.18})`; g.beginPath(); g.arc(x, y, (26 + age * 200) * size, 0, Math.PI * 2); g.fill(); }
+  if (age < 0.7) { g.strokeStyle = `rgba(255,220,150,${(1 - age / 0.7) * 0.7})`; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y, (8 + age * 80) * size, 0, Math.PI * 2); g.stroke(); }
+  const N = 12;
+  for (let i = 0; i < N; i++) {
+    const a = hash(key, i) * 6.283, sp = (60 + hash(key, i + 50) * 260) * size;
+    const d = sp * age * (1 - age * 0.35);
+    const smoke = hash(key, i + 99) < 0.4;
+    g.fillStyle = smoke ? `rgba(70,70,74,${(1 - k) * 0.6})` : `rgba(255,${110 + (1 - k) * 120},40,${1 - k})`;
+    g.beginPath(); g.arc(x + Math.cos(a) * d, y + Math.sin(a) * d + (smoke ? age * 24 : 0), (2 + hash(key, i + 7) * 5) * size * (smoke ? 1 + k : 1), 0, Math.PI * 2); g.fill();
+  }
+}
+function missile(x1, y1, x2, y2, k, color = '#e8eef0') { // flies from (x1,y1) to (x2,y2): k 0…1, with a smoke trail
+  const n = 7;
+  for (let i = n; i >= 1; i--) {
+    const kk = clamp(k - i * 0.035, 0, 1), px = lerp(x1, x2, kk), py = lerp(y1, y2, kk);
+    g.fillStyle = `rgba(230,230,235,${0.42 * (1 - i / (n + 1))})`; g.beginPath(); g.arc(px, py, 5 - i * 0.4, 0, Math.PI * 2); g.fill();
+  }
+  const px = lerp(x1, x2, k), py = lerp(y1, y2, k), a = Math.atan2(y2 - y1, x2 - x1);
+  g.save(); g.translate(px, py); g.rotate(a); g.fillStyle = color; g.fillRect(-9, -2.5, 18, 5); g.fillStyle = '#ffb347'; g.fillRect(-14, -1.8, 5, 3.6); g.restore();
+}
+function lightning(x, y, key, age) {
+  if (age < 0 || age > 0.5) return;
+  const a = 1 - age / 0.5;
+  g.strokeStyle = `rgba(255,255,255,${a})`; g.lineWidth = 3 + 4 * a; g.shadowColor = '#9fd8ff'; g.shadowBlur = 18; g.lineJoin = 'round';
+  g.beginPath(); let px = x + (hash(key, 1) - 0.5) * 120, py = y - 420; g.moveTo(px, py);
+  for (let i = 1; i <= 9; i++) { px = lerp(px, x, i / 9) + (hash(key, i + 3) - 0.5) * 60 * (1 - i / 9); py = lerp(y - 420, y, i / 9); g.lineTo(px, py); }
+  g.stroke(); g.shadowBlur = 0;
+}
+function cloud(x, y, r, a, key) {
+  for (let i = 0; i < 6; i++) {
+    const px = x + (hash(key, i) - 0.5) * r * 1.5, py = y + (hash(key, i + 9) - 0.5) * r * 0.5 - r * 0.2, pr = r * (0.45 + hash(key, i + 18) * 0.4);
+    const gr = g.createRadialGradient(px, py, pr * 0.2, px, py, pr);
+    gr.addColorStop(0, `rgba(52,58,78,${0.86 * a})`); gr.addColorStop(1, 'rgba(52,58,78,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(px, py, pr, 0, Math.PI * 2); g.fill();
+  }
+}
+function enemyJet(x, y, a, scale) { drawShape(x, y, a, scale, '#7a2330', 1, 14); }
+
+function aliveAt(sc, s) { let k = 0; for (const j of sc.jets) if (j.deathT > s) k++; return k; }
+
+function drawSortie(T) {
+  const sc = anim.script;
+  const s = toScript(sc, T);
+  const slowK = sc.sB > sc.sA ? clamp((s - sc.sA) / 0.5, 0, 1) * clamp((sc.sB + 0.3 - s) / 0.5, 0, 1) : 0;
+  // the scope: a dark plate with ground lines streaming by (faster during the final dash)
+  const scroll = s * 170 + (s > sc.sDash ? Math.pow(s - sc.sDash, 2) * 120 : 0);
+  panel(AREA.x0 - 70, AREA.y0 - 50, AREA.x1 - AREA.x0 + 140, AREA.y1 - AREA.y0 + 100, 'rgba(47,216,200,.5)', 'rgba(4,11,15,.6)');
+  g.save(); g.beginPath(); g.roundRect(AREA.x0 - 70, AREA.y0 - 50, AREA.x1 - AREA.x0 + 140, AREA.y1 - AREA.y0 + 100, 14); g.clip();
+  g.strokeStyle = 'rgba(47,216,200,.08)'; g.lineWidth = 2;
+  for (let x = -((scroll) % 160); x < W; x += 160) { g.beginPath(); g.moveTo(x, AREA.y0 - 50); g.lineTo(x, AREA.y1 + 50); g.stroke(); }
+  for (let y = AREA.y0 - 50; y < AREA.y1 + 60; y += 110) { g.beginPath(); g.moveTo(AREA.x0 - 70, y); g.lineTo(AREA.x1 + 70, y); g.stroke(); }
+  for (let i = 0; i < 14; i++) { // far "ground" specks
+    const gx = ((hash(sc.seed, i) * 2200 - scroll * (0.4 + hash(sc.seed, i + 30) * 0.5)) % 2200 + 2200) % 2200 - 140;
+    g.fillStyle = 'rgba(120,200,210,.07)'; g.beginPath(); g.arc(gx, AREA.y0 + hash(sc.seed, i + 60) * (AREA.y1 - AREA.y0), 6 + hash(sc.seed, i + 90) * 16, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+
+  // background hazards: storm clouds, the canyon pinch, the beam's glow
+  for (const ev of sc.events) {
+    const age = s - ev.t;
+    if (ev.type === 'storm') for (const v of ev.victims) { const j = sc.jets[v.i], p = jetPos(sc, j, Math.min(s, v.t)); const a = clamp((s - (v.t - 0.8)) / 0.4, 0, 1) * clamp((v.t + 0.7 - s) / 0.5, 0, 1); if (a > 0) cloud(p.x, p.y - 36, 110, a, sc.seed + v.i * 5); }
+    if (ev.type === 'canyon' && age > -0.1 && age < 2.3) {
+      const k = easeInOut(clamp(age / 1.0, 0, 1)) * (age > 1.6 ? clamp((2.3 - age) / 0.7, 0, 1) : 1);
+      const mid = (AREA.y0 + AREA.y1) / 2, top = lerp(AREA.y0 - 50, mid - 26, k), bot = lerp(AREA.y1 + 50, mid + 26, k);
+      g.fillStyle = '#22262d'; g.strokeStyle = '#4b5462'; g.lineWidth = 3;
+      for (const [y0, y1, dir] of [[AREA.y0 - 50, top, 1], [AREA.y1 + 50, bot, -1]]) {
+        g.beginPath(); g.moveTo(ev.x0, y0);
+        for (let i = 0; i <= 6; i++) g.lineTo(ev.x0 + ((ev.x1 - ev.x0) * i) / 6, y1 - dir * (i % 2 ? 0 : 20 + hash(ev.id, i) * 24));
+        g.lineTo(ev.x1, y0); g.closePath(); g.fill(); g.stroke();
+      }
+    }
+  }
+  // jets
+  const alive = aliveAt(sc, s);
+  const showAll = sc.n <= 30 || alive <= 18;
+  const tagSize = sc.n <= 16 ? 22 : 18;
+  const wrecks = [];
+  for (const j of sc.jets) {
+    if (s < j.l0 - 0.5) continue;
+    if (j.deathT <= s) { wrecks.push(j); continue; }
+    const p = jetPos(sc, j, s);
+    if (p.x > W + 100) continue;
+    if (p.x < -120) continue;
+    const col = `hsl(${j.hue} 80% 62%)`;
+    const trail = Math.min(1, (s - j.l0) / 1.2);
+    g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2 * sc.scale; g.beginPath(); g.moveTo(p.x - 18 * sc.scale, p.y); g.lineTo(p.x - (50 + (s > sc.sDash ? 40 : 0)) * sc.scale * trail, p.y); g.stroke();
+    drawShape(p.x, p.y, p.a, sc.scale, col, 1, 9 + Math.sin(s * 40 + j.i) * 3);
+    if (showAll || (j.win && s > sc.sDash)) text(j.nick, p.x, p.y - 22 - 16 * sc.scale, tagSize, `hsl(${j.hue} 85% 76%)`, 'center', 700, 150);
+  }
+  // wrecks and explosions
+  for (const j of wrecks) {
+    const age = s - j.deathT;
+    if (age > 1.6) continue;
+    const p = jetPos(sc, j, j.deathT);
+    if (j.cause === 'joke') { // a polite exit: the jet turns away trailing smoke
+      const k = clamp(age / 1.4, 0, 1);
+      drawShape(p.x + age * 80, p.y + age * 110, 0.9 + age, sc.scale, `hsl(${j.hue} 40% 55%)`, 1 - k);
+      g.fillStyle = `rgba(200,200,205,${0.5 * (1 - k)})`; for (let q = 1; q < 6; q++) { g.beginPath(); g.arc(p.x + (age - q * 0.07) * 80, p.y + (age - q * 0.07) * 110, 5 + q, 0, Math.PI * 2); g.fill(); }
+      text(j.joke, p.x, p.y - 34 - 40 * k, 19, `rgba(255,217,138,${1 - k})`, 'center');
+      continue;
+    }
+    const k = clamp(age / 0.9, 0, 1);
+    if (age < 0.9) drawShape(p.x + age * 30, p.y + age * 70, age * 7, sc.scale * (1 - k * 0.5), '#6b4a3a', 1 - k);
+    explosion(p.x, p.y, age, Math.max(0.55, sc.scale), sc.seed + j.i * 17);
+  }
+  // foreground hazards
+  for (const ev of sc.events) {
+    const age = s - ev.t;
+    if (age < -0.2 || age > 5) continue;
+    if (ev.type === 'sam') for (const v of ev.victims) {
+      const j = sc.jets[v.i], t0 = v.t - 0.95, k = (s - t0) / 0.95;
+      if (k < 0 || k > 1) continue;
+      const tp = jetPos(sc, j, Math.min(s, v.t)), sx = tp.x + (hash(sc.seed, v.i) - 0.5) * 260;
+      missile(sx, AREA.y1 + 90, tp.x, tp.y, k);
+      if (k > 0.45) { g.strokeStyle = `rgba(255,80,80,${0.5 + 0.4 * Math.sin(s * 30)})`; g.lineWidth = 2.5; g.beginPath(); g.arc(tp.x, tp.y, 34 * sc.scale + 8, 0, Math.PI * 2); g.stroke(); }
+    }
+    if (ev.type === 'flak' && ev.victims.length) {
+      const bt = ev.t + 0.9, k = (s - ev.t) / 0.9;
+      if (k >= 0 && k <= 1) { for (let q = 0; q < 3; q++) { const sx = ev.cx + (q - 1) * 110; g.strokeStyle = 'rgba(255,230,160,.8)'; g.lineWidth = 2; const yy = lerp(AREA.y1 + 80, ev.cy, k), yy0 = lerp(AREA.y1 + 80, ev.cy, Math.max(0, k - 0.12)); g.beginPath(); g.moveTo(lerp(sx, ev.cx, k - 0.12 < 0 ? 0 : k - 0.12), yy0); g.lineTo(lerp(sx, ev.cx, k), yy); g.stroke(); } }
+      const fa = s - bt;
+      if (fa >= 0 && fa < 1.2) {
+        g.fillStyle = `rgba(30,30,34,${0.7 * (1 - fa / 1.2)})`;
+        for (let q = 0; q < 9; q++) { const a = hash(ev.id, q) * 6.283, d = hash(ev.id, q + 20) * ev.r * 0.8; g.beginPath(); g.arc(ev.cx + Math.cos(a) * d, ev.cy + Math.sin(a) * d, 14 + hash(ev.id, q + 40) * 22 + fa * 20, 0, Math.PI * 2); g.fill(); }
+        g.fillStyle = `rgba(255,190,90,${0.8 * (1 - fa / 0.4 > 0 ? 1 - fa / 0.4 : 0)})`; g.beginPath(); g.arc(ev.cx, ev.cy, ev.r * 0.9, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (ev.type === 'fighter' || (ev.type === 'miss' && ev.kind === 'fighter')) {
+      const y = ev.type === 'fighter' ? (ev.y0 + ev.y1) / 2 : (hash(sc.seed, ev.id) < 0.5 ? 212 : 948), x = 2050 - (s - ev.t - 0.9) * (ev.speed || 1250);
+      if (age > 0.9 - 0.4 && x > -200) {
+        enemyJet(x, y, Math.PI, 1.6);
+        for (const v of ev.victims || []) { const j = sc.jets[v.i]; if (s < v.t && s > v.t - 0.35) { const p = jetPos(sc, j, s); g.strokeStyle = '#ffe9a0'; g.lineWidth = 2.5; g.setLineDash([12, 14]); g.beginPath(); g.moveTo(x - 20, y); g.lineTo(p.x, p.y); g.stroke(); g.setLineDash([]); } }
+      }
+    }
+    if (ev.type === 'beam' && ev.victims.length) {
+      const bt = ev.t + 0.9, ba = s - bt;
+      const yc = (ev.y0 + ev.y1) / 2, hh = (ev.y1 - ev.y0) / 2;
+      if (age >= 0 && ba < 0) { // charging at the right edge
+        const k = age / 0.9;
+        const gr = g.createRadialGradient(1880, yc, 0, 1880, yc, 120 + 80 * k); gr.addColorStop(0, `rgba(255,255,255,${0.9 * k})`); gr.addColorStop(0.4, `rgba(255,79,216,${0.6 * k})`); gr.addColorStop(1, 'rgba(255,79,216,0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(1880, yc, 200, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = `rgba(255,110,230,${0.25 + 0.3 * k})`; g.lineWidth = 2; g.setLineDash([14, 12]); g.beginPath(); g.moveTo(1880, yc - hh); g.lineTo(100, yc - hh); g.moveTo(1880, yc + hh); g.lineTo(100, yc + hh); g.stroke(); g.setLineDash([]);
+      }
+      if (ba >= 0 && ba < 0.9) {
+        const k = 1 - ba / 0.9, xh = Math.max(60, 1930 - ba * ev.speed), len = 1900 - xh;
+        const bg = g.createLinearGradient(xh, 0, 1900, 0); bg.addColorStop(0, `rgba(255,255,255,${0.95 * k})`); bg.addColorStop(0.12, `rgba(255,130,238,${0.75 * k})`); bg.addColorStop(1, `rgba(255,70,210,${0.3 * k})`);
+        g.fillStyle = bg; g.fillRect(xh, ev.y0 - 10, len, ev.y1 - ev.y0 + 20);
+        g.fillStyle = `rgba(255,255,255,${0.85 * k})`; g.fillRect(xh, yc - Math.max(3, hh * 0.3), len, Math.max(6, hh * 0.6));
+        const hg = g.createRadialGradient(xh, yc, 0, xh, yc, hh + 90); hg.addColorStop(0, `rgba(255,255,255,${k})`); hg.addColorStop(1, 'rgba(255,100,230,0)');
+        g.fillStyle = hg; g.beginPath(); g.arc(xh, yc, hh + 90, 0, Math.PI * 2); g.fill();
+      }
+    }
+    if (ev.type === 'storm') for (const v of ev.victims) lightning(jetPos(sc, sc.jets[v.i], v.t).x, jetPos(sc, sc.jets[v.i], v.t).y, sc.seed + v.i, s - v.t);
+    if (ev.type === 'miss' && ev.kind === 'sam') { // a missile that loses its lock and bursts harmlessly below the formation
+      const k = (s - ev.t) / 1.2, x = 300 + hash(sc.seed, ev.id) * 1300;
+      if (k >= 0 && k <= 1) missile(x - 60, AREA.y1 + 90, x, AREA.y1 - 38, k); else if (k > 1) explosion(x, AREA.y1 - 38, (k - 1) * 1.2, 0.6, sc.seed + ev.id * 31);
+    }
+    if (ev.type === 'miss' && ev.kind === 'flak') { const fa = s - ev.t - 0.8, x = 1470 + hash(sc.seed, ev.id + 5) * 240, y = 280 + hash(sc.seed, ev.id + 9) * 600; if (fa >= 0 && fa < 1) { g.fillStyle = `rgba(30,30,34,${0.55 * (1 - fa)})`; for (let q = 0; q < 6; q++) { g.beginPath(); g.arc(x + (hash(ev.id, q) - 0.5) * 90, y + (hash(ev.id, q + 8) - 0.5) * 60, 14 + hash(ev.id, q + 3) * 16, 0, Math.PI * 2); g.fill(); } } }
+    if (ev.type === 'ace') {
+      const z = ev.victims[0], j = sc.jets[z.i];
+      const k = (s - ev.t) / (z.t - ev.t);
+      if (k >= 0 && k <= 1) {
+        const tp = jetPos(sc, j, Math.min(s, z.t));
+        const sx = 1960, sy = tp.y + Math.sin(k * 9) * 150 * (1 - k);
+        missile(sx, sy, tp.x, tp.y, k, '#ffb4a8');
+        g.strokeStyle = `rgba(255,70,70,${0.55 + 0.4 * Math.sin(s * 14)})`; g.lineWidth = 3; g.beginPath(); g.arc(tp.x, tp.y, 40 * sc.scale + 12, 0, Math.PI * 2); g.stroke();
+        text('락온', tp.x, tp.y + 44 * sc.scale + 14, 18, '#ff8a7a', 'center');
+      }
+    }
+  }
+  // the gate at the end
+  if (s > sc.sDash + 0.4) {
+    const k = clamp((s - sc.sDash - 0.4) / 1.2, 0, 1), gx = 1710 + (1 - easeOut(k)) * 220, mid = (AREA.y0 + AREA.y1) / 2, gh = 40 + sc.w * 36;
+    g.strokeStyle = `rgba(143,233,255,${0.9 * k})`; g.lineWidth = 6; g.shadowColor = '#8fe9ff'; g.shadowBlur = 20;
+    g.beginPath(); g.moveTo(gx, mid - gh); g.lineTo(gx, mid + gh); g.stroke();
+    g.beginPath(); g.arc(gx, mid - gh, 12, 0, 7); g.arc(gx, mid + gh, 12, 0, 7); g.stroke(); g.shadowBlur = 0;
+    const pass = clamp((s - sc.sGate + 0.3) / 0.6, 0, 1) * clamp((sc.sGate + 1.2 - s) / 1.0, 0, 1);
+    if (pass > 0) { g.fillStyle = `rgba(200,250,255,${0.5 * pass})`; g.fillRect(gx - 14, mid - gh, 28, gh * 2); }
+  }
+  // slow-motion vignette
+  if (slowK > 0) {
+    const gr = g.createRadialGradient(W / 2, H / 2, 380, W / 2, H / 2, 1100); gr.addColorStop(0, 'rgba(120,0,0,0)'); gr.addColorStop(1, `rgba(150,10,10,${0.5 * slowK * (0.8 + 0.2 * Math.sin(s * 10))})`);
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  }
+  // HUD: survivors counter, radio ticker, banners
+  panel(70, 52, 330, 76);
+  text('남은 기체', 90, 80, 22, '#8fb7b3');
+  text(`${aliveAt(sc, s)} / ${sc.n}`, 380, 98, 44, '#e8f6f4', 'right', 800);
+  const lines = sc.radio.filter((r) => r.t <= s && s - r.t < 6.5).slice(-2); // the two latest calls, beside the counter
+  lines.forEach((r, i) => {
+    const a = clamp(1 - (s - r.t - 5) / 1.5, 0, 1) * clamp((s - r.t) / 0.15, 0, 1), y = 74 + i * 0 + (i - (lines.length - 1)) * 0 + (lines.length === 1 ? 0 : (i ? 22 : -22));
+    g.globalAlpha = a * (i === lines.length - 1 ? 1 : 0.7);
+    text(`📻 ${r.text}`, 430, y + 6, i === lines.length - 1 ? 34 : 24, r.c, 'left', 800, 1380);
+    g.globalAlpha = 1;
+  });
+  const bannerAt = (t0, dur, main, sub, color) => {
+    const a = clamp((s - t0) / 0.3, 0, 1) * clamp((t0 + dur - s) / 0.5, 0, 1);
+    if (a <= 0) return;
+    g.globalAlpha = a; text(main, W / 2, 232, 64 + (1 - a) * 20, color, 'center', 900);
+    if (sub) text(sub, W / 2, 288, 28, '#d9ecec', 'center'); g.globalAlpha = 1;
+  };
+  bannerAt(sc.tLaunch - 0.4, 2.6, '출격!', anim.total > sc.n ? `참가 ${anim.total}명 중 ${sc.n}기가 대표로 출격 · 당첨은 ${sc.w}명` : `${sc.n}기 · 당첨은 ${sc.w}명`, '#8fe9ff');
+  if (sc.sB > sc.sA) bannerAt(sc.sA, sc.sB - sc.sA + 0.6, `남은 ${sc.w + 1}기`, '최후의 관문 — 한 기만 더 떨어져요', '#ff8a7a');
+  bannerAt(sc.sGate, 3.2, '임무 완수', `생존 ${sc.w}기 귀환`, '#ffe28a');
+  return s >= sc.sEnd;
+}
+
+// =====================================================================================================
+//  roulette — a name roll for each winner
+// =====================================================================================================
+function buildRoulette(names, winnerIdx, seed, quick) {
+  const rng = mulberry32(seed);
+  const pool = shuffle(names.map((x) => x.n), rng);
+  let t = 0.9;
+  const reels = winnerIdx.map((wi, k) => {
+    const D = quick ? 3.6 : k === 0 ? 5.8 : k < 5 ? 3.2 : 1.9, M = Math.round(D * 15) + 10;
+    const strip = [];
+    const win = names[wi].n;
+    for (let i = 0; i < M - 1; i++) {
+      let nm = pool[(i + Math.floor(rng() * pool.length)) % pool.length], tries = 0;
+      while (pool.length > 1 && (nm === strip[i - 1] || (i >= M - 3 && nm === win)) && tries++ < 20) nm = pool[Math.floor(rng() * pool.length)]; // never the same name twice in a row, never the winner's name beside the winner
+      strip.push(nm);
+    }
+    strip.push(win);
+    const r = { nick: win, strip, t0: t, D, hold: quick ? 0.9 : 1.2, tail: [pool[Math.floor(rng() * pool.length)], pool[Math.floor(rng() * pool.length)], pool[Math.floor(rng() * pool.length)]].map((x) => (x === win && pool.length > 1 ? pool[(pool.indexOf(x) + 1) % pool.length] : x)) };
+    t += D + r.hold;
+    return r;
+  });
+  return { reels, total: t + 0.4, seed, n: names.length };
+}
+function drawRoulette(T) {
+  const sc = anim.script;
+  const cx = 960, cy = 520, ROW = 96;
+  panel(cx - 500, cy - 250, 1000, 500, 'rgba(255,211,77,.55)', 'rgba(7,12,16,.78)');
+  text('🎰 추첨', cx, cy - 214, 34, '#ffd34d', 'center', 900);
+  text(`참가 ${anim.total}명`, cx + 470, cy - 214, 22, '#9fb9b6', 'right');
+  let k = sc.reels.findIndex((r) => T < r.t0 + r.D + r.hold);
+  if (k < 0) k = sc.reels.length - 1;
+  const r = sc.reels[k];
+  const prog = easeOut4((T - r.t0) / r.D), p = (r.strip.length - 1) * prog;
+  g.save(); g.beginPath(); g.rect(cx - 470, cy - 170, 940, 340); g.clip();
+  for (let d = -3; d <= 3; d++) {
+    const idx = Math.floor(p) + d, y = cy + (idx - p) * ROW;
+    const nm = idx < 0 ? '' : idx >= r.strip.length ? r.tail[idx - r.strip.length] || '' : r.strip[idx];
+    const off = Math.abs(y - cy) / ROW, a = clamp(1 - off * 0.35, 0.1, 1);
+    const landed = T > r.t0 + r.D;
+    g.globalAlpha = a;
+    text(nm, cx, y, off < 0.5 ? 64 : 46, off < 0.5 ? (landed ? '#ffe28a' : '#ffffff') : '#9fb9b6', 'center', 800, 860);
+  }
+  g.restore(); g.globalAlpha = 1;
+  g.strokeStyle = '#ffd34d'; g.lineWidth = 4; g.strokeRect(cx - 470, cy - ROW / 2, 940, ROW);
+  g.fillStyle = '#ffd34d'; g.beginPath(); g.moveTo(cx - 490, cy - 16); g.lineTo(cx - 470, cy); g.lineTo(cx - 490, cy + 16); g.fill();
+  g.beginPath(); g.moveTo(cx + 490, cy - 16); g.lineTo(cx + 470, cy); g.lineTo(cx + 490, cy + 16); g.fill();
+  if (T > r.t0 + r.D && T < r.t0 + r.D + 0.5) { g.fillStyle = `rgba(255,240,180,${0.35 * (1 - (T - r.t0 - r.D) / 0.5)})`; g.fillRect(cx - 470, cy - ROW / 2, 940, ROW); }
+  // winners found so far (several winners: a list beside the roll)
+  if (sc.reels.length > 1) {
+    const done = sc.reels.filter((q) => T >= q.t0 + q.D);
+    const lh = sc.reels.length > 6 ? 36 : 44, lx = cx + 520, ly = cy - 250;
+    panel(lx, ly, 380, 70 + sc.reels.length * lh, 'rgba(255,211,77,.4)', 'rgba(7,12,16,.7)');
+    text('🏆 당첨자', lx + 22, ly + 30, 26, '#ffd34d', 'left', 800);
+    done.forEach((q, i) => text(`${i + 1}. ${q.nick}`, lx + 22, ly + 72 + i * lh, sc.reels.length > 6 ? 24 : 28, '#ffe28a', 'left', 800, 340));
+  }
+  text(sc.reels.length > 1 ? `${Math.min(k + 1, sc.reels.length)} / ${sc.reels.length}번째 당첨자` : '당첨자는…', cx, cy + 222, 26, '#d9ecec', 'center');
+  return T >= sc.total;
+}
+
+// =====================================================================================================
+//  entry banner, results, radio
+// =====================================================================================================
+function drawEntry() {
+  const entry = S.phase === 'entry', ready = S.phase === 'ready';
+  const want = entry || ready ? 1 : 0;
+  bannerA += (want - bannerA) * 0.12;
+  if (bannerA < 0.02 || anim) return;
+  g.globalAlpha = bannerA;
+  const x = W / 2 - 520, y = 36 - (1 - bannerA) * 60;
+  panel(x, y, 1040, entry ? 150 : 108, 'rgba(255,211,77,.6)', 'rgba(7,12,16,.8)');
+  if (entry) {
+    text('✈ 추첨 참여 접수 중', x + 36, y + 36, 30, '#ffd34d', 'left', 900);
+    text(`채팅에 ${S.keyword}`, x + 36, y + 86, 52, '#ffffff', 'left', 900, 560);
+    const left = S.endsAt ? (S.endsAt - nowMs()) / 1000 : null;
+    if (left !== null) text(fmtClock(left), x + 1004, y + 44, 56, left < 10 ? '#ff8a7a' : '#8fe9ff', 'right', 900);
+    else text('마감 전까지', x + 1004, y + 44, 26, '#9fb9b6', 'right');
+    text(`참가 ${S.count}명`, x + 1004, y + 92, 34, '#e8f6f4', 'right', 800);
+    if (S.last?.length) text(`최근: ${S.last.slice(-4).join(' · ')}`, x + 36, y + 130, 20, '#9fb9b6', 'left', 600, 960);
+  } else {
+    text('참여 마감', x + 36, y + 38, 30, '#ffd34d', 'left', 900);
+    text(`참가 ${S.count}명 · 곧 추첨해요`, x + 36, y + 80, 38, '#ffffff', 'left', 800, 960);
+  }
+  g.globalAlpha = 1;
+}
+
+let confettiT0 = 0;
+function drawResult() {
+  const list = result?.winners || [];
+  if (!list.length || anim) return;
+  const a = easeOut((performance.now() - result.since) / 600);
+  g.globalAlpha = a;
+  const n = list.length, per = n <= 2 ? n : n <= 4 ? 2 : 5, rowsN = Math.ceil(n / per);
+  const cw = n === 1 ? 700 : n <= 2 ? 520 : n <= 4 ? 440 : 330, ch = n === 1 ? 190 : 150;
+  const top = 160, gap = 24;
+  const hdr = S.chatEndsAt ? `채팅 교신 ${fmtClock((S.chatEndsAt - nowMs()) / 1000)}` : '';
+  text('🎉 당첨을 축하해요!', W / 2, top - 52, 46, '#ffe28a', 'center', 900);
+  if (hdr) text(hdr, W / 2, top - 10, 24, '#8fe9ff', 'center', 700);
+  list.forEach((w, i) => {
+    const r = Math.floor(i / per), c = i % per, inRow = r === rowsN - 1 ? n - per * (rowsN - 1) : per;
+    const x = W / 2 + (c - (inRow - 1) / 2) * (cw + gap) - cw / 2, y = top + 30 + r * (ch + gap) + (1 - a) * 30;
+    panel(x, y, cw, ch, 'rgba(255,211,77,.9)', 'rgba(26,20,6,.84)');
+    g.fillStyle = '#ffd34d'; g.beginPath(); g.roundRect(x + 18, y - 16, 96, 32, 16); g.fill();
+    g.font = `900 20px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#3a2a00'; g.fillText('당첨', x + 66, y + 1); // no outline: it is dark text on a light chip
+    text(w.nick, x + cw / 2, y + ch / 2 + 6, n === 1 ? 72 : 46, '#ffffff', 'center', 900, cw - 40);
+    if (speaking === w.nick) text('🔊', x + cw - 34, y + 34, 28, '#8fe9ff', 'center');
+  });
+  // confetti for the first seconds
+  const ct = (performance.now() - confettiT0) / 1000;
+  if (ct < 6) for (let i = 0; i < 90; i++) {
+    const x = hash(7, i) * W, y = ((hash(8, i) * 700 - 200 + ct * (160 + hash(9, i) * 240)) % 1300) - 100;
+    if (y > H) continue;
+    g.fillStyle = `hsla(${hash(10, i) * 360},90%,62%,${clamp(1 - ct / 6, 0, 1) * 0.95})`; g.save(); g.translate(x + Math.sin(ct * 3 + i) * 20, y); g.rotate(ct * 4 + i); g.fillRect(-6, -3, 12, 6); g.restore();
+  }
+  g.globalAlpha = 1;
+}
+
+function drawRadio() {
+  if (anim || S.phase !== 'winners' && !DEMO) return;
+  const now = performance.now();
+  radio = radio.filter((r) => now - r.at < 16000);
+  if (!radio.length && S.phase !== 'winners') return;
+  const lines = radio.slice(-5);
+  const x = 1190, w = 660, lineH = 62, top = H - 80 - lines.length * lineH - 56;
+  panel(x, top, w, lines.length * lineH + 56 + 16, 'rgba(143,233,255,.45)', 'rgba(7,14,18,.74)');
+  text('📻 당첨자 교신', x + 24, top + 28, 24, '#8fe9ff', 'left', 800);
+  if (!lines.length) text('당첨자가 채팅을 치면 여기에 나와요', x + 24, top + 70, 20, '#6f8d8a', 'left', 600);
+  lines.forEach((l, i) => {
+    const y = top + 62 + i * lineH + 20, a = clamp((now - l.at) / 250, 0, 1) * clamp((16000 - (now - l.at)) / 1500, 0, 1);
+    g.globalAlpha = a;
+    const clean = String(l.text).replace(/\{:[^:{}]+:\}/g, '').replace(/\s+/g, ' ').trim() || '…';
+    text(l.nick, x + 24, y - 12, 20, '#ffe28a', 'left', 800, 560);
+    text(clean, x + 24, y + 14, 24, '#ffffff', 'left', 600, 610);
+    if (speaking === l.nick && now - l.at < 9000) text('🔊', x + w - 36, y, 24, '#8fe9ff', 'center');
+    g.globalAlpha = 1;
+  });
+}
+
+// =====================================================================================================
+//  main loop
+// =====================================================================================================
+function animTime() { return anim.fixed != null ? anim.fixed : (performance.now() - anim.t0) / 1000; }
+function frame() {
+  g.clearRect(0, 0, W, H);
+  if (anim) {
+    const T = animTime();
+    const fin = anim.style === 'roulette' ? drawRoulette(T) : drawSortie(T);
+    if (fin && !anim.done && anim.fixed == null) finishAnim();
+  }
+  drawEntry();
+  drawResult();
+  drawRadio();
+  requestAnimationFrame(frame);
+}
+
+function startAnim(p, demo) {
+  if (anim && anim.id === p.id) return;
+  const names = p.names.slice(), winSet = new Set(p.winners.map((w) => w.uid));
+  const flags = names.map((x) => winSet.has(x.u));
+  const quick = p.kind === 'redraw' || Q.get('quick') === '1';
+  // the winners must be among the names; if the list was cut they are added back (never lose a winner)
+  for (const w of p.winners) if (!names.some((x) => x.u === w.uid)) { names.push({ u: w.uid, n: w.nick }); flags.push(true); }
+  let script;
+  if (p.style === 'roulette') script = buildRoulette(names, flags.map((f, i) => (f ? i : -1)).filter((i) => i >= 0).sort((a, b) => p.winners.findIndex((w) => w.uid === names[a].u) - p.winners.findIndex((w) => w.uid === names[b].u)), p.seed, quick);
+  else script = buildSortie(names, flags, p.seed, quick);
+  anim = { id: p.id, kind: p.kind, style: p.style, script, t0: performance.now(), fixed: null, done: false, winners: p.winners, total: p.total, demo: !!demo };
+  result = null;
+  window.__draw.last = { script, names, flags };
+}
+function finishAnim() {
+  anim.done = true;
+  const a = anim;
+  result = { winners: S.phase === 'winners' && S.winners.length ? S.winners : a.winners, since: performance.now() };
+  confettiT0 = performance.now();
+  anim = null;
+  if (!a.demo && !doneSent.has(a.id)) { doneSent.add(a.id); fetch('/api/draw/shown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: a.id }) }).catch(() => {}); }
+}
+
+// ---------- the voice ----------
+const audioQ = [];
+let playing = false;
+function playNext() {
+  if (playing) return;
+  const it = audioQ.shift();
+  if (!it) { speaking = null; return; }
+  playing = true; speaking = it.nick;
+  const a = new Audio(it.url);
+  a.volume = clamp((it.volume ?? S.tts?.volume ?? 80) / 100, 0, 1);
+  const next = () => { playing = false; playNext(); };
+  a.onended = next; a.onerror = next;
+  a.play().catch(next);
+}
+function enqueueAudio(it) { if (audioQ.length < 8) audioQ.push(it); playNext(); }
+
+// =====================================================================================================
+//  link to Allmind
+// =====================================================================================================
+window.__draw = { start: (p) => { anim = null; startAnim(p, true); }, buildSortie, buildRoulette, jetPos, toScript, realLen, aliveAt, last: null, seek: (t) => { if (anim) anim.fixed = t; }, state: () => ({ S, anim: !!anim, result: !!result }), setState: (o) => { Object.assign(S, o); } };
+
+function onState(d) {
+  const was = S.phase;
+  S = { ...S, ...d };
+  skew = (d.now || Date.now()) - Date.now();
+  if (S.phase === 'winners' && !anim && !result?.winners?.length && S.winners.length) { result = { winners: S.winners, since: performance.now() }; confettiT0 = performance.now(); }
+  else if (S.phase === 'winners' && result && S.winners.length && !anim) result.winners = S.winners;
+  if (S.phase === 'idle' || S.phase === 'entry' || S.phase === 'ready') { if (was === 'winners' || was === 'drawing') { result = null; radio = []; } }
+}
+
+if (!DEMO) {
+  const es = new EventSource('/api/draw/events');
+  let ver = null;
+  es.addEventListener('hello', (e) => { const v = JSON.parse(e.data).pack; if (ver && v !== ver) location.reload(); ver = v; });
+  es.addEventListener('reload', () => location.reload());
+  es.addEventListener('state', (e) => { try { onState(JSON.parse(e.data)); } catch {} });
+  es.addEventListener('draw', (e) => { try { startAnim(JSON.parse(e.data), false); } catch (err) { console.error(err); } });
+  es.addEventListener('chat-history', (e) => { try { radio = JSON.parse(e.data).map((l) => ({ ...l, at: performance.now() })); } catch {} });
+  es.addEventListener('chat', (e) => { try { radio.push({ ...JSON.parse(e.data), at: performance.now() }); } catch {} });
+  es.addEventListener('tts', (e) => { try { enqueueAudio(JSON.parse(e.data)); } catch {} });
+  es.addEventListener('end', () => { anim = null; result = null; radio = []; audioQ.length = 0; });
+  es.addEventListener('skip', () => { if (anim) { const a = anim; doneSent.add(a.id); finishAnim(); } });
+} else {
+  // demo: a preview without chat
+  const NICKS = ['별빛여행자', '라면조아', '새벽감성', '야근하는개발자', '고양이집사', '치즈덕후', '밤하늘', '코딩하는곰', '달빛산책', '피자왕', '구름빵', '민트초코', '호시아팬1호', '초보조종사', '에이스', '하늘바라기', '오늘도맑음', '커피수혈', '게임중독', '꿀잠', '햇살가득', '우주먼지', '소금빵', '불꽃슛', '느긋한토끼', '번개맨', '별똥별', '단팥빵', '파랑새', '눈사람'];
+  const n = clamp(Number(Q.get('n')) || 24, 1, 400), w = clamp(Number(Q.get('w')) || 1, 1, 10), seed = Number(Q.get('seed')) || 7;
+  const names = Array.from({ length: Math.min(n, 150) }, (_, i) => ({ u: `d${i}`, n: i < NICKS.length ? NICKS[i] : `${NICKS[i % NICKS.length]}${Math.floor(i / NICKS.length) + 1}` }));
+  const r = mulberry32(seed * 7 + 1); const idx = shuffle(names.map((_, i) => i), r).slice(0, Math.min(w, names.length));
+  const winners = idx.map((i) => ({ uid: names[i].u, nick: names[i].n }));
+  const phase = Q.get('phase') || 'drawing';
+  S = { ...S, phase: phase === 'drawing' ? 'drawing' : phase, count: n, last: names.slice(-4).map((x) => x.n), style: Q.get('style') || 'sortie', winners, endsAt: Date.now() + 45000, chatEndsAt: Date.now() + 40000 };
+  if (phase === 'drawing') {
+    startAnim({ id: `demo${seed}`, kind: 'draw', style: S.style, seed, names, winners, total: n, w: winners.length }, true);
+    if (Q.get('t') != null) anim.fixed = Number(Q.get('t'));
+  } else if (phase === 'winners') {
+    result = { winners, since: performance.now() - 5000 }; confettiT0 = performance.now() - 7000;
+    radio = [{ nick: winners[0].nick, text: '와 진짜 당첨됐어요?! 감사합니다 {:d_2:}', at: performance.now() }, { nick: winners[0].nick, text: '호시아님 항상 응원해요', at: performance.now() }];
+    speaking = winners[0].nick;
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -32,6 +32,8 @@ import { Updater } from './update.js';
 import { Dogfight } from './dogfight.js';
 import { XylemPack } from './xylem.js';
 import { Roulette } from './roulette.js';
+import { ViewerDraw } from './draw.js';
+import { Tts } from './tts.js';
 import { TextBoxes } from './textbox.js';
 import { TodoList } from './todo.js';
 import { ObsLogWatch } from './obslog.js';
@@ -43,7 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.44.1';
+const VERSION = '0.45.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -169,8 +171,11 @@ const PIN_FREE_API = new Set([
   '/api/ping', '/api/access', '/api/access/pair', '/api/google/callback', '/api/chzzk-open/callback',
   // overlays (OBS browser sources): their event channels and the two acknowledgements they send
   '/api/roulette/events', '/api/roulette/board-events', '/api/text/events', '/api/dogfight/events', '/api/roulette/shown', '/api/dogfight/result',
+  '/api/draw/events', '/api/draw/shown', // 시청자 추첨 overlay (/draw): its event channel and "the staging is done"
 ]);
-const pinNeeded = (p) => (p.startsWith('/api/') ? !PIN_FREE_API.has(p) : PIN_PAGES.has(p));
+// the draw overlay's speech files (/api/draw/tts/<16 hex>.wav): random ids that only the overlay is told about
+const PIN_FREE_PREFIX = ['/api/draw/tts/'];
+const pinNeeded = (p) => (p.startsWith('/api/') ? !PIN_FREE_API.has(p) && !PIN_FREE_PREFIX.some((x) => p.startsWith(x)) : PIN_PAGES.has(p));
 const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
 // ---------- main ----------
@@ -241,6 +246,7 @@ async function main() {
   });
   let preflightLast = null;
   let reports = null; // set once the Xylem parts exist (needs the roulette)
+  let draw = null;    // 시청자 추첨, same
   const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
   // uploads wait while OBS streams or records, and 5 min after a stream ends (it may be restarted)
   // YouTube chat joins the dashboard chat list while a non-private YouTube broadcast is live
@@ -385,6 +391,7 @@ async function main() {
     obsStreaming = active;
     youtube.onStreaming(active);
     if (active) {
+      draw?.streamStarted(); // "지난 당첨자 제외 (이번 방송)" counts from here
       reports?.start().catch((e) => console.warn('[report]', e.message));
       const t = new Date();
       chzzk.note(`— 방송 시작 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} —`);
@@ -435,6 +442,9 @@ async function main() {
   const xylemPage = xylem.channel(); // open /xylem pages: told to reload on a pack switch
   const dogfight = new Dogfight(chzzk, xylem);
   const roulette = new Roulette(chzzk, xylem, chzzkOpen);
+  const tts = new Tts();
+  draw = new ViewerDraw(chzzk, xylem, chzzkOpen, tts); // 시청자 추첨 (/draw overlay)
+  draw.on('tts-error', (msg) => sendAll('toast', { text: `추첨 음성: ${msg}`, bad: true, long: true }));
   const textBoxes = new TextBoxes(xylem); // 텍스트: on-screen text boxes (/text?id=…)
   // VTube Studio on the main PC (docs/plans/vts.md): 던지기 now, expression changes later
   const vts = new VTS(config);
@@ -450,7 +460,8 @@ async function main() {
     allmind: VERSION,
     pack: xylem.status(),
     chat: chzzk.chatState,
-    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size, rouletteBoard: roulette.boardCh.size, text: textBoxes.ch.size },
+    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size, rouletteBoard: roulette.boardCh.size, text: textBoxes.ch.size, draw: draw.overlays },
+    draw: draw.status(),
     text: textBoxes.status(),
     roulette: roulette.status(),
     board: dogfight.board(),
@@ -798,6 +809,22 @@ async function main() {
     'POST /api/text/remove': (b) => textBoxes.remove(String(b.id || '')),
     'POST /api/text/preset-save': (b) => textBoxes.savePreset(b.name, String(b.id || '')),
     'POST /api/text/preset-delete': (b) => textBoxes.deletePreset(b.name),
+    // 시청자 추첨 (src/draw.js)
+    'POST /api/draw/settings': (b) => ({ settings: draw.setSettings(b.settings) }),
+    'POST /api/draw/open': (b) => { draw.open(b.sec); return {}; },
+    'POST /api/draw/close': () => { draw.close(); return {}; },
+    'POST /api/draw/extend': (b) => { draw.extend(b.sec); return {}; },
+    'POST /api/draw/draw': () => { draw.draw(); return {}; },
+    'POST /api/draw/skip': () => { draw.skip(); return {}; },
+    'POST /api/draw/redraw': (b) => { draw.redraw(String(b.uid || '')); return {}; },
+    'POST /api/draw/end': () => { draw.end(); return {}; },
+    'POST /api/draw/reset': () => { draw.reset(); return {}; },
+    'POST /api/draw/remove': (b) => { draw.remove(String(b.uid || '')); return {}; },
+    'POST /api/draw/clear-past': () => { draw.clearPast(); return {}; },
+    'POST /api/draw/test-fill': (b) => { draw.testFill(b.n); return {}; },
+    'POST /api/draw/test-chat': (b) => { draw.testChat(b.text); return {}; },
+    'POST /api/draw/tts-test': async (b) => ({ tts: await draw.ttsTest(b.text) }),
+    'GET /api/draw/voices': async () => ({ voices: await tts.voices(), real: tts.real }),
     'POST /api/roulette/settings': (b) => ({ settings: roulette.setSettings(b.settings) }),
     'POST /api/roulette/test': (b) => ({ spins: roulette.test(b.spins, b.rid ? String(b.rid) : null) }),
     'POST /api/roulette/board-show': () => { roulette.showBoard(); return { boards: roulette.boardCh.size }; },
@@ -1203,7 +1230,7 @@ async function main() {
 
     // 공중전 overlay (OBS browser source: http://localhost:<port>/dogfight)
     // Xylem pack files: the page, overlays (OBS browser sources) and panel scripts — from the active pack
-    if (req.method === 'GET' && (url.pathname === '/xylem' || url.pathname.startsWith('/xylem/') || url.pathname === '/dogfight' || url.pathname === '/roulette' || url.pathname === '/roulette-board' || url.pathname === '/text')) {
+    if (req.method === 'GET' && (url.pathname === '/xylem' || url.pathname.startsWith('/xylem/') || url.pathname === '/dogfight' || url.pathname === '/roulette' || url.pathname === '/roulette-board' || url.pathname === '/text' || url.pathname === '/draw')) {
       const name = url.pathname === '/xylem' || url.pathname === '/xylem/' ? 'index.html' : url.pathname.startsWith('/xylem/') ? decodeURIComponent(url.pathname.slice(7)) : `${url.pathname.slice(1)}.html`;
       const body = xylem.file(name);
       if (!body) return json(res, 404, { error: 'Not found' });
@@ -1212,6 +1239,15 @@ async function main() {
     if (key === 'GET /api/xylem/state') return json(res, 200, { ok: true, ...xylemState() }); // polled by the Xylem page; no dashboard broadcast
     if (key === 'GET /api/xylem/events') return xylemPage.attach(req, res);
     if (key === 'GET /api/roulette/events') return roulette.attach(req, res);
+    if (key === 'GET /api/draw/events') return draw.attach(req, res);
+    if (key === 'POST /api/draw/shown') { draw.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
+    if (req.method === 'GET' && url.pathname.startsWith('/api/draw/tts/')) {
+      const m = /^\/api\/draw\/tts\/([0-9a-f]{16})\.wav$/.exec(url.pathname);
+      const wav = m && tts.read(m[1]);
+      if (!wav) return json(res, 404, { ok: false });
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': wav.length, 'Cache-Control': 'no-store' });
+      return res.end(wav);
+    }
     if (key === 'GET /api/text/events') return textBoxes.attach(req, res, url.searchParams.get('preview') === '1');
     if (key === 'GET /api/roulette/board-events') return roulette.attachBoard(req, res);
     if (key === 'POST /api/roulette/shown') { roulette.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }

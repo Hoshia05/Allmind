@@ -1,7 +1,7 @@
 {
-  "version": "1.4.1",
-  "minAllmind": "0.38.0",
-  "notes": "텍스트: 방송 화면에 글자 띄우기 — 글꼴·크기·색·배경·위치·애니메이션을 실시간으로",
+  "version": "1.5.0",
+  "minAllmind": "0.45.0",
+  "notes": "시청자 추첨: 채팅으로 참여 → 공중전 출격 또는 룰렛으로 뽑기, 당첨자 채팅을 음성으로 읽어 줘요",
   "modules": [
     {
       "id": "roulette",
@@ -16,6 +16,13 @@
       "icon": "✈️",
       "overlay": "/dogfight",
       "panel": "dogfight.panel.js"
+    },
+    {
+      "id": "draw",
+      "name": "시청자 추첨",
+      "icon": "🎟",
+      "overlay": "/draw",
+      "panel": "draw.panel.js"
     },
     {
       "id": "text",
@@ -34,6 +41,8 @@
   "files": {
     "dogfight.html": "b1d951d52023e463b6a083b531112d070fe9731e72d6f0581a9bb0c2d3dcaac8",
     "dogfight.panel.js": "41331d690be4a59914095516bce18c1ef8024dfc43575d354d2df3db4d34b486",
+    "draw.html": "28314b0f8d25dd297de11ff71232729dc3c89f1b34f5004fe19ed184dcf4a767",
+    "draw.panel.js": "b889911e982af78575ab95f6c2f71c8a93183866c0cf56693df279ab2c81f403",
     "index.html": "4d25a0d686b47dee0cf5996a3c7c9677ba5d6b6d925c731ef71a1efaf6aaa0d5",
     "roulette-board.html": "fe0bc20b3ff7e8a20b8625a7bcd6389d038a560978d6858bd968a2db7f58d3af",
     "roulette.html": "468984d7068994780976cd5abfb3212ea5f58dbbe39d17e93e067fcc9debd6ce",

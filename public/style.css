@@ -253,6 +253,8 @@ button.live-pill:hover { border-color: var(--accent); }
 }
 .msg { padding: 3px 6px; border-radius: 6px; line-height: 1.5; word-break: break-word; font-size: calc(13.5px * var(--chat-scale, 1)); }
 .msg:hover { background: var(--panel-2); }
+.msg.draw-winner { background: rgba(255, 211, 77, .13); box-shadow: inset 3px 0 0 #ffd34d; }
+.msg .dw-tag { display: inline-block; font-size: 10.5px; font-weight: 800; padding: 0 6px; margin-right: 5px; border-radius: 999px; background: #ffd34d; color: #3a2a00; vertical-align: 1px; }
 .msg .tm { color: var(--muted); font-size: 10.5px; margin-right: 6px; font-variant-numeric: tabular-nums; }
 .msg .badge { width: 16px; height: 16px; vertical-align: -3px; margin-right: 3px; }
 .msg .nick { font-weight: 700; margin-right: 6px; }

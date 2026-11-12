@@ -1,5 +1,7 @@
 # 시청자 추첨 (viewer draw) — plan, 2026-11-12
 
+**Status: built in 0.45.0 / pack 1.5.0** (see CLAUDE.md code map). Real Windows voice and real chat not yet tried by the owner.
+
 Owner's ask: collect the viewers in chat, draw 1 or n of them, highlight the winner and read the winner's chat
 aloud (TTS). Twist: besides a plain roulette, an **Ace Combat-style sortie** — every entrant launches as a jet,
 the losers get shot down on the way, only the winner(s) reach the goal.

@@ -1047,7 +1047,9 @@ function chatHtml(m) {
   if (m.kind === 'subscription') amt = `<span class="amt">${yt ? '멤버십' : '구독'}${m.months ? ` · ${m.months}개월` : ''}</span>`;
   const click = m.uid && !yt; // the viewer card knows Chzzk viewers only
   const nick = m.nick ? `<span class="nick${click ? ' clickable' : ''}"${click ? ` data-uid="${esc(m.uid)}" title="눌러서 시청자 정보 보기"` : ''} style="color:${nickColor(m.nick)}">${esc(m.nick)}</span>${verified}` : '';
-  return `<li class="msg ${m.kind}${yt ? ' yt' : ''}${m.hidden ? ' hidden-msg' : ''}" data-id="${m.id}">${amt}<span class="tm">${tm}</span>${platformIcon(m)}${sub}${member}${badges}${role}${nick}${text}</li>`;
+  // 시청자 추첨: the lines of a winner while the winners' chat is open (src/draw.js flags them and sends a chat-update)
+  const win = m.drawWinner ? '<span class="dw-tag" title="추첨 당첨자">🏆 당첨</span>' : '';
+  return `<li class="msg ${m.kind}${yt ? ' yt' : ''}${m.hidden ? ' hidden-msg' : ''}${m.drawWinner ? ' draw-winner' : ''}" data-id="${m.id}">${amt}<span class="tm">${tm}</span>${platformIcon(m)}${sub}${member}${badges}${role}${win}${nick}${text}</li>`;
 }
 
 function nearBottom() {

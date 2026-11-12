@@ -615,11 +615,11 @@ const chzzkHttp = http.createServer((req, res) => {
   const pc = /^\/nng_main\/v1\/chats\/[^/]+\/users\/([0-9a-f]{32})\/profile-card/.exec(req.url);
   if (pc) return send(mockProfileCard(pc[1]));
   if (req.url.startsWith('/nng_main/v1/chats/access-token')) return send({ accessToken: 'mock-token', extraToken: 'x' });
-  // POST /mock/chat {nick, text, amount?, type?} → a viewer chat (or donation when amount is set) in the fake chat
+  // POST /mock/chat {nick, text, amount?, type?, sub?: months, role?: 'streamer'|'manager'} → a viewer chat (or donation when amount is set) in the fake chat
   if (req.url === '/mock/chat' && req.method === 'POST') {
     let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
       const j = JSON.parse(b || '{}'); const nick = j.nick || '테스터';
-      const x = { uid: uidOf(nick), msgTime: Date.now(), profile: JSON.stringify({ nickname: nick, userRoleCode: 'common_user', activityBadges: [] }), msgTypeCode: j.amount ? 10 : 1, msg: j.text || '', extras: JSON.stringify({ emojis: {}, ...(j.amount ? { payAmount: j.amount, donationType: j.type || 'CHAT' } : {}) }) };
+      const x = { uid: uidOf(nick), msgTime: Date.now(), profile: JSON.stringify({ nickname: nick, userRoleCode: j.role === 'streamer' ? 'streamer' : j.role === 'manager' ? 'streaming_chat_manager' : 'common_user', activityBadges: [], ...(j.sub ? { streamingProperty: { subscription: { accumulativeMonth: Number(j.sub) || 1, tier: 1, badge: { imageUrl: '' } } } } : {}) }), msgTypeCode: j.amount ? 10 : 1, msg: j.text || '', extras: JSON.stringify({ emojis: {}, ...(j.amount ? { payAmount: j.amount, donationType: j.type || 'CHAT' } : {}) }) };
       if (!j.amount) recent.push(x);
       for (const push of chatPushers) push(j.amount ? 93102 : 93101, [x]);
       res.writeHead(200).end('{}');
