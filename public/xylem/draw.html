@@ -685,6 +685,10 @@ function frame() {
   drawEntry();
   drawResult();
   drawRadio();
+  if (S.test && S.phase !== 'idle') { // a test run must never be mistaken for a real draw
+    g.fillStyle = 'rgba(255,170,60,.92)'; g.beginPath(); g.roundRect(W - 230, 18, 200, 44, 22); g.fill();
+    g.font = `900 24px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#3a2000'; g.fillText('🧪 테스트', W - 130, 41);
+  }
   requestAnimationFrame(frame);
 }
 

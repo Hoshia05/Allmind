@@ -45,7 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.45.0';
+const VERSION = '0.46.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -821,6 +821,7 @@ async function main() {
     'POST /api/draw/reset': () => { draw.reset(); return {}; },
     'POST /api/draw/remove': (b) => { draw.remove(String(b.uid || '')); return {}; },
     'POST /api/draw/clear-past': () => { draw.clearPast(); return {}; },
+    'POST /api/draw/test-run': (b) => { draw.runTest(b.n); return {}; },
     'POST /api/draw/test-fill': (b) => { draw.testFill(b.n); return {}; },
     'POST /api/draw/test-chat': (b) => { draw.testChat(b.text); return {}; },
     'POST /api/draw/tts-test': async (b) => ({ tts: await draw.ttsTest(b.text) }),

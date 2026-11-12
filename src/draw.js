@@ -38,6 +38,10 @@ const ANIM_MAX = 150;           // names the overlay animates (it must stay read
 const REDRAW_SHOW = 12;         // names in a replacement draw's animation
 const DRAW_TIMEOUT_MS = 90000;  // the overlay should answer long before this; without it the result is shown anyway
 const STREAM_FALLBACK_MS = 8 * 3600 * 1000;
+// the 테스트 추첨: fake viewers walk through the whole flow so it can be tried without real chat
+const TEST_NICKS = ['별빛여행자', '라면조아', '새벽감성', '야근하는개발자', '고양이집사', '치즈덕후', '밤하늘', '코딩하는곰', '달빛산책', '피자왕', '구름빵', '민트초코', '호시아팬1호', '초보조종사', '에이스', '하늘바라기', '오늘도맑음', '커피수혈', '게임중독', '꿀잠', '햇살가득', '우주먼지', '소금빵', '불꽃슛', '느긋한토끼', '번개맨', '별똥별', '단팥빵', '파랑새', '눈사람'];
+const TEST_LINES = ['와 진짜 당첨이에요?! 감사합니다 {:d_2:}', '호시아님 방송 항상 재미있게 보고 있어요 ㅎㅎ', '오늘 방송 너무 재밌었어요! 다음에도 또 해 주세요', '떨려서 손이 덜덜 떨려요… 정말 고마워요!'];
+const testNick = (i) => (i < TEST_NICKS.length ? TEST_NICKS[i] : `${TEST_NICKS[i % TEST_NICKS.length]}${Math.floor(i / TEST_NICKS.length) + 1}`);
 
 const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
 const isStaff = (r) => r === 'streamer' || r === 'manager';
@@ -90,6 +94,8 @@ export class ViewerDraw extends EventEmitter {
     this.winners = [];         // current winners [{ uid, nick }]
     this.chatLines = [];       // winners' lines this round (newest last)
     this.timers = { entry: null, chat: null, draw: null, state: null };
+    this.test = false;         // a 테스트 추첨 is running: fake viewers only, real chat is ignored, nothing is remembered
+    this.testTimers = [];
 
     this.ch = pack.channel(() => [
       ['state', this.view()],
@@ -147,11 +153,11 @@ export class ViewerDraw extends EventEmitter {
     return out;
   }
   // the people a draw would pick from right now
-  poolNow() { return this.s.mode === 'recent' ? this._recentPool() : this._eligible(); }
+  poolNow() { return this.s.mode === 'recent' && !this.test ? this._recentPool() : this._eligible(); }
 
   // ---------- chat in ----------
   _onChat(m) {
-    if (!m.uid) return;
+    if (!m.uid || this.test) return; // (a test run feeds its own fake lines; real viewers must not end up in it)
     if (this.phase === 'entry' && this.s.mode === 'keyword') {
       if (String(m.text || '').trim().split(/\s+/)[0] === this.s.keyword) this._enter(m);
     } else if (this.phase === 'winners') {
@@ -160,7 +166,7 @@ export class ViewerDraw extends EventEmitter {
     }
   }
   _enter(m) {
-    const e = { nick: m.nick || '이름 없음', sub: !!m.sub, role: m.role || '', at: Date.now() };
+    const e = { nick: m.nick || '이름 없음', sub: !!m.sub, role: m.role || '', at: Date.now(), test: !!m.test };
     const why = this._why(e, m.uid);
     if (why) { if (!this.rejected.has(m.uid)) { this.rejected.set(m.uid, why); this._changed(); } return; }
     this.rejected.delete(m.uid);
@@ -176,6 +182,9 @@ export class ViewerDraw extends EventEmitter {
     if (this.chatLines.length > 30) this.chatLines.shift();
     this.ch.send('chat', line);
     if (m.id != null) { m.drawWinner = true; this.chzzk.emit('chat-update', m); } // highlighted in the dashboard chat
+    else if (this.test) { // a test line shows (highlighted) in the dashboard chat only — not in reports or recording logs
+      this.chzzk.addExternal([{ key: `test:${Date.now()}:${w.uid}`, id: 0, platform: 'chzzk', time: Date.now(), uid: '', nick: `테스트 · ${w.nick}`, role: '', member: false, verified: false, sub: null, badges: [], text: line.text, emojis: {}, kind: 'chat', amount: null, donationType: null, months: null, drawWinner: true }]);
+    }
     this._say('chat', w.nick, speakable(m.text, this.s.tts.maxLen));
     this._changed(false);
   }
@@ -183,7 +192,7 @@ export class ViewerDraw extends EventEmitter {
   // ---------- entry window ----------
   // sec: undefined = the saved length, 0 = until 마감
   open(sec) {
-    if (this.s.mode === 'recent') throw new Error('"최근 채팅" 방식은 참여를 열 필요가 없어요 — 바로 뽑으면 돼요');
+    if (this.s.mode === 'recent' && !this.test) throw new Error('"최근 채팅" 방식은 참여를 열 필요가 없어요 — 바로 뽑으면 돼요');
     if (this.phase === 'drawing' || this.phase === 'winners') throw new Error('지금 추첨이 진행 중이에요 — 끝내기를 먼저 눌러 주세요');
     const len = sec === undefined || sec === null ? this.s.entrySec : Math.round(num(sec, 0, 3600, 0));
     if (this.phase === 'idle') { this.entrants.clear(); this.rejected.clear(); } // reopening (마감된 참여) or changing the time of an open one keeps the people
@@ -246,8 +255,10 @@ export class ViewerDraw extends EventEmitter {
     this._stage({ kind: 'draw', winners, others: pool.filter((p) => !winners.some((w) => w.uid === p.uid)), total: pool.length, show: ANIM_MAX });
     this.past.push(...winners.map((w) => ({ uid: w.uid, nick: w.nick, at: Date.now() })).filter((w) => !w.uid.startsWith('test:')));
     if (this.past.length > MAX_PAST) this.past.splice(0, this.past.length - MAX_PAST);
-    this.log.push({ at: Date.now(), style: this.s.style, total: pool.length, winners });
-    if (this.log.length > MAX_LOG) this.log.shift();
+    if (!this.test) { // a test leaves no trace in the history
+      this.log.push({ at: Date.now(), style: this.s.style, total: pool.length, winners });
+      if (this.log.length > MAX_LOG) this.log.shift();
+    }
     this._save();
     console.log(`[draw] ${this.s.style} 추첨 — ${pool.length}명 중 ${winners.map((w) => w.nick).join(', ')}`);
   }
@@ -312,6 +323,7 @@ export class ViewerDraw extends EventEmitter {
     const names = fresh.map((w) => w.nick);
     if (this.s.tts.on && this.s.tts.announce) this._say('announce', names[0], `${names.join(', ')}님 당첨!`);
     this._notice(`🎉 당첨: ${names.join(', ')}님 축하해요!`);
+    if (this.test) this._testWinnerLines(fresh);
     this._changed();
   }
 
@@ -324,6 +336,7 @@ export class ViewerDraw extends EventEmitter {
   reset() { this._toIdle(); }
   _toIdle() {
     this._clearTimers();
+    this._stopTest();
     const was = this.phase;
     this.phase = 'idle';
     this.entrants.clear(); this.rejected.clear();
@@ -356,9 +369,47 @@ export class ViewerDraw extends EventEmitter {
     this._winnerLine({ uid: this.winners[0].uid, text: String(text || '당첨됐어요! 감사합니다 {:d_2:}'), emojis: {}, time: Date.now() }, this.winners[0]);
   }
 
+  // ---------- 테스트 추첨: the whole flow with fake viewers ----------
+  // entry (a short countdown, viewers trickling in — some subscribers, a streamer and a double entry that get filtered
+  // like real ones) → draw after the entry closes → the winners "type" a few lines (radio, voice, dashboard highlight).
+  // Everything goes through the same code as real chat; nothing is remembered afterwards (no past winners, no log),
+  // nothing is sent to Chzzk, and real chat lines are ignored while it runs.
+  runTest(n = 30) {
+    if (this.phase !== 'idle') throw new Error('지금 진행 중인 추첨이 있어요 — 끝내기나 취소를 먼저 눌러 주세요');
+    const count = Math.round(num(n, 3, 200, 30));
+    const secs = 12;
+    this.test = true;
+    this.open(secs);
+    const spread = 8000;
+    for (let i = 0; i < count; i++) {
+      this._testAfter(400 + (spread * i) / count, () => this._enter({ uid: `test:${i + 1}`, nick: testNick(i), sub: i % 3 === 2, role: '', test: true }));
+    }
+    this._testAfter(2500, () => this._enter({ uid: 'test:staff', nick: '방송인(테스트)', sub: true, role: 'streamer', test: true })); // filtered: staff
+    this._testAfter(3500, () => this._enter({ uid: 'test:1', nick: testNick(0), sub: false, role: '', test: true }));               // filtered: second entry
+    // when the countdown has run out the entry closes by itself; then the draw starts
+    this._testAfter(secs * 1000 + 2200, () => { if (this.phase === 'ready') { try { this.draw(); } catch (e) { console.log(`[draw] 테스트: ${e.message}`); } } });
+    console.log(`[draw] 테스트 추첨 시작 — 가짜 시청자 ${count}명`);
+  }
+  _testWinnerLines(fresh) {
+    if (!fresh.length) return;
+    TEST_LINES.slice(0, 3).forEach((text, i) => {
+      const w = fresh[i % fresh.length];
+      this._testAfter(2800 + i * 6500, () => { if (this.phase === 'winners' && this.winners.some((x) => x.uid === w.uid)) this._winnerLine({ uid: w.uid, text, emojis: {}, time: Date.now(), test: true }, w); });
+    });
+  }
+  _testAfter(ms, fn) {
+    const t = setTimeout(() => { this.testTimers = this.testTimers.filter((x) => x !== t); if (this.test) fn(); }, ms);
+    this.testTimers.push(t);
+  }
+  _stopTest() {
+    for (const t of this.testTimers) clearTimeout(t);
+    this.testTimers = [];
+    this.test = false;
+  }
+
   // ---------- chat notice (off by default) ----------
   _notice(text) {
-    if (!this.s.notice || !(this.chzzkOpen?.configured() && this.chzzkOpen.loggedIn())) return;
+    if (this.test || !this.s.notice || !(this.chzzkOpen?.configured() && this.chzzkOpen.loggedIn())) return;
     this.chzzkOpen.sendChat(text).catch((e) => console.log(`[draw] 채팅 알림을 못 보냈어요: ${e.message}`));
   }
 
@@ -380,7 +431,7 @@ export class ViewerDraw extends EventEmitter {
       phase: this.phase, now: Date.now(), endsAt: this.endsAt, chatEndsAt: this.chatEndsAt,
       count: this.phase === 'drawing' || this.phase === 'winners' ? (this.entrantsAtDraw ?? 0) : this.entrants.size,
       last, mode: this.s.mode, keyword: this.s.keyword, recentMin: this.s.recentMin, style: this.s.style,
-      winners: this.winners, drawId: this.cur?.id || null, tts: { on: this.s.tts.on, volume: this.s.tts.volume },
+      winners: this.winners, drawId: this.cur?.id || null, tts: { on: this.s.tts.on, volume: this.s.tts.volume }, test: this.test,
     };
   }
   // for the Xylem panel

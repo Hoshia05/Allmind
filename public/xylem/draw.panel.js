@@ -180,6 +180,7 @@ export function mount(el, x) {
       if (D?.phase === 'entry') await act('close');
       await act('draw');
     }
+    else if (a === 'test-run') await act('test-run', { n: Number(b.dataset.n) });
     else if (a === 'redraw') { if (confirm(`"${b.dataset.nick}"님 대신 한 명을 다시 뽑을까요?`)) await act('redraw', { uid: b.dataset.uid }); }
     else if (a === 'reset') { if (confirm('지금 진행 중인 추첨을 취소하고 처음으로 돌아갈까요?')) await act('reset'); }
     else await act(a, b.dataset.sec ? { sec: Number(b.dataset.sec) } : {});
@@ -188,19 +189,29 @@ export function mount(el, x) {
 
   // ---------- drawing the screen from the state ----------
   const leftOf = (t) => (t ? (t - (Date.now() + skew)) / 1000 : null);
+  // 🧪 the whole flow with fake viewers (idle only)
+  const testBox = () => `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--line)">
+      <div class="row" style="margin-top:0">🧪 <b>테스트 추첨</b> (가짜 시청자):
+        ${[10, 30, 100].map((n) => `<button class="btn" data-a="test-run" data-n="${n}">${n}명</button>`).join('')}</div>
+      <div class="hint">진짜 채팅 없이 처음부터 끝까지 해 봐요: 12초 동안 가짜 시청자가 들어오고 (구독자·방송인·중복 참여는 실제처럼 걸러져요), 끝나면 저절로 뽑고, 당첨자가 채팅을 몇 번 쳐요. 연출·교신·목소리·대시보드 채팅 강조까지 그대로 나와요. 이 동안 진짜 채팅은 받지 않고 당첨 기록도 남지 않아요. 오버레이에는 <b>🧪 테스트</b> 표시가 떠요. 목소리는 OBS 오버레이가 연결돼 있어야 들려요.</div></div>`;
   function controls(d) {
+    const s = d.settings;
+    const testNote = d.test ? `<div class="pill warn" style="margin-bottom:8px">🧪 테스트 중 — 가짜 시청자예요 (진짜 채팅은 받지 않아요)</div>` : '';
+    return testNote + controlsBody(d);
+  }
+  function controlsBody(d) {
     const s = d.settings;
     const left = leftOf(d.endsAt);
     const cnt = `참가 <b>${d.count}명</b>${d.eligible !== d.count ? ` · 뽑힐 수 있는 사람 <b>${d.eligible}명</b>` : ''}`;
     if (d.phase === 'idle') {
       if (s.mode === 'recent') return `<div>최근 <b>${s.recentMin}분</b> 안에 채팅한 사람 <b>${d.eligible}명</b>이 대상이에요.</div>
-        <div class="row"><button class="btn accent" data-a="draw" ${d.eligible ? '' : 'disabled'}>🎟 뽑기 (${s.winners}명)</button></div>`;
+        <div class="row"><button class="btn accent" data-a="draw" ${d.eligible ? '' : 'disabled'}>🎟 뽑기 (${s.winners}명)</button></div>${testBox()}`;
       return `<div class="row" style="margin-top:0">참여 열기:
           ${[30, 60, 180].map((sec) => `<button class="btn" data-a="open" data-sec="${sec}">${durText(sec)}</button>`).join('')}
           <button class="btn" data-a="open" data-sec="0">제한 없음</button></div>
         <div class="row"><input class="in" id="dwSec" type="number" min="5" max="3600" placeholder="직접 (초)" style="width:120px"><button class="btn sm" data-a="open-custom">이 시간으로 열기</button>
           <button class="btn ghost sm" data-a="open" data-sec="${s.entrySec}">기본 (${durText(s.entrySec)})</button></div>
-        <div class="hint">시청자는 채팅에 <b>${esc(s.keyword)}</b>를 치면 참여해요. 열면 오버레이에 카운트다운이 떠요.</div>`;
+        <div class="hint">시청자는 채팅에 <b>${esc(s.keyword)}</b>를 치면 참여해요. 열면 오버레이에 카운트다운이 떠요.</div>${testBox()}`;
     }
     if (d.phase === 'entry') return `<div style="font-size:15px">🟢 참여 받는 중 — ${left === null ? '<b>마감을 누를 때까지</b>' : `<b class="mono" data-left="entry" style="font-size:22px">${fmtLeft(left)}</b> 남음`}</div>
       <div style="margin-top:4px">${cnt}</div>
