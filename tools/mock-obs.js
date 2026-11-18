@@ -629,6 +629,7 @@ const chzzkHttp = http.createServer((req, res) => {
   if (req.url.startsWith('/g/') || req.url.startsWith('/c/') || req.url.startsWith('/xylem-pack/')) return mockApis(req, res);
   res.writeHead(404).end();
 });
+let chatSilentDone = false;
 const chatWss = new WebSocketServer({ server: chzzkHttp, path: '/chat' });
 chatWss.on('connection', (ws) => {
   log('chat client connected');
@@ -637,9 +638,12 @@ chatWss.on('connection', (ws) => {
   chatPushers.add(push); ws.on('close', () => chatPushers.delete(push));
   ws.on('message', (raw) => {
     const m = JSON.parse(raw);
+    if (m.cmd === 0) push(10000, null); // like Chzzk: answer our PING
     if (m.cmd === 100) {
       log('chat CONNECT with token', m.bdy.accTkn, 'auth', m.bdy.auth);
       push(10100, { sid: 'mock-sid', uuid: 'x' });
+      // MOCK_CHAT_SILENT=1: the first connection goes quiet after CONNECTED, like a half-open socket (watchdog test)
+      if (process.env.MOCK_CHAT_SILENT && !chatSilentDone) { chatSilentDone = true; ws.removeAllListeners('message'); chatPushers.delete(push); log('chat: silent connection'); return; }
       timers.push(setInterval(() => { const x = fakeMsg('chat'); recent.push(x); push(93101, [x]); }, 1800));
       timers.push(setInterval(() => push(93102, [fakeMsg('donation')]), 2500));
       timers.push(setTimeout(() => push(93102, [fakeMsg('sub')]), 4000));

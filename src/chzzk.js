@@ -48,6 +48,13 @@ export class Chzzk extends EventEmitter {
     this.chatChannelId = null;
     this.ws = null;
     this.seq = 0;
+    // chat watchdog: a socket can die without a close event (sleep, Wi-Fi blip, server side) and then looks
+    // "connected" forever with nothing coming in — anything at all from the server (chat, its PING, our PONG) resets this
+    this.lastMsgAt = 0;
+    this.connectAt = 0;
+    this.chatCount = 0;
+    this.unknownCmds = new Set();
+    this.badMsgLogged = false;
 
     this._poll();
     setInterval(() => this._poll(), Math.max(5, this.cfg.pollSeconds) * 1000);
@@ -158,14 +165,20 @@ export class Chzzk extends EventEmitter {
     }
     if (this.chatChannelId !== cid) return; // superseded while we waited
 
-    const ws = new WebSocket(this._serverUrl(cid));
+    const url = this._serverUrl(cid);
+    console.log(`[chat] connecting to ${url} (channel ${cid.slice(0, 6)}…, token ${token ? 'yes' : 'no'})`);
+    const ws = new WebSocket(url);
     this.ws = ws;
+    this.connectAt = Date.now();
+    this.lastMsgAt = Date.now();
+    this.chatCount = 0;
     let ended = false;
     const end = () => {
       if (ended) return;
       ended = true;
       if (this.ws !== ws) return;
       this.ws = null;
+      console.log('[chat] connection closed — reconnecting in 5 s');
       this.chatState = 'error';
       this.chatError = '채팅 연결이 끊김 — 다시 연결 중…';
       this.emit('change');
@@ -181,7 +194,26 @@ export class Chzzk extends EventEmitter {
     ws.addEventListener('close', end);
   }
 
+  // 채팅 다시 연결 (the chat dot): drop the socket and connect to the current chat room again
+  reconnect() {
+    const cid = this.chatChannelId;
+    console.log('[chat] reconnect requested from the dashboard');
+    this._disconnectChat();
+    if (cid) this._connectChat(cid);
+    else this._poll();
+    return { ok: true };
+  }
+
   _ping() {
+    // watchdog: nothing at all from the server for 70 s (or stuck connecting for 30 s) → start over
+    const quiet = Date.now() - this.lastMsgAt;
+    if (this.ws && ((this.chatState === 'connected' && quiet > 70000) || (this.chatState === 'connecting' && Date.now() - this.connectAt > 30000))) {
+      console.log(`[chat] ${this.chatState === 'connected' ? `nothing from the chat server for ${Math.round(quiet / 1000)} s` : 'stuck connecting'} — reconnecting`);
+      const cid = this.chatChannelId;
+      this._disconnectChat();
+      if (cid) this._connectChat(cid);
+      return;
+    }
     if (this.ws && this.chatState === 'connected') {
       try {
         this.ws.send(JSON.stringify({ ver: '2', cmd: CMD.PING }));
@@ -191,8 +223,20 @@ export class Chzzk extends EventEmitter {
     }
   }
 
+  // one bad or unexpected message must not drop the rest of a batch (and leave the list empty)
+  _norm(list) {
+    const out = [];
+    for (const m of list) {
+      try { const n = m && this._normalize(m); if (n) out.push(n); } catch (e) {
+        if (!this.badMsgLogged) { this.badMsgLogged = true; console.error(`[chat] could not read a message (${e.message}); fields: ${Object.keys(m || {}).join(',')}`); }
+      }
+    }
+    return out;
+  }
+
   _onChat(ws, cid, msg) {
     if (!msg || this.ws !== ws) return;
+    this.lastMsgAt = Date.now();
     switch (msg.cmd) {
       case CMD.PING:
         ws.send(JSON.stringify({ ver: '2', cmd: CMD.PONG }));
@@ -201,11 +245,14 @@ export class Chzzk extends EventEmitter {
         this.chatState = 'connected';
         this.chatError = null;
         this.sid = msg.bdy?.sid;
+        console.log(`[chat] connected${this.sid ? '' : ' (no session id in the answer)'}`);
         ws.send(JSON.stringify({ ver: '2', svcid: 'game', cid, sid: this.sid, cmd: CMD.RECENT, tid: 2, bdy: { recentMessageCount: 50 } }));
         this.emit('change');
         break;
       case CMD.RECENT_RESULT: {
-        const list = (msg.bdy?.messageList || []).map((m) => this._normalize(m)).filter(Boolean);
+        const raw = msg.bdy?.messageList || [];
+        const list = this._norm(raw);
+        console.log(`[chat] recent messages: ${list.length}${raw.length !== list.length ? ` of ${raw.length}` : ''}`);
         // Replace whatever we had: the server's recent list is the truth on (re)connect.
         const seen = new Set(this.chat.map((m) => m.key));
         const fresh = list.filter((m) => !seen.has(m.key));
@@ -215,7 +262,9 @@ export class Chzzk extends EventEmitter {
       case CMD.CHAT:
       case CMD.SPECIAL: {
         const arr = Array.isArray(msg.bdy) ? msg.bdy : [msg.bdy];
-        const list = arr.map((m) => this._normalize(m)).filter(Boolean);
+        const list = this._norm(arr);
+        if (!this.chatCount && list.length) console.log('[chat] first live message received');
+        this.chatCount += list.length;
         this._add(list);
         // Only these are "live" (the RECENT_RESULT history replayed on reconnect is not):
         // the recording log (markers.js) listens to this one.
@@ -233,6 +282,10 @@ export class Chzzk extends EventEmitter {
         }
         break;
       }
+      case CMD.PONG:
+        break;
+      default:
+        if (!this.unknownCmds.has(msg.cmd)) { this.unknownCmds.add(msg.cmd); console.log(`[chat] unknown message type ${msg.cmd} (fields: ${Object.keys(msg).join(',')})`); }
     }
   }
 
@@ -242,7 +295,7 @@ export class Chzzk extends EventEmitter {
     const type = m.msgTypeCode ?? m.messageTypeCode ?? 1;
     const time = m.msgTime ?? m.messageTime ?? Date.now();
     const uid = m.uid ?? m.userId ?? '';
-    const text = m.msg ?? m.content ?? '';
+    const text = String(m.msg ?? m.content ?? '');
     let kind = 'chat';
     if (type === 10) kind = 'donation';
     else if (type === 11 || type === 12) kind = 'subscription';
@@ -255,8 +308,8 @@ export class Chzzk extends EventEmitter {
       ? { months: Number(subP.accumulativeMonth) || 0, tier: Number(subP.tier) || 1, img: subP.badge?.imageUrl || '' } : null;
     const badges = [
       profile.streamingProperty?.realTimeDonationRanking?.badge?.imageUrl, // 실시간 후원 랭킹
-      ...(profile.viewerBadges || []).map((v) => v?.badge?.imageUrl),
-      ...(profile.activityBadges || []).filter((b) => b.activated !== false).map((b) => b.imageUrl),
+      ...(Array.isArray(profile.viewerBadges) ? profile.viewerBadges : []).map((v) => v?.badge?.imageUrl),
+      ...(Array.isArray(profile.activityBadges) ? profile.activityBadges : []).filter((b) => b && b.activated !== false).map((b) => b.imageUrl),
     ].filter(Boolean);
     return {
       key: `${time}:${uid}:${text.slice(0, 20)}`,
@@ -264,7 +317,7 @@ export class Chzzk extends EventEmitter {
       platform: 'chzzk',
       time,
       uid,
-      nick: profile.nickname || (kind === 'donation' ? '익명' : ''),
+      nick: String(profile.nickname || (kind === 'donation' ? '익명' : '')),
       role,
       sub,
       verified: profile.verifiedMark === true,

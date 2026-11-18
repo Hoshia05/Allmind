@@ -45,7 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.46.0';
+const VERSION = '0.46.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -837,6 +837,7 @@ async function main() {
     'POST /api/youtube/adopt': () => youtube.adoptLive(),
     'POST /api/obs/relaunch': () => relaunchObs(),
     'POST /api/chat/clear': () => { chzzk.clearChat(); },
+    'POST /api/chat/reconnect': () => chzzk.reconnect(),
     'POST /api/report': (b) => ({ report: reports.view(b.id ? String(b.id) : null), ...reports.summary() }),
     'POST /api/report/seen': (b) => reports.markSeen(String(b.id || '')),
     // 상단 고정 / 메시지 삭제 / 채팅 운영자 / 임시 제한 / 활동 제한 from the viewer card

@@ -1265,10 +1265,17 @@ function renderChatState() {
   dot.className = 'state-dot ' + (chat.state === 'connected' ? 'ok' : chat.state === 'error' ? 'bad' : channelId ? 'warn' : '');
   const yc = S.ytChat;
   const ko = (x) => ({ connected: '연결됨', connecting: '연결 중', error: '문제 있음', idle: '대기', off: '꺼짐' })[x] || x;
-  dot.title = `치지직: ${chat.error || ko(chat.state)}` + (yc && yc.state !== 'off' ? `\n유튜브: ${yc.error || ko(yc.state)}` : '');
+  dot.title = `치지직: ${chat.error || ko(chat.state)}` + (yc && yc.state !== 'off' ? `\n유튜브: ${yc.error || ko(yc.state)}` : '') + (channelId ? '\n눌러서 채팅 다시 연결' : '');
   if (!channelId && chatTab === 'text') $('chatList').innerHTML = '';
   else if (chat.state !== 'connected' && chat.error && $('chatEmpty')) $('chatEmpty').textContent = chat.error;
 }
+
+// tap the chat dot: connect to the chat room again (when chat looks connected but nothing comes in)
+$('chatDot').addEventListener('click', async () => {
+  if (!S?.chzzk?.channelId) return;
+  const r = await api('chat/reconnect', {});
+  if (r.ok) toast('채팅에 다시 연결하고 있어요');
+});
 
 $('channelForm').addEventListener('submit', async (ev) => {
   ev.preventDefault();

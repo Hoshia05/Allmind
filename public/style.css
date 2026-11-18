@@ -1041,3 +1041,5 @@ body.xy-open .layout { display: none !important; }
 .sync-row input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
 .sync-row .hint { font-weight: 400; color: var(--muted); }
 #prepSheet.no-sync .sync-dep { opacity: .45; }
+
+#chatDot { cursor: pointer; }
