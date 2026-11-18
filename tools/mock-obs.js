@@ -532,7 +532,7 @@ const recent = [];
 const chatPushers = new Set(); // connected chat sockets: chats sent through the Open API show up here
 const sentChats = [];
 let viewers = 37;
-const openDate = new Date(Date.now() - 83 * 60000 + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
+let openDate = new Date(Date.now() - 83 * 60000 + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19);
 
 // Chzzk's profile shape: subscription (months, tier, badge image) under streamingProperty, channel viewer badges
 const svgUri = (svg) => 'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64');
@@ -612,6 +612,8 @@ const chzzkHttp = http.createServer((req, res) => {
     viewers = Math.max(5, viewers + Math.round((Math.random() - 0.45) * 4));
     return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
   }
+  // POST /mock/new-broadcast: Chzzk reports a new broadcast (new openDate, same chat room)
+  if (req.url === '/mock/new-broadcast' && req.method === 'POST') { openDate = new Date(Date.now() + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19); return send({ openDate }); }
   const pc = /^\/nng_main\/v1\/chats\/[^/]+\/users\/([0-9a-f]{32})\/profile-card/.exec(req.url);
   if (pc) return send(mockProfileCard(pc[1]));
   if (req.url.startsWith('/nng_main/v1/chats/access-token')) return send({ accessToken: 'mock-token', extraToken: 'x' });

@@ -103,6 +103,9 @@ export class Chzzk extends EventEmitter {
         }
         this.donationSession = c.openDate;
         this._saveDonations();
+        // a new broadcast: start a fresh chat connection too. Allmind often runs for days (2026-11-18: 5 days, several
+        // network drops) and an old socket can look connected while nothing arrives.
+        if (this.ws && c.chatChannelId === this.chatChannelId) this.reconnect('for the new broadcast');
       }
       const n = c.concurrentUserCount ?? 0;
       if (isLive) {
@@ -195,9 +198,9 @@ export class Chzzk extends EventEmitter {
   }
 
   // 채팅 다시 연결 (the chat dot): drop the socket and connect to the current chat room again
-  reconnect() {
+  reconnect(why = 'requested from the dashboard') {
     const cid = this.chatChannelId;
-    console.log('[chat] reconnect requested from the dashboard');
+    console.log(`[chat] reconnect ${why}`);
     this._disconnectChat();
     if (cid) this._connectChat(cid);
     else this._poll();
