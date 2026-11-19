@@ -1043,3 +1043,7 @@ body.xy-open .layout { display: none !important; }
 #prepSheet.no-sync .sync-dep { opacity: .45; }
 
 #chatDot { cursor: pointer; }
+
+/* 19세 방송 mark on the LIVE pill */
+.live-pill .adult { display: inline-grid; place-items: center; min-width: 18px; height: 16px; padding: 0 3px; border-radius: 8px; background: #fff; color: #e5263f; font-size: 10px; font-weight: 900; }
+.live-pill:not(.on) .adult { background: #e5263f; color: #fff; }

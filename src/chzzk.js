@@ -147,6 +147,8 @@ export class Chzzk extends EventEmitter {
         category: c.liveCategoryValue || '',
         channelName: c.channel?.channelName || '',
         peak: isLive ? this.peak.count : null,
+        // 19세 (age-restricted). Off air, live-detail describes the last broadcast — the setting Chzzk keeps for the next one.
+        adult: typeof c.adult === 'boolean' ? c.adult : null,
       };
       if (this.liveError) console.log('[chzzk] live status works again');
       this.liveError = null;

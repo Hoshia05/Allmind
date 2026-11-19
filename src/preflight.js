@@ -68,6 +68,12 @@ export async function runPreflight(c) {
   if (!cz.channelId) out.push(item('channel', '치지직', '치지직 채널', 'bad', '채널이 설정되지 않았어요', '설정 창 → 치지직 채널'));
   else if (cz.error) out.push(item('channel', '치지직', '치지직', 'warn', cz.error));
   else out.push(item('channel', '치지직', '치지직', 'ok', cz.live?.isLive ? `방송 중 · 시청자 ${cz.live.viewers}` : `${cz.live?.channelName || '채널'} · 오프라인`));
+  // 19세 setting: easy to forget after a 19+ stream, and it hides the chat from Allmind's anonymous requests
+  if (cz.channelId && cz.live && cz.live.adult != null) {
+    out.push(cz.live.adult
+      ? item('adult', '치지직', '19세 방송', 'warn', cz.live.isLive ? '지금 19세 방송이에요' : '지난 방송이 19세였어요 — 끄지 않으면 다음 방송도 19세로 시작할 수 있어요', '19세 방송이 아니면 치지직 스튜디오 → 방송 설정에서 연령 제한 끄기')
+      : item('adult', '치지직', '19세 방송', 'ok', '꺼짐'));
+  }
   const co = c.chzzkOpen.status();
   if (co.configured) out.push(item('chzzkopen', '치지직', '치지직 연동 (방송 준비 · 채팅 보내기)', co.loggedIn ? (co.expiresSoon ? 'warn' : 'ok') : 'warn', co.loggedIn ? (co.expiresSoon ? '로그인이 곧 만료돼요' : co.account || '로그인됨') : co.error || '로그인 필요', co.loggedIn && !co.expiresSoon ? '' : '설정 창 → 치지직 연동 → 다시 로그인'));
   const rc = c.remote.status();

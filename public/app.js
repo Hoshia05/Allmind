@@ -975,7 +975,8 @@ function renderLive() {
   const op = S.obsPanel || { stream: {}, record: {} };
   const sending = !!op.stream.active;
   const rec = op.record.active ? `<span class="rec${op.record.paused ? ' paused' : ''}">${op.record.paused ? '녹화 멈춤' : 'REC'}</span>` : '';
-  $('livePill').innerHTML = (on ? 'LIVE' : sending ? '송출 중' : 'OFFLINE') + rec;
+  const adult = S.chzzk.live?.adult && (on || sending) ? '<span class="adult" title="19세 방송">19</span>' : '';
+  $('livePill').innerHTML = (on ? 'LIVE' : sending ? '송출 중' : 'OFFLINE') + adult + rec;
   $('livePill').classList.toggle('on', on || sending);
   $('livePill').classList.toggle('busy', !!(op.stream.busy || op.record.busy));
   $('livePill').title = '방송 · 녹화 켜기/끄기' + (sending && !on ? '\nOBS는 송출 중이지만 치지직에는 아직 방송이 안 보여요' : '');
