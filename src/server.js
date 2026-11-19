@@ -45,7 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.46.2';
+const VERSION = '0.46.3';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -422,7 +422,7 @@ async function main() {
       sendAll('toast', { text: `📡 방송이 다시 연결됐어요 (${sec}초 끊김)`, long: true });
       stateChanged();
     }
-    if (/STARTED$/.test(s)) setStreaming(true);
+    if (/STARTED$/.test(s)) { setStreaming(true); bgm.streamStarted(); }
     else if (/STOPPED$/.test(s)) setStreaming(false);
   });
   obs.on('connected', () => obs.call('GetStreamStatus').then((st) => setStreaming(!!st.outputActive), () => {}));

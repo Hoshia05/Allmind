@@ -103,6 +103,13 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   `node --expose-gc` + `process.memoryUsage().arrayBuffers` (Linux RSS keeps freed memory, so it isn't a fair number).
   Verified on the owner's ZERO (loop 179.511 s, seam 254.80→75.29 s); mock: `MOCK_MEDIA_SPEED=60`, real durations for `.opus`, `looping`
   honoured. A→B / B-restart gap in real OBS unmeasured.
+- **BGM with the stream** (0.46.3): OBS starts a visible media source playing as soon as it loads (Allmind usually starts OBS with the
+  dashboard), so `bgm._holdUntilStream()` (once per OBS connection, after `_onConnected`) pauses it off air if it's playing with cursor < 30 s
+  (checks `GetStreamStatus` itself — never pauses a running stream after an Allmind restart; retries 4× / 2 s while the file opens);
+  `bgm.streamStarted()` is called from the server only on OBS's `StreamStateChanged STARTED` event (not on connect) → play, or during 영도
+  (pause mode) set `autoPausedBgm` so the release resumes it. `bgm.startWithStream: false` turns both off. Mock: `MOCK_BGM_AUTOPLAY=1`.
+- **Chat scroll** (0.46.3): `chatStuck` changes only on the viewer's own scrolling (scroll events while the height changed are ignored);
+  a `ResizeObserver` on `#chatList` scrolls to the bottom after any resize/hide/show while stuck (the browser resets scrollTop to 0 then).
 - `src/soundboard.js` — soundboard: one Media Source "Soundboard", folder watched.
 - `src/coverless.js` — art-free copies of MP3/FLAC (cover art made OBS audio buffering creep).
 - `src/donation.js` — 영도 viewer (OBS screenshots), `Interact` (DevTools: click-through,

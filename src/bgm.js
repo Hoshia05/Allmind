@@ -86,6 +86,7 @@ export class BGM extends EventEmitter {
     }
     obs.on('InputVolumeMeters', ({ inputs }) => this._onMeters(inputs));
     obs.on('disconnected', () => {
+      this.heldChecked = false;
       this.level = -Infinity;
       this.sourceOk = false;
       this.sourceError = null;
@@ -306,6 +307,7 @@ export class BGM extends EventEmitter {
   async _play() {
     this.cmdSeq++;
     this.autoPausedBgm = false;
+    this.heldForStream = false;
     if (!this.currentId) {
       const first = this.order[0];
       if (!first) throw new Error('셋리스트에 곡이 없어요');
@@ -322,6 +324,7 @@ export class BGM extends EventEmitter {
   async _pause() {
     this.cmdSeq++;
     this.autoPausedBgm = false;
+    this.heldForStream = false;
     await this._action('PAUSE');
     await this._refresh(true);
   }
@@ -420,6 +423,44 @@ export class BGM extends EventEmitter {
   }
 
 
+  // OBS starts a visible media source playing as soon as it loads (Allmind usually starts OBS together with the
+  // dashboard), so the BGM used to play long before the stream. Off air, pause it once per OBS start; streamStarted()
+  // plays it when the stream goes live. Setting bgm.startWithStream = false turns both off.
+  _holdUntilStream() {
+    if (this.cfg.startWithStream === false || this.heldChecked) return;
+    this.heldChecked = true;
+    const check = async (left) => {
+      try {
+        const st = await this.obs.call('GetStreamStatus');
+        if (st.outputActive) return; // live already (e.g. Allmind restarted mid-stream): leave it alone
+        await this._refresh(true);
+        // only a song that just started by itself (cursor near 0) — after a mere reconnect, music the owner
+        // started on purpose keeps playing
+        if (this.media.playing && this.media.cursor < 30000) {
+          await this._action('PAUSE');
+          this.heldForStream = true;
+          console.log('[bgm] OBS started the BGM by itself — paused until the stream starts');
+          await this._refresh(true);
+          return;
+        }
+      } catch {}
+      // the file may still be opening: look again a few times
+      if (left > 0) setTimeout(() => check(left - 1), 2000);
+    };
+    check(4);
+  }
+
+  // called by the server on OBS's stream STARTED event (not when Allmind connects to a stream already running)
+  async streamStarted() {
+    if (this.cfg.startWithStream === false || !this.sourceOk) return;
+    this.heldForStream = false;
+    await this._refresh(true);
+    if (this.media.playing) return;
+    if (this.autoActive && this.autoPause.mode !== 'duck') { this.autoPausedBgm = true; console.log('[bgm] stream started during 영도 — the BGM starts when it ends'); return; }
+    console.log('[bgm] stream started — playing the BGM');
+    await this.play().catch((e) => console.warn('[bgm] start with stream failed:', e.message));
+  }
+
   _action(a) {
     return this.obs.call('TriggerMediaInputAction', { inputName: this.sourceName, mediaAction: ACTION(a) });
   }
@@ -439,6 +480,7 @@ export class BGM extends EventEmitter {
         this.sourceOk = true;
         this.sourceError = null;
         await this._applyVolume(this.volumeDb);
+        this._holdUntilStream();
       }
     } catch (e) {
       this.sourceOk = false;

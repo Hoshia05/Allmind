@@ -1056,20 +1056,26 @@ function nearBottom() {
   const el = $('chatList');
   return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
 }
+// "stuck" to the newest line: only the viewer's own scrolling changes this. Resizing the panel, moving it in the
+// layout or hiding it (tabs, 채팅 숨기기) resets the browser's scroll position to the top; the ResizeObserver below
+// puts it back at the bottom whenever it was there before.
+let chatStuck = true;
+let chatH = 0;
 
 function chatReset(list) {
   $('chatList').innerHTML = list.length ? list.map(chatHtml).join('') : '<li class="chat-empty" id="chatEmpty">아직 채팅이 없어요</li>';
   $('chatList').scrollTop = $('chatList').scrollHeight;
   $('newMsgs').hidden = true;
+  chatStuck = true;
 }
 
 function chatAdd(list) {
   const el = $('chatList');
-  const stick = nearBottom();
+  const stick = chatStuck || nearBottom();
   $('chatEmpty')?.remove();
   el.insertAdjacentHTML('beforeend', list.map(chatHtml).join(''));
   while (el.children.length > MAX_CHAT) el.firstElementChild.remove();
-  if (stick) el.scrollTop = el.scrollHeight;
+  if (stick) { el.scrollTop = el.scrollHeight; chatStuck = true; }
   else $('newMsgs').hidden = false;
 }
 
@@ -1078,7 +1084,17 @@ function chatUpdate(m) {
   if (li) li.outerHTML = chatHtml(m);
 }
 
-$('chatList').addEventListener('scroll', () => { if (nearBottom()) $('newMsgs').hidden = true; });
+$('chatList').addEventListener('scroll', () => {
+  const el = $('chatList');
+  // a scroll event caused by a size change (or while hidden) isn't the viewer's choice
+  if (el.clientHeight > 0 && el.clientHeight === chatH) chatStuck = nearBottom();
+  if (nearBottom()) $('newMsgs').hidden = true;
+});
+new ResizeObserver(() => {
+  const el = $('chatList');
+  chatH = el.clientHeight;
+  if (chatH > 0 && chatStuck) el.scrollTop = el.scrollHeight;
+}).observe($('chatList'));
 
 // ---------- viewer popup (click a nickname) ----------
 // Shows what Allmind has seen from this viewer since it started: chats, recent lines, 후원/구독.
@@ -1213,6 +1229,7 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $('userC
 $('newMsgs').addEventListener('click', () => {
   $('chatList').scrollTop = $('chatList').scrollHeight;
   $('newMsgs').hidden = true;
+  chatStuck = true;
 });
 
 function setChatTab(tab) {

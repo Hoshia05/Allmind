@@ -39,6 +39,8 @@ let shotCount = 0;
 if (process.env.MOCK_COUNT) setInterval(() => { console.log('SHOTS/s', shotCount); shotCount = 0; }, 1000);
 const scene = { list: ['Main', 'Just Chatting', 'BRB', 'Ending'], current: 'Main' };
 const media = { state: 'OBS_MEDIA_STATE_NONE', cursor: 0, duration: TRACK_MS, file: null };
+// MOCK_BGM_AUTOPLAY=1: like real OBS loading a visible media source — it starts playing on its own
+if (process.env.MOCK_BGM_AUTOPLAY) Object.assign(media, { state: 'OBS_MEDIA_STATE_PLAYING', file: 'autoplay' });
 const t0 = Date.now();
 // MOCK_YD_INTRO=1: a real 영도's shape — 1 s alert, 5 s silence, then the video
 const donationLoud = process.env.MOCK_YD_INTRO
