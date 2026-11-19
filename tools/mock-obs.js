@@ -431,6 +431,7 @@ function dockFetch(REQ) {
   log(`리모컨 dock fetch: ${REQ.method} ${path}${REQ.body ? ' ' + REQ.body : ''}`);
   if (process.env.MOCK_REMOTE_LOGIN) return { status: 401, text: JSON.stringify({ code: 401, message: '로그인이 필요합니다' }) };
   let m;
+  if (/\/live-detail/.test(path)) return ok({ status: 'OPEN', adult: !!process.env.MOCK_CHZZK_ADULT, chatChannelId: CHAT_CID, openDate });
   if ((m = /profile-card/.test(path) && /users\/([0-9a-f]{32})\//.exec(path))) return ok(mockProfileCard(m[1]));
   if ((m = /\/users\/([0-9a-f]{32})\/chat-activity-count/.exec(path))) {
     const uid = m[1];
@@ -612,7 +613,9 @@ const chzzkHttp = http.createServer((req, res) => {
   const send = (content, code = 200) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ code, message: null, content })); };
   if (/\/service\/v3\/channels\/[0-9a-f]{32}\/live-detail/.test(req.url)) {
     viewers = Math.max(5, viewers + Math.round((Math.random() - 0.45) * 4));
-    return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', chatChannelId: CHAT_CID, channel: { channelName: '호시아' } });
+    // MOCK_CHZZK_ADULT=1: a 19+ broadcast — anonymous requests get no chatChannelId (the 리모컨 dock, logged in, does)
+    const adult = !!process.env.MOCK_CHZZK_ADULT;
+    return send({ liveTitle: chzzkSetting.defaultLiveTitle, status: 'OPEN', concurrentUserCount: viewers, accumulateCount: 412, openDate, liveCategoryValue: 'ARMORED CORE VI', adult, chatChannelId: adult ? null : CHAT_CID, channel: { channelName: '호시아' } });
   }
   // POST /mock/new-broadcast: Chzzk reports a new broadcast (new openDate, same chat room)
   if (req.url === '/mock/new-broadcast' && req.method === 'POST') { openDate = new Date(Date.now() + 9 * 3600000).toISOString().replace('T', ' ').slice(0, 19); return send({ openDate }); }

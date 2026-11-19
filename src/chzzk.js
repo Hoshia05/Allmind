@@ -91,9 +91,33 @@ export class Chzzk extends EventEmitter {
       return;
     }
     try {
-      const c = await this._get(`${this.cfg.apiBase}/service/v3/channels/${this.channelId}/live-detail`);
+      const url = `${this.cfg.apiBase}/service/v3/channels/${this.channelId}/live-detail`;
+      const c = await this._get(url);
       if (!c) throw new Error('채널을 찾을 수 없어요 — 채널 ID를 확인해 주세요');
       const isLive = c.status === 'OPEN';
+      // 19+ broadcasts (and possibly other restricted ones): Chzzk leaves chatChannelId empty for anonymous requests
+      // (2026-11-19: no chat for the first hour of a live stream). Ask again as the logged-in streamer through the
+      // 리모컨 dock in OBS.
+      if (isLive && !c.chatChannelId && this.dockGet) {
+        try {
+          const d = await this.dockGet(url);
+          if (d?.chatChannelId) {
+            c.chatChannelId = d.chatChannelId;
+            if (!this.viaDockLogged) { this.viaDockLogged = true; console.log(`[chat] Chzzk hid the chat room from anonymous requests${c.adult ? ' (19+ broadcast)' : ''} — got it through the 리모컨 dock`); }
+          }
+        } catch (e) {
+          if (!this.dockFailLogged) { this.dockFailLogged = true; console.log(`[chat] asking the 리모컨 dock for the chat room failed: ${e.message}`); }
+        }
+      }
+      if (isLive && !c.chatChannelId) {
+        if (!this.noRoomLogged) { this.noRoomLogged = true; console.log(`[chat] live, but Chzzk gave no chat room id${c.adult ? ' (19+ broadcast)' : ''} — chat can't connect yet`); }
+        if (!this.ws) {
+          this.chatState = 'error';
+          this.chatError = c.adult
+            ? '19세 방송이라 치지직이 채팅방을 알려 주지 않아요 — OBS의 치지직 리모컨 독이 연결되어 있으면 그걸로 받아요'
+            : '방송 중인데 치지직이 채팅방 정보를 주지 않았어요 — 잠시 후 다시 시도해요';
+        }
+      } else this.noRoomLogged = false;
       // New broadcast → start a fresh 후원 list.
       if (isLive && c.openDate && c.openDate !== this.donationSession) {
         if (this.donationSession) {
@@ -124,13 +148,15 @@ export class Chzzk extends EventEmitter {
         channelName: c.channel?.channelName || '',
         peak: isLive ? this.peak.count : null,
       };
+      if (this.liveError) console.log('[chzzk] live status works again');
       this.liveError = null;
       if (c.chatChannelId && c.chatChannelId !== this.chatChannelId) this._connectChat(c.chatChannelId);
-      if (!c.chatChannelId && !this.ws) {
+      if (!c.chatChannelId && !this.ws && !isLive) {
         this.chatState = 'idle';
         this.chatError = '방송이 꺼져 있어서 채팅방이 없어요';
       }
     } catch (e) {
+      if (!this.liveError) console.log(`[chzzk] live status failed: ${e.message}`);
       this.liveError = `치지직 정보를 불러오지 못함: ${e.message}`;
     }
     this.emit('change');
@@ -162,9 +188,12 @@ export class Chzzk extends EventEmitter {
     try {
       const c = await this._get(`${this.cfg.gameApiBase}/nng_main/v1/chats/access-token?channelId=${cid}&chatType=STREAMING`);
       token = c?.accessToken ?? null;
+      // restricted (19+) chat rooms may need the streamer's login for a token
+      if (!token && this.dockGet) token = (await this.dockGet(`${this.cfg.gameApiBase}/nng_main/v1/chats/access-token?channelId=${cid}&chatType=STREAMING`).catch(() => null))?.accessToken ?? null;
     } catch (e) {
+      if (this.dockGet) token = (await this.dockGet(`${this.cfg.gameApiBase}/nng_main/v1/chats/access-token?channelId=${cid}&chatType=STREAMING`).catch(() => null))?.accessToken ?? null;
       // Reading usually still works without a token; note it and carry on.
-      this.chatError = `채팅 토큰을 받지 못함 (${e.message}) — 토큰 없이 시도`;
+      if (!token) this.chatError = `채팅 토큰을 받지 못함 (${e.message}) — 토큰 없이 시도`;
     }
     if (this.chatChannelId !== cid) return; // superseded while we waited
 
@@ -286,6 +315,7 @@ export class Chzzk extends EventEmitter {
         break;
       }
       case CMD.PONG:
+      case 93006: // Chzzk's "event" message (e.g. system notices) — nothing for the list
         break;
       default:
         if (!this.unknownCmds.has(msg.cmd)) { this.unknownCmds.add(msg.cmd); console.log(`[chat] unknown message type ${msg.cmd} (fields: ${Object.keys(msg).join(',')})`); }

@@ -45,7 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.46.3';
+const VERSION = '0.46.4';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -217,6 +217,8 @@ async function main() {
   const obsPanel = new ObsPanel(obs);
   const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
+  // 19+ broadcasts: Chzzk hides the chat room from anonymous requests — chzzk.js asks again as the logged-in streamer
+  chzzk.dockGet = (url) => remote.request(url);
 
   // ---------- stream title (방송 준비), YouTube archive, Drive upload (docs/plans/google-archive.md) ----------
   const prep = loadState('prep', { title: '', category: null, tags: [], appliedAt: 0 });
