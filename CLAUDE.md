@@ -35,7 +35,7 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
   separate process that is only a client of the local API. Known gap: `src/server.js` still imports every Xylem module
   statically, so the platform can't run without them yet. The event API for Xylem/the assistant must use its own client set like
   `/deck/events` and must never count as an open dashboard (see "Lean matters").
-  Plan and open questions: vault note `Projects/Stream Sidekick/Suite Architecture.md`.
+  Plan: `docs/plans/modules.md`; open questions: vault note `Projects/Stream Sidekick/Suite Architecture.md`.
 - **Keep the vault in sync** (owner's rule, 2026-11-21). When Allmind changes (release, merged feature, behavior-changing fix,
   architecture change), update the vault in the same session; see "Obsidian vault" below.
 
@@ -60,7 +60,7 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
 
 ## GitHub
 
-Repo: `Hoshia05/Allmind` (private, MIT). The session can push `main` but
+Repo: `Hoshia05/Allmind` (public, MIT). The session can push `main` but
 **cannot** create repos, push tags, or touch releases (403). If the repo isn't attached,
 attach it with the add_repo tool (access: push), clone it, then push **from that clone**:
 `git -C <clone> pull --ff-only <this checkout> main && git -C <clone> push origin main`.
