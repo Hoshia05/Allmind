@@ -28,6 +28,17 @@ It talks to OBS over obs-websocket v5, to OBS's browser sources over Chrome DevT
   ads (넘기기 is the 리모컨's donation-skip button); **설정 창**; **Google** (not 구글); no English in anything the owner
   sees, including fallback toasts and errors thrown from `src/` (they reach the dashboard via `post()` → `toast(data.error)`).
 
+- **Allmind stays standalone** (owner's rule, 2026-11-21). The platform is public (MIT) and other streamers may run it, so it
+  must work without Xylem and without the AI assistant, and must never depend on a beta feature. New viewer-game / assistant
+  code goes through optional modules and the platform's local API, never into core paths. The owner plans Xylem as its own
+  module with a strict identity (first `modules/xylem/` behind a small module contract, later its own repo); the assistant is a
+  separate process that is only a client of the local API. Known gap: `src/server.js` still imports every Xylem module
+  statically, so the platform can't run without them yet. The event API for Xylem/the assistant must use its own client set like
+  `/deck/events` and must never count as an open dashboard (see "Lean matters").
+  Plan and open questions: vault note `Projects/Stream Sidekick/Suite Architecture.md`.
+- **Keep the vault in sync** (owner's rule, 2026-11-21). When Allmind changes (release, merged feature, behavior-changing fix,
+  architecture change), update the vault in the same session; see "Obsidian vault" below.
+
 ## Versioning, build, release
 
 - Version lives in **two places**: `package.json` `"version"` and `VERSION` in `src/server.js`.
@@ -241,3 +252,10 @@ Big or fuzzy work (new feature design, debugging from logs): plan first and writ
 to `docs/plans/<topic>.md`. Clear, specified work (implement a plan, small fixes, build,
 release notes): any model can do it from the plan + this file. Start a fresh session per
 feature rather than continuing one very long conversation.
+
+## Obsidian vault
+The owner keeps project context in an Obsidian vault.
+- Rules for all agents: %USERPROFILE%\Documents\Obsidian Vault\AGENTS.md
+- This project's notes: %USERPROFILE%\Documents\Obsidian Vault\Projects\Allmind\Allmind Overview.md (hub: `Areas\Streaming Megaproject.md`)
+- At session start, read the rules and this project's overview note. When Allmind changes, or when the owner says "wrap up", follow the vault's `AGENTS.md` ("Code changes must reach the vault" and the wrap-up steps).
+- If that path doesn't exist (a cloud session without the owner's PC), clone the private repo `Hoshia05/Kidian` if you have access and follow its `AGENTS.md`; if you can't reach it, say so in your final message and give a ready-to-paste summary (version, what changed, decisions, untested items) instead of skipping it.
