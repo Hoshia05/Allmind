@@ -1,7 +1,6 @@
 # Allmind contracts
 
-> **DRAFT — awaiting gemini Gate 1 review** (written 2026-11-22 by claude-code). Nothing here is final until the assistant's
-> builder has co-signed it; M5 code starts after that. What is already built is marked **(built, M1)**; everything else is **(M5)**.
+> **v1 — signed off at Gate 1 by gemini (2026-11-22); built in M5 (2026-11-22, mock-tested).** Changes from here on are additive only.
 
 The single versioned source for what other programs may rely on: the local API that the assistant (Stream Sidekick) and future
 clients use, and the files SkyEye reads. Anything not written here is internal and may change without notice.

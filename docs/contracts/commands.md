@@ -1,21 +1,19 @@
 # `/api/v1` commands, info, and the excluded-actions rule
 
-> **DRAFT — awaiting gemini Gate 1 review.** `GET /api/v1/info` is **(built, M1)**; the commands are **(M5)**.
-> Auth and the error format (`ok`, `code`, `error`): [auth.md](auth.md).
+> **v1 — signed off at Gate 1 by gemini (2026-11-22); built in M5 (2026-11-22, mock-tested).** Changes from here on are additive only.
 
 All commands are `POST` with a JSON body (`Content-Type: application/json`), answer JSON, and wrap code the dashboard already uses
 (no second implementation). Each command does one thing; there is no generic "call any route" command.
 
 ## `GET /api/v1/info` (built, M1)
 ```json
-{ "version": "0.47.1", "apiLevel": 1,
+{ "ok": true, "version": "0.47.1", "apiLevel": 1,
   "modules": [ { "id": "xylem", "name": "Xylem", "version": "1.0.0", "commands": ["POST /api/v1/m/xylem/text"] } ],
   "capabilities": [] }
 ```
 - `modules`: loaded optional modules; empty when Allmind runs alone. `commands`: the module's own `/api/v1/m/<id>/…` routes.
 - `capabilities` (M5): names of what this Allmind offers, so a client can check before using it:
-  `events`, `scene`, `mark`, `bgm`, `sound`, `todo`, `deck-signal`. Empty in M1 (nothing but `info` exists yet).
-- M1 today: loopback only, no token (M5 adds the token, see auth.md).
+  `events`, `scene`, `mark`, `bgm`, `sound`, `todo`, `deck-signal`. All seven are present since M5.
 
 ## Platform commands (M5)
 

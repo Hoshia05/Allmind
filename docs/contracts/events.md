@@ -1,6 +1,6 @@
 # `GET /api/v1/events` — the event stream
 
-> **DRAFT — awaiting gemini Gate 1 review.** Nothing here is built yet **(M5)**. Auth: [auth.md](auth.md).
+> **v1 — signed off at Gate 1 by gemini (2026-11-22); built in M5 (2026-11-22, mock-tested).** Changes from here on are additive only.
 
 ## The stream
 - Server-Sent Events, `Content-Type: text/event-stream`. Each event is `event: <name>` + one `data:` line of JSON + a blank line.
@@ -33,7 +33,8 @@
   "uid": "9f3c…", "nick": "시청자1", "role": "viewer", "text": "안녕하세요 {:d_12:}", "verified": false,
   "sub": { "months": 3, "tier": 1 } }
 ```
-- `platform`: `chzzk` | `youtube`. `kind`: `chat` | `subscription` (a subscription message; `months` set when known).
+- `platform`: `chzzk` | `youtube`. `kind`: `chat` | `subscription`. A subscription line has a top-level `months` (the month count of that subscription
+  message, or `null`); `sub.months` is the viewer's subscription badge, present on any line.
 - `id`: stable per message for de-duplication (Chzzk: time + uid + start of text; YouTube: `yt:<message id>`).
 - `uid`: the platform's viewer id (`yt:<channel id>` for YouTube), for telling viewers apart. Not a name; may be empty.
 - `role`: `streamer` | `manager` | `viewer`.

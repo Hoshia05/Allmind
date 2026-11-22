@@ -1,7 +1,6 @@
 # `/api/v1` access: token, callers, errors
 
-> **DRAFT — awaiting gemini Gate 1 review.** Status today **(built, M1)**: `/api/v1/*` answers only on loopback and needs no token
-> yet. Everything below is **(M5)** unless marked.
+> **v1 — signed off at Gate 1 by gemini (2026-11-22); built in M5 (2026-11-22, mock-tested).** Changes from here on are additive only.
 
 ## The token
 - Every `/api/v1/*` request needs the API token, **also from loopback** (127.0.0.1 / ::1). This includes the SSE stream
@@ -10,8 +9,8 @@
   A token in `?token=` is refused like a missing one.
 - Format: 43 characters, URL-safe base64 of 32 random bytes. Compared in constant time.
 - Where it comes from: the platform creates it the first time the owner opens the **API 토큰** card in the settings window
-  (설정 창, stream PC only). The card shows it with a copy button, like the Stream Deck key; the owner pastes it into the client's
-  own config once. **새로 만들기** replaces it: the old token stops working at once and open `/api/v1/events` streams using it are closed.
+  (설정 창, stream PC only). The card shows it **once**, right after it is made, with a copy button (only its hash is kept); the owner pastes it into the
+  client's own config. Lost → make a new one. **새로 만들기** replaces it: the old token stops working at once and open `/api/v1/events` streams using it are closed.
 - The client keeps the token in its own config (e.g. Sidekick's `.env`). It must not read Allmind's files (`%APPDATA%\Allmind`).
 - Stored in Allmind's data folder as a SHA-256 hash only. Not part of 설정 옮기기 exports (a moved install gets a new token).
 - One token in apiLevel 1 (one assistant). Several named tokens can be added later without a breaking change.
@@ -51,4 +50,4 @@ Clients branch on `code` (stable English) and may show `error` (Korean, may chan
 | 502 | `obs-unavailable` | OBS not connected or refused the request |
 | 500 | `internal` | anything else (logged) |
 
-M1 today: non-loopback → 403 without a `code`; unknown route → 404 `{ok:false, error}`. M5 brings both in line with this table.
+Exception: a refusal by the request guard (foreign `Host`, cross-site `Origin`) is a plain-text 403 before `/api/v1` is reached.

@@ -1,9 +1,6 @@
 # Markers file + chat log (`<video>.markers.json`, format `vodscout-markers`)
 
-> **DRAFT — awaiting gemini Gate 1 review.** Describes what Allmind **writes today** (0.47.1, `src/markers.js`), so it is a record
-> of built behavior, not a plan. Moved here from SkyEye's `STREAM_DESK_MARKERS.md` (v1, ⭐ marks) and `docs/ALLMIND_CHAT_LOG.md`
-> (v2, chat log); those two become pointers to this file (SkyEye repo, follow-up). Reader: SkyEye (`scout.read_chat_file`).
-> Mock-tested only where noted.
+> **v1 — signed off at Gate 1 by gemini (2026-11-22); built in M5 (2026-11-22, mock-tested).** Changes from here on are additive only.
 
 ## What it is
 For every OBS recording (every **part** of one, see below) that has at least one ⭐ mark or one saved chat line, Allmind writes one
