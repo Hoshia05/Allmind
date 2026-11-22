@@ -80,7 +80,7 @@
     {
       "UUID": "com.hoshia.allmind.signal",
       "Name": "신호",
-      "Tooltip": "어시스턴트용: 말하기(누르는 동안 / 탭), 음소거, 끄기 — Allmind 0.48 이상",
+      "Tooltip": "어시스턴트용: 말하기(누르는 동안 / 탭), 음소거, 끄기 (신호를 받는 새 Allmind 필요)",
       "Icon": "imgs/action-signal",
       "PropertyInspectorPath": "ui/pi.html",
       "Controllers": [
