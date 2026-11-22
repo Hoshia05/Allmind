@@ -25,6 +25,8 @@
         "interact",
         "links",
         "marks",
+        "moduleState",
+        "modules",
         "obs",
         "obsAudio",
         "obsDebug",
@@ -153,6 +155,20 @@
       "foreignHost": 403,
       "foreignOrigin": 403,
       "crossSiteDeck": 403
+    },
+    "platform/v1-info": {
+      "status": 200,
+      "keys": [
+        "apiLevel",
+        "capabilities",
+        "modules",
+        "version"
+      ],
+      "apiLevel": 1,
+      "modules": [],
+      "capabilitiesIsList": true,
+      "unknown": 404,
+      "post": 404
     },
     "xylem/state": {
       "status": 200,

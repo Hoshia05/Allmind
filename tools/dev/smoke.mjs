@@ -184,6 +184,20 @@ check('platform', 'guard', async () => ({
   crossSiteDeck: (await get('/deck/mark', { headers: { 'sec-fetch-site': 'cross-site' } })).status,
 }));
 
+// public local API (/api/v1, docs/contracts/)
+check('platform', 'v1-info', async () => {
+  const r = await get('/api/v1/info');
+  const j = r.json || {};
+  if (j.version !== VERSION) throw new Error(`info.version ${j.version} != ${VERSION}`);
+  return {
+    status: r.status, keys: Object.keys(j).sort(), apiLevel: j.apiLevel,
+    modules: Array.isArray(j.modules) ? j.modules.map((m) => m.id) : null,
+    capabilitiesIsList: Array.isArray(j.capabilities),
+    unknown: (await get('/api/v1/nope')).status,
+    post: (await post('/api/v1/info')).status,
+  };
+});
+
 // Xylem (one call per feature)
 check('xylem', 'state', async () => {
   const r = await get('/api/xylem/state');

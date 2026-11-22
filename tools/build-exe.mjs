@@ -4,8 +4,12 @@
 //  3. copy a Windows node.exe, give it our icon/name, inject the blob
 //  4. flip the exe to the Windows GUI subsystem so no console window appears
 //
-// Usage: node tools/build-exe.mjs <path-to-windows-node.exe> [--target linux <node-binary>]
+// Usage: node tools/build-exe.mjs <path-to-windows-node.exe> [--linux] [--modules <dir> | --no-modules]
 // The node.exe must be the SAME Node version as the one running this script.
+// Modules (docs/plans/modules.md): every modules/<id>/ (module.json + index.js) is bundled through a static list that
+// replaces src/modules-list.js, because a SEA can't import module files from disk. --modules <dir> bundles another
+// folder (the SEA test uses tools/dev/fixtures/modules), --no-modules builds the platform alone.
+// --runtime-modules (SEA test only) keeps the list null, i.e. the exe tries import() from disk like a source run.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -16,14 +20,36 @@ import * as ResEdit from 'resedit';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'dist');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-const nodeBin = process.argv[2];
-const linux = process.argv[3] === '--linux'; // test build for this machine
+const argv = process.argv.slice(2);
+const nodeBin = argv[0];
+const linux = argv.includes('--linux'); // test build for this machine
+const mi = argv.indexOf('--modules');
+const modulesDir = argv.includes('--no-modules') ? null : path.resolve(ROOT, mi >= 0 ? argv[mi + 1] || 'modules' : 'modules');
+const runtimeModules = argv.includes('--runtime-modules');
 if (!nodeBin || !fs.existsSync(nodeBin)) {
-  console.error('Usage: node tools/build-exe.mjs <node.exe> [--linux]');
+  console.error('Usage: node tools/build-exe.mjs <node.exe> [--linux] [--modules <dir> | --no-modules]');
   process.exit(1);
 }
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(DIST, { recursive: true });
+
+// 0. the build-time module list: modules/<id>/ folders with module.json + index.js, sorted by id
+const moduleDirs = !modulesDir || !fs.existsSync(modulesDir) ? [] : fs.readdirSync(modulesDir, { withFileTypes: true })
+  .filter((e) => e.isDirectory() && fs.existsSync(path.join(modulesDir, e.name, 'module.json')) && fs.existsSync(path.join(modulesDir, e.name, 'index.js')))
+  .map((e) => path.join(modulesDir, e.name))
+  .sort();
+const fwd = (p) => p.split(path.sep).join('/');
+const moduleListSource = runtimeModules ? 'export default null;\n' : [
+  ...moduleDirs.map((d, i) => `import * as m${i} from ${JSON.stringify(fwd(path.join(d, 'index.js')))};\nimport j${i} from ${JSON.stringify(fwd(path.join(d, 'module.json')))};`),
+  `export default [${moduleDirs.map((_, i) => `{ manifest: j${i}, mod: m${i} }`).join(', ')}];`,
+].join('\n') + '\n';
+const moduleList = {
+  name: 'allmind-module-list',
+  setup(build) {
+    build.onLoad({ filter: /[\\/]src[\\/]modules-list\.js$/ }, () => ({ contents: moduleListSource, loader: 'js', resolveDir: ROOT }));
+  },
+};
+console.log(`modules in the exe: ${runtimeModules ? '(runtime discovery — SEA test only)' : moduleDirs.map((d) => path.basename(d)).join(', ') || 'none'}`);
 
 // 1. bundle
 await esbuild.build({
@@ -35,6 +61,7 @@ await esbuild.build({
   outfile: path.join(DIST, 'allmind.cjs'),
   // ws (VTube Studio client) tries these optional native speedups and falls back without them
   external: ['bufferutil', 'utf-8-validate'],
+  plugins: [moduleList],
   logLevel: 'warning',
 });
 

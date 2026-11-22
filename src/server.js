@@ -44,6 +44,8 @@ import { VTSThrow } from './vtsthrow.js';
 import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
+import { API_LEVEL, discover, createRegistry } from './modules.js';
+import MODULE_LIST from './modules-list.js'; // null from source (discover modules/*/ at start); a static list in the exe
 
 const VERSION = '0.47.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
@@ -315,6 +317,7 @@ async function main() {
   const clients = new Set();
   // The setlist can be hundreds of songs, so it isn't part of every state
   // update: it goes out as its own event, only when it actually changes.
+  let moduleReg = null; // optional modules (src/modules.js), loaded before the first request
   let tracksJson = '[]';
   const bgmState = () => {
     const { tracks, ...rest } = bgm.snapshot();
@@ -354,6 +357,8 @@ async function main() {
     shortcuts: config.dashboard?.shortcuts === true,
     preflight: preflightLast ? { at: preflightLast.at, bad: preflightLast.bad, warn: preflightLast.warn } : null,
     reports: reports ? reports.summary() : null,
+    modules: moduleReg ? moduleReg.info().map(({ id, name, version }) => ({ id, name, version })) : [],
+    moduleState: moduleReg ? moduleReg.snapshot() : {},
   });
   // Top-right links: built from the connected channel. (Old configs carry
   // generic placeholder links to the Chzzk front page; those are dropped.)
@@ -1246,7 +1251,56 @@ async function main() {
     'POST /api/update/install': () => updater.install(),
   };
 
+  // ---------- optional modules (docs/plans/modules.md) ----------
+  // Paths the platform answers itself, outside the routes tables (a module can't take them).
+  const INLINE_ROUTES = new Set(['GET /api/access', 'POST /api/access/pair', 'GET /pin', 'GET /mark', 'GET /api/events', 'GET /api/frame',
+    'GET /api/stream', 'GET /api/ping', 'POST /api/mark', 'GET /api/marks', 'GET /api/google/callback', 'GET /api/chzzk-open/callback',
+    'GET /api/bgm/loop', 'GET /api/bgm/loop/peaks', 'GET /api/bgm/loop/preview', 'GET /api/chzzk/user', 'GET /api/chzzk/card',
+    // Xylem's, still in the platform until M2 moves them into modules/xylem/
+    'GET /api/xylem/state', 'GET /api/xylem/events', 'GET /api/roulette/events', 'GET /api/draw/events', 'GET /api/text/events',
+    'GET /api/roulette/board-events', 'POST /api/roulette/shown', 'GET /api/dogfight/events', 'GET /api/vts/item', 'POST /api/dogfight/result',
+    'POST /api/dogfight/cmd', 'POST /api/draw/shown']);
+  moduleReg = createRegistry({
+    config,
+    dataDir: DATA_DIR,
+    events: {
+      'live-chat': (fn) => chzzk.on('live-chat', fn), // live Chzzk chat (not the RECENT replay, not addExternal lines)
+      chat: (fn) => chzzk.on('chat', fn), // everything the dashboard list shows
+      donations: (fn) => chzzk.on('donations', fn),
+    },
+    chatSend: (text) => chzzkOpen.sendChat(text),
+    toast: (t) => sendAll('toast', typeof t === 'string' ? { text: t } : t),
+    log: (...a) => console.log(...a),
+    services: { obs, vts, tts },
+    reserved: (k) => !!routes[k] || !!localRoutes[k] || INLINE_ROUTES.has(k) || k.slice(k.indexOf(' ') + 1).startsWith('/deck/'),
+  });
+  // the request handler below is attached right away and waits for this, so no early request is dropped
+  const modulesReady = (async () => {
+    const list = MODULE_LIST ?? (process.env.ALLMIND_NO_MODULES === '1' ? [] : await discover(process.env.ALLMIND_MODULES_DIR || path.join(ROOT, 'modules')));
+    await moduleReg.load(list);
+    for (const p of moduleReg.pinFreePaths()) PIN_FREE_API.add(p);
+  })().catch((e) => console.log(`[modules] loading failed: ${e.message}`));
+  async function runModuleRoute(m, req, res, url) {
+    if (m.raw) {
+      try { return await m.handler(req, res, url); } catch (e) {
+        console.log(`[modules] ${m.id} ${url.pathname}: ${e.message}`);
+        if (!res.headersSent) json(res, 500, { ok: false, error: e.message });
+        return;
+      }
+    }
+    try {
+      const result = await m.handler(req.method === 'POST' ? await readBody(req) : {}, { req, url });
+      stateChanged();
+      json(res, 200, { ok: true, ...(result && typeof result === 'object' ? result : {}) });
+    } catch (e) {
+      json(res, 400, { ok: false, error: e.message });
+    }
+  }
+  // GET /api/v1/info — feature detection for the assistant and other local clients (docs/contracts/)
+  const v1Info = () => ({ version: VERSION, apiLevel: API_LEVEL, modules: moduleReg.info(), capabilities: [] });
+
   server.on('request', async (req, res) => {
+    await modulesReady; // only the first requests after start can wait here (a few ms)
     const url = new URL(req.url, 'http://x');
     const key = `${req.method} ${url.pathname}`;
     const why = guard(req, url);
@@ -1280,6 +1334,16 @@ async function main() {
         return res.end();
       }
       if (c.refresh) res.setHeader('Set-Cookie', cookieHeader(c.refresh)); // keeps a device that's in use remembered
+    }
+
+    // ---------- public local API /api/v1 (docs/contracts/) ----------
+    // Until M5 adds the API token, /api/v1 answers only on loopback (127.0.0.1 / ::1).
+    if (url.pathname.startsWith('/api/v1/')) {
+      if (!isLocal(req)) return json(res, 403, { ok: false, error: '/api/v1은 아직 방송 PC 안에서만 쓸 수 있어요' });
+      if (key === 'GET /api/v1/info') return json(res, 200, v1Info());
+      const m = moduleReg.route(req.method, url.pathname);
+      if (m) return runModuleRoute(m, req, res, url);
+      return json(res, 404, { ok: false, error: '없는 API예요' });
     }
 
     // ⭐ Mark moment: one request from anywhere on the LAN (a hotkey, a Stream
@@ -1461,6 +1525,9 @@ async function main() {
       }
       return;
     }
+
+    const modRoute = moduleReg.route(req.method, url.pathname); // module routes come last: they can never shadow the platform
+    if (modRoute) return runModuleRoute(modRoute, req, res, url);
 
     if (req.method === 'GET') {
       let rel = url.pathname === '/' ? 'index.html' : url.pathname === '/launcher' ? 'launcher.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');

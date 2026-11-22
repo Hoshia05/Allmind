@@ -1,6 +1,6 @@
 # Modules — a standalone platform with optional parts (Xylem, assistant)
 
-**Status: M0 and M1 in progress (2026-11-22), nothing moved yet.** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
+**Status: M0 + M1 done (2026-11-22, mock only), nothing moved yet; next M5 after the contract review (Gate 1).** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
 `Projects/Allmind/Decisions.md`): the platform (today's Allmind) must run **without Xylem and without the AI assistant**, must not
 depend on beta features, and stays public (MIT). Xylem should have a strict identity of its own but stay closely linked. The
 assistant is a separate process that only uses the platform's local API. Nobody else really uses the public repo yet, so
@@ -28,12 +28,28 @@ Modules reach the platform only through a small context object (`ctx`); the assi
 ## Design
 ### 1. Module contract
 A module is a folder `modules/<id>/` with `module.json` (`id`, `name`, `version`, `minApi`) and `index.js` exporting `register(ctx)`.
-`ctx` gives: `config` (its own section only), `dataDir` (its own folder), `events.on(name, fn)` (chat, live-chat, donation, state),
-`chat.send`, `route(method, path, handler, {pinFree})`, `sse(path, handler)`, `snapshot(key, fn)` (adds its status to the dashboard snapshot),
-`toast`, `log`, and `services` (OBS, VTS, TTS — see decision below). Modules may not import platform internals or each other.
-The contract lives in `src/modules.js` (M1: `makeCtx`, `loadModules`, the registry).
-Loading: a **build-time list** of static imports that esbuild bundles into the one exe (a SEA can't read module files from disk —
-to be confirmed with a real build in M1). A missing or failing module is logged and skipped; the platform keeps running.
+`ctx` gives: `config` (its own section only, frozen copy), `dataDir` (`DATA_DIR/<id>`, the module creates it), `events.on(name, fn)`
+(M1: `live-chat`, `chat`, `donations`; more names are added when a module needs them), `chat.send`, `route(method, path, handler, {pinFree})`
+(GET/POST; handler `(body, {req, url})` → object, answered as `{ok:true, ...}`, errors → 400), `sse(path, handler)` (raw `(req, res, url)`),
+`snapshot(key, fn)` (adds its status to the dashboard snapshot under `moduleState`), `toast`, `log` (prefixed `[id]`), and `services`
+(`obs`, `vts`, `tts` — see decision below). Modules may not import platform internals or each other.
+Route rules (enforced): a module can't take a platform path (routes tables, inline routes, `/deck/*`); under `/api/v1/` only its own
+`/api/v1/m/<id>/…`, and those are its assistant-facing **commands** in `/api/v1/info`. Module routes are dispatched after all platform
+routes, so they can never shadow one. Everything a module registers is kept only if `register()` succeeds (else rolled back).
+**Built in M1** (2026-11-22): `src/modules.js` (`API_LEVEL = 1`, `discover()`, `createRegistry()`), wired in `src/server.js`; the dashboard
+snapshot carries `modules: [{id, name, version}]` + `moduleState`; tests `node --test tools/dev/test-modules.mjs` (fixtures in
+`tools/dev/fixtures/modules/`). Source runs: `ALLMIND_MODULES_DIR=<dir>` loads another folder, `ALLMIND_NO_MODULES=1` none.
+
+Loading: a **build-time list** — `tools/build-exe.mjs` replaces `src/modules-list.js` (null from source → `discover()` of `modules/*/`)
+with static imports of every `modules/<id>/` (`--modules <dir>`, `--no-modules`), so esbuild bundles them into the one exe and the
+exe never loads code from disk (its list is `[]`, not `null`, when there are none). A missing or failing module is logged and skipped;
+the platform keeps running.
+**SEA question, settled 2026-11-22** (real `node tools/build-exe.mjs` with the owner's Node 24.18 `node.exe`, run only inside the dev
+setup against the mock): the build-time list works in the SEA (fixture module `hello` loaded, its `/api/v1/m/hello/ping` and a
+pin-free route answered, the broken/too-new/greedy fixtures skipped); the normal build (no modules) passes all smoke checks.
+Contrary to the old assumption, a Node **24** SEA *can* `import()` a module from disk too (`--runtime-modules` test build) — the
+build-time list is kept anyway: it doesn't depend on the Node version (CI builds with Node 22, not checked), keeps one self-contained
+exe, and nothing next to the exe can inject code into it.
 
 ### 2. Dashboard
 The 🎮 Xylem button, phone tab and tray item appear only when the snapshot lists the module (`modules: [...]`). `public/app.js`
@@ -92,6 +108,9 @@ Order: **M0 → M1 → M5 → assistant v0 → M2 → assistant v1**; M3/M4 opti
   before and after every later step. **Done 2026-11-22:** 20 checks, baseline `tools/dev/smoke-baseline.json` (0.47.1).
 - **M1 Contract + loader, empty registry.** `ctx`, `GET /api/v1/info`, `tools/check-boundary.mjs` (report-only until M2, then failing:
   `src/` must not import `modules/` or name a module route). SEA question settled with a real build.
+  **Done 2026-11-22** (mock only): see "Built in M1" and "SEA question" above. Until M5 adds the token, `/api/v1/*` answers only on
+  loopback (403 otherwise). `node tools/check-boundary.mjs` today: 75 violations (Xylem files in `src/`, their imports and routes in
+  `server.js`) = M2's worklist; `--strict` fails on them.
 - **M5 Public API.** Token + settings card, `/api/v1/events`, the five platform commands, `/deck/signal` + plugin "신호" action
   (rebuild + commit the plugin), `docs/contracts/` final. The assistant's v0 needs only M1 + M5.
   Contract drafts (`docs/contracts/`) are reviewed by the assistant's builder at Gate 1 before M5 code starts.

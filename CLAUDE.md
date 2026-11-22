@@ -176,6 +176,15 @@ From source the install is always a dry run (downloads + verifies, doesn't start
 - `src/update.js` — in-app updater (`docs/plans/updater.md`): latest GitHub release → download → verify → start the new exe with `--restart`. Refuses while OBS streams/records. Release **tag must be `vX.Y.Z` and the asset `Allmind-X.Y.Z.exe`**. After an update the exe the owner originally started is overwritten in place (launcher env `ALLMIND_ORIGIN`/`ALLMIND_LAUNCHER`, `win.syncOriginLauncher`) — Windows-only, untested on a real PC.
 - `src/config.js` — config/state paths (`%APPDATA%\Allmind` in the exe), defaults from
   `config.example.json`. `src/win.js` — Windows bits (tray, firewall, pickers).
+- **Modules + `/api/v1`** (`docs/plans/modules.md`, M1 2026-11-22; contracts in `docs/contracts/`): `src/modules.js` = the module
+  contract (`ctx`) and registry (`discover()`, `createRegistry()`, `API_LEVEL`); `src/modules-list.js` is `null` from source (modules/*/
+  discovered at start; `ALLMIND_MODULES_DIR`, `ALLMIND_NO_MODULES=1`) and replaced by `tools/build-exe.mjs` with a static list
+  (`--modules <dir>`, `--no-modules`; the exe never loads code from disk). `server.js`: `moduleReg`, `INLINE_ROUTES` (paths a module may
+  not take), module routes dispatched last (`runModuleRoute`), the request handler awaits `modulesReady`; snapshot `modules` +
+  `moduleState`. `/api/v1/*` block before the ⭐ mark route: `GET /api/v1/info` → `{version, apiLevel, modules, capabilities}`,
+  `/api/v1/m/<id>/…` = module commands; **loopback only until M5's token**. Tests: `node --test tools/dev/test-modules.mjs`,
+  `node tools/check-boundary.mjs` (report-only until M2, `--strict` after). Any new `/api/v1` client channel (M5 `/api/v1/events`)
+  needs its own client set — never `clients`.
 - **할 일** (`docs/plans/todo.md`, 0.39): `src/todo.js` — 창고/오늘/한 것 idea list (`todo.json`), SSE `todo` + `todo-start` reminder, ⭐ mark on check while recording, report `plan`, `archive()` at stream end. Dashboard panel `#todoPanel` (tab with 사운드보드 in the free layout via `tabWith`, folded in fixed layouts, phone tab `mp-todo`).
 - **Xylem inside the dashboard** (0.38.1): `#xylemBtn` / phone tab `data-mp="xylem"` → `setXylem()` shows `#xyView` (iframe `/xylem?embed=1`, loaded once, then only hidden) and hides `.layout`; mirrors don't run while `body.xy-open`; the embedded page (`EMBED` in `public/xylem/xylem.js`) skips polling while hidden (`postMessage` `xylem-visible`), shows a ↗ new-window button. Ctrl/Shift/middle-click = separate window as before.
 - Static files (public/, Xylem pack) go through `sendStatic()` in `server.js`: `no-cache` + a content-hash `ETag` → `304` on reloads
