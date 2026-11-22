@@ -2421,12 +2421,15 @@ setInterval(() => { if (loopEd && !$('loopWrap').hidden && !document.activeEleme
     const card = $('splitCard');
     if ($('outWrap').hidden || !S) return;
     const on = canSplitNow();
-    card.hidden = !on;
-    if (!on) return;
+    card.classList.toggle('idle', !on);
+    $('splitIdle').hidden = on;
+    $('splitTitle').disabled = !on;
     const sp = S.split || {};
-    $('splitPart').textContent = `· 지금 파트 ${sp.part || 1}`;
-    $('splitBtn').disabled = !!sp.busy;
+    if (!on) { splitArmed = false; $('splitErr').hidden = true; $('splitLast').textContent = ''; }
+    $('splitPart').textContent = on ? `· 지금 파트 ${sp.part || 1}` : '';
+    $('splitBtn').disabled = !on || !!sp.busy;
     $('splitRestart').disabled = !!sp.busy;
+    if (!on) { $('splitBtn').classList.remove('armed'); $('splitBtn').textContent = '✂ 여기서 나누기'; return; }
     $('splitBtn').classList.toggle('armed', splitArmed);
     $('splitBtn').textContent = sp.busy ? '나누는 중…' : splitArmed ? '한 번 더 누르면 나눠요' : '✂ 여기서 나누기';
     const l = sp.last;

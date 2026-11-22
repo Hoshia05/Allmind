@@ -996,6 +996,7 @@ body.xy-open .layout { display: none !important; }
 .out-split { margin-top: 12px; padding: 12px; border-radius: 10px; background: var(--panel-2); display: grid; gap: 8px; }
 .out-split .k { font-weight: 800; font-size: 15px; }
 .out-split input { width: 100%; }
+.out-split.idle > :not(.k):not(#splitIdle) { opacity: .5; }
 .out-split .btn.armed { border-color: var(--warn); color: var(--warn); }
 .out-warn { font-size: 12.5px; line-height: 1.5; color: var(--warn); }
 .out-warn a { color: inherit; cursor: pointer; text-decoration: underline; }
