@@ -78,12 +78,12 @@ node tools/dev/sse-stats.mjs 10    # what the dashboard receives per second
 for the fixtures; if ffmpeg isn't on PATH, pass its folder: `FFMPEG_DIR="/c/path/to/ffmpeg/bin" sh tools/dev/up.sh` (only the first
 run, which makes `.dev/`, needs it). Clone with **LF line endings** (`git clone -c core.autocrlf=false …`): with Git for Windows'
 default `autocrlf=true` the `.sh` files get CRLF and `sh` fails on them. `up.sh` sets `ALLMIND_DEV=1` (`win.isDev`), which on
-Windows skips the tray icon, app windows (`openAppWindow` / default browser only log "would open"), the `%LOCALAPPDATA%Allmind`
+Windows skips the tray icon, app windows (`openAppWindow` / default browser only log "would open"), the `%LOCALAPPDATA%\Allmind`
 launcher copy and origin sync, taskbar tagging, the firewall check/rule, run-at-login, `alertBox` and remove-all's deleter; updater
 downloads go to `.dev/updates`, the mock's recordings/Drive to `.dev/rec`, `.dev/drive`, the OBS log tail to `.dev/obs-logs`.
-Nothing is written to `%APPDATA%Allmind` or `%LOCALAPPDATA%Allmind` (from source, `CONFIG_DIR` is the checkout anyway). Still
+Nothing is written to `%APPDATA%\Allmind` or `%LOCALAPPDATA%\Allmind` (from source, `CONFIG_DIR` is the checkout anyway). Still
 real on Windows in dev: TTS (PowerShell `System.Speech` → `.dev/data/tts`), the OBS-uptime PowerShell query, folder pickers you click.
-`down.sh` stops the native node processes from Git Bash too. Never run the built exe on a dev PC: it uses `%APPDATA%Allmind`.
+`down.sh` stops the native node processes from Git Bash too. Never run the built exe on a dev PC: it uses `%APPDATA%\Allmind`.
 Logs: `.dev/server.log`, `.dev/mock.log`. Playwright + Chromium are available for UI
 checks and screenshots (no WebKit, so Safari/iPad behaviour can't be tested here).
 Use **Python** Playwright (`python3 -I script.py`, `from playwright.sync_api import sync_playwright`) where it's installed;
@@ -265,8 +265,8 @@ release notes): any model can do it from the plan + this file. Start a fresh ses
 feature rather than continuing one very long conversation.
 
 ## Obsidian vault
-The owner keeps project context in an Obsidian vault.
-- Rules for all agents: %USERPROFILE%\Documents\Obsidian Vault\AGENTS.md
-- This project's notes: %USERPROFILE%\Documents\Obsidian Vault\Projects\Allmind\Allmind Overview.md (hub: `Areas\Streaming Megaproject.md`)
+The owner keeps project context in an Obsidian vault (folder `Kidian`).
+- Rules for all agents: %USERPROFILE%\Documents\Kidian\AGENTS.md
+- This project's notes: %USERPROFILE%\Documents\Kidian\Projects\Allmind\Allmind Overview.md (hub: `Areas\Streaming Megaproject.md`)
 - At session start, read the rules and this project's overview note. When Allmind changes, or when the owner says "wrap up", follow the vault's `AGENTS.md` ("Code changes must reach the vault" and the wrap-up steps).
 - If that path doesn't exist (a cloud session without the owner's PC), clone the private repo `Hoshia05/Kidian` if you have access and follow its `AGENTS.md`; if you can't reach it, say so in your final message and give a ready-to-paste summary (version, what changed, decisions, untested items) instead of skipping it.

@@ -12,7 +12,7 @@ import { cmpVersion } from './update.js';
 
 export const isWin = process.platform === 'win32';
 // Dev harness (tools/dev/up.sh sets ALLMIND_DEV=1): running from source on Windows must not open windows, add a tray icon,
-// copy a launcher into %LOCALAPPDATA%Allmind, tag taskbar windows or query the firewall; everything stays in .dev/.
+// copy a launcher into %LOCALAPPDATA%\Allmind, tag taskbar windows or query the firewall; everything stays in .dev/.
 // See CLAUDE.md "Develop & test".
 export const isDev = process.env.ALLMIND_DEV === '1';
 const desktop = isWin && !isDev;
