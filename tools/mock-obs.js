@@ -134,7 +134,7 @@ const REC_DIR = process.env.MOCK_REC_DIR || '/tmp/mock-rec';
 const sceneAdds = {};
 const reqCounts = {};
 if (process.env.MOCK_REQS) setInterval(() => { console.log('REQS/20s', JSON.stringify(reqCounts)); for (const k in reqCounts) delete reqCounts[k]; }, 20000);
-const rec = { active: false, paused: false, acc: 0, since: 0, path: '', chapters: [] };
+const rec = { active: false, paused: false, acc: 0, since: 0, path: '', chapters: [], splits: 0 };
 // OBS's stream output: live unless MOCK_OFFLINE; StartStream / StopStream switch it (and the mock YouTube)
 const stream = { active: !process.env.MOCK_OFFLINE };
 const recMs = () => rec.acc + (rec.active && !rec.paused ? Date.now() - rec.since : 0);
@@ -165,6 +165,22 @@ function recHandle(type, d) {
       setTimeout(() => recState('STOPPED', { outputPath: rec.path }), Number(process.env.MOCK_STOP_MS || 2500)); // OBS finishes the file first
       return { outputPath: rec.path };
     }
+    // 파트 나누기: MOCK_SPLIT_FAIL=1 → OBS refuses (like a format without splitting);
+    // MOCK_SPLIT_RESET=1 → the output duration starts at 0 again in the new file (otherwise it keeps counting)
+    case 'SplitRecordFile': {
+      if (!rec.active) throw Object.assign(new Error('Record is not active.'), { code: 501 });
+      if (process.env.MOCK_SPLIT_FAIL) throw Object.assign(new Error('Recording format does not support splitting.'), { code: 702 });
+      const old = rec.path;
+      fs.writeFileSync(old, process.env.MOCK_REC_SIZE ? crypto.randomBytes(Number(process.env.MOCK_REC_SIZE)) : JSON.stringify({ mock: true, durationMs: recMs(), chapters: rec.chapters }));
+      const n = new Date();
+      rec.splits++;
+      rec.path = `${REC_DIR}/${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())} ${pad(n.getHours())}-${pad(n.getMinutes())}-${pad(n.getSeconds())}_${rec.splits}.mp4`;
+      if (process.env.MOCK_SPLIT_RESET) { rec.acc = 0; rec.since = Date.now(); }
+      rec.chapters = [];
+      log('record split', old, '→', rec.path);
+      setTimeout(() => broadcast('RecordFileChanged', { oldOutputPath: old, newOutputPath: rec.path }, 1 << 6), 150);
+      return;
+    }
     case 'PauseRecord': rec.acc = recMs(); rec.paused = true; setTimeout(() => recState('PAUSED'), 10); return;
     case 'ResumeRecord': rec.since = Date.now(); rec.paused = false; setTimeout(() => recState('RESUMED'), 10); return;
     case 'CreateRecordChapter':
@@ -188,7 +204,7 @@ if (process.env.MOCK_SKIP_EVERY_MS) setInterval(() => {
 
 function handle(type, d) {
   switch (type) {
-    case 'GetRecordStatus': case 'GetRecordDirectory': case 'StartRecord': case 'StopRecord': case 'PauseRecord': case 'ResumeRecord': case 'CreateRecordChapter':
+    case 'GetRecordStatus': case 'GetRecordDirectory': case 'StartRecord': case 'StopRecord': case 'SplitRecordFile': case 'PauseRecord': case 'ResumeRecord': case 'CreateRecordChapter':
       return recHandle(type, d);
     case 'GetVersion': return { obsVersion: '31.0.0-mock' };
     // test helper: node tools/dev/obs.mjs MockEmit '{"eventType":"StreamStateChanged","eventData":{…}}' sends any event
@@ -786,8 +802,35 @@ async function mockApis(req, res) {
   }
   if (p === '/g/youtube/v3/liveBroadcasts/transition') {
     const b = yt.broadcasts.get(u.searchParams.get('id'));
-    b.status.lifeCycleStatus = u.searchParams.get('broadcastStatus') === 'complete' ? 'complete' : b.status.lifeCycleStatus;
-    return out(200, b);
+    if (!b) return out(404, { error: { message: 'Broadcast not found' } });
+    const to = u.searchParams.get('broadcastStatus');
+    const life = b.status.lifeCycleStatus;
+    const bad = (reason, msg) => out(403, { error: { message: msg, errors: [{ reason }] } });
+    // like YouTube: complete only from live/testing; live from ready (or testing) while video arrives on the bound key, and only
+    // one broadcast per key at a time (MOCK_YT_NEEDTEST=1: ready → live is refused, it has to go through testing first;
+    // MOCK_YT_LIVEMS=ms: how long "liveStarting" lasts)
+    if (to === 'complete') {
+      if (!['live', 'testing', 'liveStarting'].includes(life)) return bad('invalidTransition', 'Invalid transition');
+      b.status.lifeCycleStatus = 'complete';
+      log('yt broadcast complete', b.id);
+      return out(200, b);
+    }
+    if (to === 'testing') {
+      if (life !== 'ready') return bad('invalidTransition', 'Invalid transition');
+      b.status.lifeCycleStatus = 'testing';
+      return out(200, b);
+    }
+    if (to === 'live') {
+      if (life === 'live' || life === 'liveStarting') return bad('redundantTransition', 'Redundant transition');
+      if (!['ready', 'testing'].includes(life) || (life === 'ready' && process.env.MOCK_YT_NEEDTEST)) return bad('invalidTransition', 'Invalid transition');
+      const key = b.contentDetails.boundStreamId;
+      if (!stream.active || !yt.streams.get(key) || yt.streams.get(key).status.streamStatus !== 'active') return bad('errorStreamInactive', 'Stream inactive');
+      if ([...yt.broadcasts.values()].some((x) => x.id !== b.id && x.contentDetails.boundStreamId === key && ['live', 'liveStarting'].includes(x.status.lifeCycleStatus))) return bad('invalidTransition', 'Another broadcast is live on this stream');
+      b.status.lifeCycleStatus = 'liveStarting';
+      setTimeout(() => { if (b.status.lifeCycleStatus === 'liveStarting') { b.status.lifeCycleStatus = 'live'; log('yt broadcast live', b.id, b.status.privacyStatus); } }, Number(process.env.MOCK_YT_LIVEMS || 1500));
+      return out(200, b);
+    }
+    return bad('invalidTransition', 'Invalid transition');
   }
   // live chat (liveChatMessages.list): only for a live, non-private broadcast; new fake messages every few seconds
   if (p === '/g/youtube/v3/liveChat/messages') {

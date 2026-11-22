@@ -45,7 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 
-const VERSION = '0.46.5';
+const VERSION = '0.47.0';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
@@ -249,6 +249,7 @@ async function main() {
   let preflightLast = null;
   let reports = null; // set once the Xylem parts exist (needs the roulette)
   let draw = null;    // 시청자 추첨, same
+  const split = { busy: false, part: 1, last: null }; // 파트 나누기 (docs/plans/split.md)
   const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
   // uploads wait while OBS streams or records, and 5 min after a stream ends (it may be restarted)
   // YouTube chat joins the dashboard chat list while a non-private YouTube broadcast is live
@@ -330,6 +331,7 @@ async function main() {
     studio: studio.status(),
     obsPanel: obsPanel.status(),
     marks: markers.status(),
+    split: { busy: split.busy, part: markers.part() || split.part, last: split.last },
     soundboard: soundboard.status(),
     donation: viewer.status(),
     interact: interact.status(),
@@ -385,6 +387,84 @@ async function main() {
   studio.on('change', stateChanged);
   markers.on('change', stateChanged);
   markers.on('finished', (rec) => drive.add({ ...rec, name: prepFile() }));
+
+  // ---------- 파트 나누기 (docs/plans/split.md): cut the recording and the YouTube archive here, go on in new ones ----------
+  // Every split starts from scratch, so it works any number of times in one stream. Order: YouTube part N+1 is prepared (the
+  // current one keeps running) → OBS cuts the file → part N ends / N+1 goes live. A failed YouTube step never stops the
+  // recording cut (the recording can't be redone); a refused OBS cut throws the prepared broadcast away again.
+  const splitRecording = async ({ title, ytTitle, fileName, mode }) => {
+    if (split.busy) throw new Error('지금 나누는 중이에요');
+    const recording = !!(markers.cur && !markers.cur.done);
+    const ytOn = obsStreaming && youtube.enabled();
+    if (!recording && !ytOn) throw new Error('녹화나 방송을 하고 있을 때만 나눌 수 있어요');
+    title = String(title || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+    if (!title) throw new Error('다음 파트의 제목을 적어 주세요');
+    ytTitle = String(ytTitle || '').replace(/\s+/g, ' ').trim().slice(0, 100) || null;
+    fileName = safeName(String(fileName || '').replace(/\.(mp4|mkv|mov|flv|ts)$/i, '')) || null;
+    split.busy = true;
+    stateChanged();
+    const t0 = Date.now();
+    const out = { at: t0, from: markers.part() || split.part, title, file: null, youtube: null, error: null };
+    try {
+      markers.holdTitle(); // the part that ends keeps the name it has now, whatever Chzzk/방송 준비 say next
+      let handle = null;
+      if (ytOn) {
+        try {
+          handle = await youtube.prepareNext(youtube.titleFor(title, ytTitle));
+          if (!handle) out.youtube = { ok: false, error: '지금 유튜브가 라이브가 아니라서 유튜브는 그대로 둬요' };
+        } catch (e) { console.log(`[split] YouTube prepare failed: ${e.message}`); out.youtube = { ok: false, error: `유튜브 새 방송을 못 만들었어요 — 유튜브 아카이브는 한 덩어리로 가요${e.status ? ` (오류 ${e.status})` : ''}` }; }
+      }
+      if (recording) {
+        try {
+          if (mode === 'restart') {
+            const finished = markers.waitFinished(20000); finished.catch(() => {});
+            const prevPart = markers.part();
+            await obs.call('StopRecord');
+            await finished;
+            await obs.call('StartRecord');
+            for (let i = 0; i < 50 && !(markers.cur && !markers.cur.done); i++) await new Promise((r) => setTimeout(r, 200));
+            if (!(markers.cur && !markers.cur.done)) throw new Error('OBS가 새 녹화를 시작하지 않았어요 — OBS에서 녹화를 직접 켜 주세요');
+            markers.setPart(prevPart + 1);
+          } else {
+            const w = markers.waitSplit(8000); w.catch(() => {});
+            try { await obs.call('SplitRecordFile'); } catch (e) { w.catch(() => {}); console.log(`[split] OBS refused SplitRecordFile: ${e.message} (code ${e.code})`); throw Object.assign(new Error(e.code ? `오류 ${e.code}` : '알 수 없는 오류'), { code: e.code, refused: true }); }
+            await w;
+          }
+        } catch (e) {
+          if (handle) await youtube.discard(handle);
+          const err = new Error(e.refused
+            ? `OBS가 녹화 파일 나누기를 받아 주지 않았어요 (${e.message}) — 아마 OBS 설정 → 출력 → 녹화의 "파일 자동 분할" 설정이 필요한 것 같아요. 아니면 아래 버튼으로 녹화를 껐다 켜서 나눌 수 있어요 (몇 초 비어요)`
+            : /[가-힣]/.test(e.message) ? e.message : (console.log(`[split] OBS: ${e.message}`), `OBS가 요청을 받아 주지 않았어요${e.code ? ` (오류 ${e.code})` : ''}`));
+          err.extra = e.refused && mode !== 'restart' ? { canRestart: true } : {};
+          throw err;
+        }
+        out.file = markers.cur?.outputPath ? path.basename(markers.cur.outputPath) : null;
+      }
+      // the new part is named after what was typed (the part that ended already went to the Drive queue under its own name)
+      Object.assign(prep, { title, ytTitle, fileName, appliedAt: Date.now() });
+      saveState('prep', prep);
+      markers.holdAs(title);
+      split.part = (markers.part() || split.part) + (recording ? 0 : 1);
+      if (handle) {
+        try {
+          const r = await youtube.cut(handle);
+          out.youtube = r.live ? { ok: true, waitedMs: r.waited } : { ok: false, error: 'YouTube가 새 방송을 아직 라이브로 바꾸지 않았어요 — 잠시 뒤 상태를 봐 주세요' };
+        } catch (e) { console.log(`[split] YouTube switch failed: ${e.message}`); out.youtube = { ok: false, error: `유튜브 방송을 바꾸다 막혔어요${e.status ? ` (오류 ${e.status})` : ''} — YouTube 스튜디오에서 확인해 주세요` }; }
+      }
+      out.part = split.part;
+      out.ms = Date.now() - t0;
+      split.last = out;
+      console.log(`[split] part ${out.from} → ${out.part} in ${out.ms} ms; youtube ${out.youtube ? (out.youtube.ok ? 'ok' : out.youtube.error) : '—'}`);
+      return out;
+    } catch (e) {
+      out.error = e.message;
+      split.last = out;
+      throw e;
+    } finally {
+      split.busy = false;
+      stateChanged();
+    }
+  };
   for (const x of [google, youtube, drive, chzzkOpen, ytChat]) x.on('change', stateChanged);
   for (const x of [youtube, drive]) x.on('toast', (t) => sendAll('toast', { long: true, ...t }));
   // OBS's own stream output (the Multi-RTMP plugin's outputs aren't visible over obs-websocket)
@@ -393,6 +473,7 @@ async function main() {
     obsStreaming = active;
     youtube.onStreaming(active);
     if (active) {
+      split.part = 1; split.last = null;
       draw?.streamStarted(); // "지난 당첨자 제외 (이번 방송)" counts from here
       reports?.start().catch((e) => console.warn('[report]', e.message));
       const t = new Date();
@@ -747,6 +828,7 @@ async function main() {
     'POST /api/obs/volume': (b) => obsPanel.setVolume(String(b.name || ''), b.db),
     'POST /api/obs/pins': (b) => obsPanel.setPins(b || {}),
     'GET /api/obs/catalog': () => obsPanel.catalog(),
+    'POST /api/record/split': async (b) => ({ split: await splitRecording({ title: b.title, ytTitle: b.ytTitle, fileName: b.fileName, mode: b.mode === 'restart' ? 'restart' : 'split' }) }),
     'POST /api/chzzk/donation-read': (b) => chzzk.markRead(b.key, b.read !== false),
     'POST /api/chzzk/donations-read-all': () => chzzk.markAllRead(),
     'GET /api/update': () => updater.state(),
@@ -771,21 +853,27 @@ async function main() {
       const fileName = safeName(String(b.fileName || '').replace(/\.(mp4|mkv|mov|flv|ts)$/i, '')) || null;
       // "유튜브 제목·녹화 파일 이름도 같이 바꾸기" off (the default mid-stream): only Chzzk changes; the recording in
       // progress keeps the name it has now (held before Chzzk shows the new title)
-      const sync = b.sync !== false;
-      const held = sync ? (markers.releaseTitle(), null) : markers.holdTitle();
-      if (sync) Object.assign(prep, { ytTitle, fileName });
-      Object.assign(prep, { title, category, tags, appliedAt: Date.now() });
+      // "적용하면서 ✂ 여기서 나누기": the new title starts the next part (recording + YouTube archive), see splitRecording()
+      const doSplit = b.split === true;
+      const sync = doSplit || b.sync !== false;
+      const held = doSplit ? markers.holdTitle() : sync ? (markers.releaseTitle(), null) : markers.holdTitle(); // (before Chzzk shows the new title)
+      if (sync && !doSplit) Object.assign(prep, { ytTitle, fileName });
+      if (doSplit) Object.assign(prep, { category, tags }); else Object.assign(prep, { title, category, tags, appliedAt: Date.now() });
       const results = {};
       if (chzzkOpen.loggedIn()) {
         try { await chzzkOpen.setSetting({ title, category, tags }); results.chzzk = { ok: true }; } catch (e) { results.chzzk = { ok: false, error: e.message }; }
       } else results.chzzk = { skipped: true, error: '치지직 연동 안 됨 (설정 창에서 로그인)' };
-      if (!sync) results.youtube = { skipped: true, error: '그대로 둬요 (같이 바꾸기 꺼짐)' };
+      if (doSplit) {
+        try { results.split = { ok: true, ...(await splitRecording({ title, ytTitle, fileName, mode: 'split' })) }; } catch (e) { results.split = { ok: false, error: e.message, canRestart: !!e.extra?.canRestart }; }
+        results.youtube = results.split.ok ? (results.split.youtube || { skipped: true, error: 'YouTube 아카이브 연동 안 됨' }) : { skipped: true, error: '나누지 못해서 그대로 둬요' };
+      } else if (!sync) results.youtube = { skipped: true, error: '그대로 둬요 (같이 바꾸기 꺼짐)' };
       else if (youtube.enabled()) {
         try { const r = await youtube.setTitle(title, ytTitle); results.youtube = { ok: true, title: r.title }; } catch (e) { results.youtube = { ok: false, error: e.message }; }
       } else results.youtube = { skipped: true, error: 'YouTube 아카이브 연동 안 됨' };
       const nameFor = (t) => safeName(fillTemplate(config.drive?.nameTemplate || '{date} - {title}', { date: new Date(), title: safeName(t) }));
       const recording = !!(markers.cur && !markers.cur.done);
-      if (!sync) results.file = { skipped: true, error: prepFile() ? `그대로 둬요: ${prepFile()}.mp4` : held ? `그대로 둬요 — 지금 녹화는 이 이름으로 올려요: ${nameFor(held)}.mp4` : '그대로 둬요' };
+      if (doSplit) results.file = results.split.ok ? { ok: true, name: fileName || nameFor(title), longest: false } : { skipped: true, error: '나누지 못해서 그대로 둬요' };
+      else if (!sync) results.file = { skipped: true, error: prepFile() ? `그대로 둬요: ${prepFile()}.mp4` : held ? `그대로 둬요 — 지금 녹화는 이 이름으로 올려요: ${nameFor(held)}.mp4` : '그대로 둬요' };
       else results.file = { ok: true, name: fileName || nameFor(title), longest: !fileName && recording };
       prep.results = results;
       saveState('prep', prep);
@@ -1369,7 +1457,7 @@ async function main() {
         stateChanged();
         json(res, 200, { ok: true, ...(result && typeof result === 'object' ? result : {}) });
       } catch (e) {
-        json(res, 400, { ok: false, error: e.message });
+        json(res, 400, { ok: false, error: e.message, ...(e.extra || {}) });
       }
       return;
     }

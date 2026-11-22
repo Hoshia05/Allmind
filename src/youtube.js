@@ -82,10 +82,12 @@ export class YouTubeGuard extends EventEmitter {
     this.emit('change');
   }
 
-  title() {
-    const full = (this.getFullTitle() || '').trim();
+  title() { return this.titleFor(this.getTitle(), this.getFullTitle()); }
+  // the broadcast title for a topic title (and optionally a separately typed full title)
+  titleFor(topic, full = '') {
+    full = String(full || '').trim();
     if (full) return full.slice(0, 100);
-    const t = (this.getTitle() || '').trim() || '방송 아카이브';
+    const t = String(topic || '').trim() || '방송 아카이브';
     return fillTemplate(this.cfg.titleTemplate || '{date} - {title}', { date: new Date(), title: t }).slice(0, 100);
   }
 
@@ -197,16 +199,18 @@ export class YouTubeGuard extends EventEmitter {
     }
   }
 
-  async _create() {
+  // title / autoStart: a broadcast made for a 파트 나누기 gets the next part's title and does NOT start by itself (the key is
+  // already receiving video while the previous part is live — Allmind switches them explicitly, see cut())
+  async _create({ title = this.title(), autoStart = true, track = true } = {}) {
     const b = await this.g.api('POST', '/youtube/v3/liveBroadcasts', {
       query: { part: 'snippet,status,contentDetails' },
       body: {
-        snippet: { title: this.title(), scheduledStartTime: new Date(Date.now() + 60000).toISOString(), description: descFor(new Date()) },
+        snippet: { title, scheduledStartTime: new Date(Date.now() + 60000).toISOString(), description: descFor(new Date()) },
         status: { privacyStatus: this.privacy(), selfDeclaredMadeForKids: false },
-        contentDetails: { enableAutoStart: true, enableAutoStop: true, enableDvr: true, monitorStream: { enableMonitorStream: false } },
+        contentDetails: { enableAutoStart: autoStart, enableAutoStop: true, enableDvr: true, monitorStream: { enableMonitorStream: false } },
       },
     });
-    this.st.broadcastId = b.id;
+    if (track) this.st.broadcastId = b.id;
     this._remember(b.id);
     await this._bind(b.id);
     return (await this._get(b.id)) || b;
@@ -267,8 +271,64 @@ export class YouTubeGuard extends EventEmitter {
     this.emit('change');
   }
 
+  // ---------- 파트 나누기 (docs/plans/split.md): end the live archive and go on in a new one on the same key ----------
+  // Step 1 (before OBS cuts its file; takes a few API calls while the current part keeps running): make the next broadcast.
+  // → { from, to } or null when there is nothing live to cut.
+  async prepareNext(title) {
+    if (!this.enabled() || !this.streaming || !this.st.broadcastId) return null;
+    const cur = await this._get(this.st.broadcastId);
+    if (!cur || cur.status?.lifeCycleStatus !== 'live') return null;
+    const t = String(title || '').trim().slice(0, 100) || this.title();
+    const b = await this._create({ title: t, autoStart: false, track: false });
+    console.log(`[youtube] next part prepared: ${b.id} ("${t}") — current ${cur.id}`);
+    return { from: cur.id, to: b.id };
+  }
+  // the cut was not made after all (OBS refused): the prepared broadcast is of no use
+  async discard(h) {
+    if (!h?.to) return;
+    await this.g.api('DELETE', '/youtube/v3/liveBroadcasts', { query: { id: h.to } }).catch((e) => console.log(`[youtube] discard ${h.to}: ${e.message}`));
+    this.st.made = (this.st.made || []).filter((x) => x !== h.to);
+    this._save();
+  }
+  // Step 2 (right after OBS cut the file): the old part ends, the new one goes live. Resolves { live, waited }.
+  async cut(h) {
+    this.splitting = true;
+    try {
+      await this.g.api('POST', '/youtube/v3/liveBroadcasts/transition', { query: { broadcastStatus: 'complete', id: h.from, part: 'status' } });
+      console.log(`[youtube] part ended: ${h.from}`);
+      this.st.broadcastId = h.to;
+      this.liveSince = Date.now();
+      this._save();
+      // → live. From "ready" this should be allowed straight away (monitor stream is off); some channels need "testing" first,
+      // and YouTube may take a moment to see the stream — so try, and keep looking for a while.
+      const t0 = Date.now();
+      let b = await this._get(h.to);
+      let triedTesting = false;
+      while (b && b.status?.lifeCycleStatus !== 'live' && Date.now() - t0 < 25000) {
+        try {
+          await this.g.api('POST', '/youtube/v3/liveBroadcasts/transition', { query: { broadcastStatus: 'live', id: h.to, part: 'status' } });
+        } catch (e) {
+          // "ready" may have to go through "testing" first (invalidTransition); a redundant one just means it is starting
+          if (!triedTesting && b.status?.lifeCycleStatus === 'ready' && /invalidTransition/i.test(`${e.message} ${e.reason || ''}`)) {
+            triedTesting = true;
+            await this.g.api('POST', '/youtube/v3/liveBroadcasts/transition', { query: { broadcastStatus: 'testing', id: h.to, part: 'status' } }).catch(() => {});
+          }
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+        b = await this._get(h.to);
+      }
+      const live = b?.status?.lifeCycleStatus === 'live';
+      this.liveSince = Date.now();
+      if (b) this._set({ b: this._summary(b), alert: null, error: null });
+      console.log(`[youtube] next part ${h.to} is ${b?.status?.lifeCycleStatus || '?'} after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+      return { live, waited: Date.now() - t0 };
+    } finally {
+      this.splitting = false;
+    }
+  }
+
   async check() {
-    if (!this.enabled() || !this.streaming) return;
+    if (!this.enabled() || !this.streaming || this.splitting) return;
     const b = this.st.broadcastId ? await this._get(this.st.broadcastId) : null;
     if (!b) { await this.ensureReady('missing'); return; }
     let cur = b;

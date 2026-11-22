@@ -47,6 +47,8 @@ export class Markers extends EventEmitter {
     this.cur = null; // the recording in progress, or the last finished one (for notes)
 
     obs.on('RecordStateChanged', (e) => this._onState(e).catch((err) => this._log('state', err)));
+    // 파트 나누기 (docs/plans/split.md): OBS cut the file and goes on recording into a new one
+    obs.on('RecordFileChanged', (e) => this._split(e).catch((err) => this._log('split', err)));
     obs.on('connected', () => this._sync().catch((err) => this._log('sync', err)));
     obs.on('disconnected', () => {
       if (this.cur && !this.cur.done) this.cur.lostAt = now();
@@ -81,6 +83,51 @@ export class Markers extends EventEmitter {
     }
   }
 
+  // ---------- 파트 나누기: OBS cut the file (RecordFileChanged) ----------
+  // The finished part gets its own markers file next to its own video (and goes to the Drive queue); the next part starts
+  // with its own clock at 0. Resolves the 'split' event (also used by waitSplit()).
+  async _split({ newOutputPath }) {
+    const r = this.cur && !this.cur.done ? this.cur : null;
+    if (!r || !newOutputPath) return;
+    const part = r.part || 1;
+    this._finish(r, r.outputPath); // (the path of the video that just ended: what STARTED / the last split told us)
+    await this._begin({ outputPath: newOutputPath, durationMs: 0 });
+    const next = this.cur;
+    next.part = part + 1;
+    next.obsOffset = null;
+    this.emit('split', { part, next: next.part, file: newOutputPath });
+    try { // where OBS's own clock stands at the cut (≈ our 0)
+      const st = await this.obs.call('GetRecordStatus');
+      if (this.cur === next && !next.done) next.obsOffset = st.outputActive ? st.outputDuration : 0;
+    } catch { if (this.cur === next) next.obsOffset = 0; }
+    next.dirty = true; // (offset + name go into the in-progress file)
+    this._log('split', `part ${part} closed → part ${next.part} (${path.basename(newOutputPath)}), OBS clock at the cut ${next.obsOffset}`);
+  }
+  // resolves once the next 'split' happened (or rejects after ms)
+  waitSplit(ms = 8000) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { this.off('split', on); reject(new Error('OBS가 새 녹화 파일을 알려 주지 않았어요')); }, ms);
+      const on = (e) => { clearTimeout(t); resolve(e); };
+      this.once('split', on);
+    });
+  }
+  // resolves once the recording that was running has been finished (STOPPED)
+  waitFinished(ms = 20000) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { this.off('finished', on); reject(new Error('OBS가 녹화를 끝냈다고 알려 주지 않았어요')); }, ms);
+      const on = (e) => { clearTimeout(t); resolve(e); };
+      this.once('finished', on);
+    });
+  }
+  // the title the current part is named by (a part started by a split is named after what the owner typed)
+  holdAs(title) {
+    const r = this.cur && !this.cur.done ? this.cur : null;
+    if (r) { r.heldTitle = String(title || '').trim() || null; r.dirty = true; }
+    return !!r;
+  }
+  setPart(n) { const r = this.cur && !this.cur.done ? this.cur : null; if (r) r.part = n; }
+  part() { const r = this.cur && !this.cur.done ? this.cur : null; return r ? r.part || 1 : 0; }
+
   // On (re)connect, catch up with what OBS is doing.
   async _sync() {
     const st = await this.obs.call('GetRecordStatus');
@@ -89,7 +136,7 @@ export class Markers extends EventEmitter {
       if (r) {
         // same recording if OBS's clock is where ours could be
         const known = r.lastObsMs ?? 0;
-        if (st.outputDuration + 2000 >= known && st.outputDuration <= this._elapsed(r) + 5000) {
+        if (st.outputDuration + 2000 >= known && this._obsT(r, st) <= this._elapsed(r) + 5000) {
           this._resync(r, st);
           r.lostAt = null;
           this.emit('change');
@@ -123,6 +170,8 @@ export class Markers extends EventEmitter {
       titleAt: now(),
       done: false,
       lastObsMs: durationMs,
+      part: 1,            // 파트 나누기: which part of this recording output (a split starts the next)
+      obsOffset: 0,       // OBS's own clock at the start of this part (null = not read yet)
     };
     this.cur = r;
     r.title = this._titleNow();
@@ -172,7 +221,7 @@ export class Markers extends EventEmitter {
   holdTitle() {
     const r = this.cur && !this.cur.done ? this.cur : null;
     if (!r) return null;
-    if (!r.heldTitle) { this._noteTitle(r); r.heldTitle = this.bestTitle(r); }
+    if (!r.heldTitle) { this._noteTitle(r); r.heldTitle = this.bestTitle(r); r.dirty = true; }
     return r.heldTitle;
   }
 
@@ -195,7 +244,7 @@ export class Markers extends EventEmitter {
     if (!this.obs.connected || r.paused || r.done) return;
     const st = await this.obs.call('GetRecordStatus');
     if (r.done || r !== this.cur || !st.outputActive) return;
-    const off = st.outputDuration - this._elapsed(r);
+    const off = this._obsT(r, st) - this._elapsed(r);
     if (Math.abs(off) > DRIFT_LIMIT_MS) {
       this._log('drift', `${(off / 1000).toFixed(1)} s off, corrected`);
       this._resync(r, st);
@@ -232,6 +281,20 @@ export class Markers extends EventEmitter {
       const saved = Number(best.j.recording?.duration);
       const nowT = r.activeMs / 1000;
       if (saved > 0 && nowT - saved > GAP_MIN_MS / 1000) r.chat.push({ t: saved, type: 'gap', text: 'chat not recorded (Allmind was closed)' });
+    }
+    // a part started by a split: our clock is OBS's total minus where OBS's clock stood at the cut (saved with the file)
+    const a = best.j.allmind;
+    if (a && Number.isFinite(a.part)) r.part = a.part;
+    if (a?.held_title) r.heldTitle = String(a.held_title); // the name this part was given (kept across a restart)
+    if (r.part > 1) {
+      const total = r.activeMs; // OBS's clock now (what _begin got)
+      if (Number.isFinite(a?.obs_offset)) {
+        r.obsOffset = total + 1000 < a.obs_offset ? 0 : a.obs_offset; // below the offset = OBS started counting from 0 again
+        r.activeMs = Math.max(0, total - r.obsOffset);
+      } else { // the cut's offset wasn't saved yet: this part's start is the best we have
+        r.activeMs = Math.max(0, Date.now() - best.t);
+        r.obsOffset = Math.max(0, total - r.activeMs);
+      }
     }
     this._log('recovered', `${r.marks.length} marks, ${r.chat.length} chat items from ${best.f}`);
   }
@@ -353,7 +416,7 @@ export class Markers extends EventEmitter {
       r = this.cur;
     }
     this._resync(r, st);
-    const m = { t: Math.round(st.outputDuration) / 1000, label, created_at: iso(new Date(), false) };
+    const m = { t: Math.round(this._obsT(r, st)) / 1000, label, created_at: iso(new Date(), false) };
     r.marks.push(m);
     this._save(r);
     this.emit('change');
@@ -389,6 +452,8 @@ export class Markers extends EventEmitter {
       markers: r.marks,
     };
     if (this.saveChat) o.chat = r.chat;
+    // only while the recording is in progress (so a restart of Allmind can pick the right clock up again); dropped when it ends
+    if (!r.done) o.allmind = { part: r.part || 1, obs_offset: r.obsOffset ?? null, held_title: r.heldTitle || null };
     return o;
   }
 
@@ -430,8 +495,16 @@ export class Markers extends EventEmitter {
     return r.activeMs + (now() - r.runSince);
   }
 
+  // Seconds into THIS part's video according to OBS. After a split OBS's outputDuration may keep counting from the start of
+  // the whole output or start over (not known for sure), so the value at the cut is stored and taken off; if OBS's clock is
+  // ever below that value it restarted → no offset.
+  _obsT(r, st) {
+    if (r.obsOffset == null) return this._elapsed(r); // right at a split, before the offset is known
+    if (st.outputDuration < r.obsOffset - 1000) r.obsOffset = 0;
+    return Math.max(0, st.outputDuration - r.obsOffset);
+  }
   _resync(r, st) {
-    r.activeMs = st.outputDuration;
+    r.activeMs = this._obsT(r, st);
     r.runSince = now();
     r.paused = !!st.outputPaused;
     r.lastObsMs = st.outputDuration;
@@ -448,6 +521,7 @@ export class Markers extends EventEmitter {
       obs: this.obs.connected,
       recording: !r.done,
       paused: r.paused,
+      part: r.done ? 0 : r.part || 1,
       elapsedMs: Math.round(this._elapsed(r)),
       count: r.marks.length,
       marks: r.marks,

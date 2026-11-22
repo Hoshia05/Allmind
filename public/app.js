@@ -766,6 +766,7 @@ async function openPrep() {
   $('prepWrap').hidden = false;
   // mid-stream title changes (switching content) usually shouldn't rename the YouTube archive or the recording
   $('prepSync').checked = !S?.obsPanel?.stream?.active;
+  $('prepSplit').checked = false;
   $('prepResults').innerHTML = '';
   renderPrepTargets();
   renderUploads();
@@ -798,6 +799,12 @@ function renderPrepTargets() {
   const yt = S.google?.youtube && S.youtube?.hasKey && S.youtube?.enabled;
   // same clean-up as the upload (Windows can't have \\ / : * ? " < > | in names)
   const safe = (s) => s.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+  // ✂ 파트 나누기 offered while recording or streaming; it always renames the new part (so 같이 바꾸기 is on)
+  const canSplit = !!(S.marks?.recording || S.obsStreaming);
+  $('prepSplitRow').hidden = !canSplit;
+  if (!canSplit) $('prepSplit').checked = false;
+  if ($('prepSplit').checked) $('prepSync').checked = true;
+  $('prepSync').disabled = $('prepSplit').checked;
   const keep = !$('prepSync').checked;
   if (keep && !prepState.saved) prepState.saved = { yt: $('prepYt').value, file: $('prepFile').value };
   if (!keep && prepState.saved) { $('prepYt').value = prepState.saved.yt; $('prepFile').value = prepState.saved.file; prepState.saved = null; }
@@ -847,6 +854,7 @@ $('prepCatQ').addEventListener('input', () => {
 });
 $('prepTitle').addEventListener('input', renderPrepTargets);
 $('prepSync').addEventListener('change', renderPrepTargets);
+$('prepSplit').addEventListener('change', renderPrepTargets);
 // typing in the YouTube / file field detaches it from the Chzzk title; ↺ 자동 re-attaches
 $('prepYt').addEventListener('input', () => { prepState.autoYt = false; renderPrepTargets(); }); // left empty = automatic on apply
 $('prepFile').addEventListener('input', () => { prepState.autoFile = false; renderPrepTargets(); }); // left empty = automatic on apply
@@ -860,18 +868,21 @@ $('prepApply').addEventListener('click', async () => {
   const btn = $('prepApply');
   btn.disabled = true;
   $('prepNote').textContent = '적용 중…';
-  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value, ytTitle: prepState.autoYt ? '' : $('prepYt').value, fileName: prepState.autoFile ? '' : $('prepFile').value, sync: $('prepSync').checked });
+  const r = await api('prep/apply', { title: $('prepTitle').value, category: prepState.category, tags: $('prepTags').value, ytTitle: prepState.autoYt ? '' : $('prepYt').value, fileName: prepState.autoFile ? '' : $('prepFile').value, sync: $('prepSync').checked, split: $('prepSplit').checked });
   btn.disabled = false;
   $('prepNote').textContent = '';
   if (!r.ok) return;
   const line = (name, x, okText) => `<li class="${x.ok ? 'ok' : x.skipped ? 'skip' : 'bad'}">${x.ok ? '✓' : x.skipped ? '–' : '✕'} <b>${name}</b> ${esc(x.ok ? okText : x.error || '')}</li>`;
   $('prepResults').innerHTML =
     line('치지직', r.results.chzzk, '제목·카테고리·태그 적용') +
+    (r.results.split ? line('✂ 파트 나누기', r.results.split, `파트 ${r.results.split.from} → ${r.results.split.part} 새 파트를 시작했어요`) : '') +
     line('유튜브', r.results.youtube, r.results.youtube.title || '') +
     line('녹화 파일', r.results.file, r.results.file.longest
       ? `녹화 중이라, 끝나면 이번 녹화에서 가장 오래 걸려 있던 제목으로 올려요 (예: ${r.results.file.name}.mp4)`
       : `${r.results.file.name}.mp4 (녹화가 끝나면 이 이름으로 올려요)`);
-  if (r.results.chzzk.ok !== false && r.results.youtube.ok !== false) toast($('prepSync').checked ? '방송 준비 적용 완료' : '치지직 제목을 바꿨어요');
+  if (r.results.split?.ok === false) toast(r.results.split.canRestart ? `${r.results.split.error} (LIVE 버튼 → ✂ 파트 나누기에서 껐다 켜서 나눌 수 있어요)` : r.results.split.error, true);
+  else if (r.results.split?.ok) toast(`✂ 파트 ${r.results.split.part} 시작했어요`);
+  else if (r.results.chzzk.ok !== false && r.results.youtube.ok !== false) toast($('prepSync').checked ? '방송 준비 적용 완료' : '치지직 제목을 바꿨어요');
 });
 
 function renderUploads() {
@@ -2403,11 +2414,57 @@ setInterval(() => { if (loopEd && !$('loopWrap').hidden && !document.activeEleme
     if (r.ok) toast({ 'stream:start': '방송을 시작했어요', 'stream:stop': '방송을 껐어요', 'record:start': '녹화를 시작했어요', 'record:stop': '녹화를 껐어요', 'record:pause': '녹화를 멈췄어요', 'record:resume': '녹화를 이어서 해요' }[k]);
     renderOut();
   });
-  $('livePill').addEventListener('click', () => { armed = null; $('outWrap').hidden = false; renderOut(); });
+  // --- ✂ 파트 나누기 card (the input lives outside outBody, which is re-rendered every second) ---
+  let splitArmed = false, splitArmT = null;
+  const canSplitNow = () => !!(S?.obs?.connected && (S.marks?.recording || S.obsStreaming));
+  function renderSplit() {
+    const card = $('splitCard');
+    if ($('outWrap').hidden || !S) return;
+    const on = canSplitNow();
+    card.hidden = !on;
+    if (!on) return;
+    const sp = S.split || {};
+    $('splitPart').textContent = `· 지금 파트 ${sp.part || 1}`;
+    $('splitBtn').disabled = !!sp.busy;
+    $('splitRestart').disabled = !!sp.busy;
+    $('splitBtn').classList.toggle('armed', splitArmed);
+    $('splitBtn').textContent = sp.busy ? '나누는 중…' : splitArmed ? '한 번 더 누르면 나눠요' : '✂ 여기서 나누기';
+    const l = sp.last;
+    $('splitLast').textContent = l && Date.now() - l.at < 600000 && !sp.busy
+      ? (l.error ? `마지막: 실패 — ${l.error}` : `마지막: 파트 ${l.from} → ${l.part} (${l.ms}ms)${l.youtube && !l.youtube.ok ? ` · 유튜브: ${l.youtube.error}` : ''}`)
+      : '';
+  }
+  async function doSplit(mode) {
+    $('splitErr').hidden = true;
+    const title = $('splitTitle').value.trim();
+    if (!title) { toast('다음 파트의 제목을 적어 주세요', true); $('splitTitle').focus(); return; }
+    $('splitNote').textContent = '나누는 중…';
+    const r = await api('record/split', { title, mode });
+    $('splitNote').textContent = '';
+    if (r.ok) {
+      $('splitTitle').value = '';
+      toast(`✂ 파트 ${r.split.part} 시작했어요${r.split.youtube && !r.split.youtube.ok ? ` — ${r.split.youtube.error}` : ''}`, !!(r.split.youtube && !r.split.youtube.ok));
+    } else if (r.canRestart) {
+      $('splitErrText').textContent = r.error;
+      $('splitErr').hidden = false;
+    }
+    renderSplit();
+  }
+  $('splitBtn').addEventListener('click', () => {
+    buzz();
+    if (!splitArmed) { splitArmed = true; clearTimeout(splitArmT); splitArmT = setTimeout(() => { splitArmed = false; renderSplit(); }, 4000); renderSplit(); return; }
+    splitArmed = false; clearTimeout(splitArmT);
+    doSplit('split');
+  });
+  $('splitRestart').addEventListener('click', () => {
+    if (!confirm('녹화를 껐다가 바로 다시 켜서 나눌까요? 몇 초는 녹화가 비어요.')) return;
+    doSplit('restart');
+  });
+  $('livePill').addEventListener('click', () => { armed = null; $('outWrap').hidden = false; renderOut(); renderSplit(); });
   const closeOut = () => { $('outWrap').hidden = true; armed = null; };
   $('outClose').addEventListener('click', closeOut);
   $('outWrap').addEventListener('click', (ev) => { if (ev.target === $('outWrap')) closeOut(); });
-  setInterval(() => { if (!$('outWrap').hidden && S?.obsPanel?.record.active && !armed) renderOut(); }, 1000);
+  setInterval(() => { if (!$('outWrap').hidden) { if (S?.obsPanel?.record.active && !armed) renderOut(); renderSplit(); } }, 1000);
 
   // --- OBS panel ---
   const panel = $('obsPanel');

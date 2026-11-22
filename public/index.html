@@ -328,6 +328,17 @@
     <div class="sheet out-sheet" role="dialog" aria-label="방송 · 녹화">
       <div class="sheet-head"><b>방송 · 녹화</b><span class="muted small">OBS</span><button class="btn ghost icon" id="outClose" title="닫기">✕</button></div>
       <div id="outBody"></div>
+      <div class="out-split" id="splitCard" hidden>
+        <div class="k">✂ 파트 나누기 <span class="muted small" id="splitPart"></span></div>
+        <div class="muted small">여기서 녹화와 유튜브 아카이브를 끊고, 바로 다음 파트를 이어서 시작해요. 방송 중에 몇 번이든 나눌 수 있어요. 끊은 녹화는 방송이 끝나면 드라이브에 올라가요.</div>
+        <input id="splitTitle" maxlength="100" autocomplete="off" placeholder="다음 파트 제목 (필수)">
+        <div class="row-btns"><button class="btn" id="splitBtn">✂ 여기서 나누기</button><span class="muted small" id="splitNote"></span></div>
+        <div id="splitErr" hidden>
+          <div class="out-warn" id="splitErrText"></div>
+          <button class="btn danger" id="splitRestart">녹화를 껐다 켜서 나누기 (몇 초 비어요)</button>
+        </div>
+        <div class="muted small" id="splitLast"></div>
+      </div>
     </div>
   </div>
   <!-- OBS 패널에 보일 것 고르기 -->
@@ -363,6 +374,7 @@
         <div class="cat-list" id="prepCats" hidden></div>
       </div>
       <label class="field">태그 <span class="hint">쉼표로 구분 · 띄어쓰기와 특수문자는 빠져요</span><input id="prepTags" autocomplete="off" placeholder="예: 아머드코어, 수다"></label>
+      <label class="sync-row" id="prepSplitRow" hidden><input type="checkbox" id="prepSplit"><span>적용하면서 ✂ 여기서 나누기<span class="hint"> · 지금까지의 녹화와 유튜브 아카이브를 끊고, 이 제목으로 새 파트를 시작해요</span></span></label>
       <label class="sync-row"><input type="checkbox" id="prepSync"><span>유튜브 제목 · 녹화 파일 이름도 같이 바꾸기<span class="hint" id="syncHint"></span></span></label>
       <div class="field sync-dep">
         <span>유튜브 제목 <span class="hint" id="ytHint"></span></span>
