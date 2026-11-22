@@ -1,6 +1,6 @@
 # Modules — a standalone platform with optional parts (Xylem, assistant)
 
-**Status: M0 + M1 done (2026-11-22, mock only), nothing moved yet; next M5 after the contract review (Gate 1).** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
+**Status: M0, M1 and M5 done (2026-11-22, mock only, not released); nothing moved yet. Next: M2 before assistant v1.** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
 `Projects/Allmind/Decisions.md`): the platform (today's Allmind) must run **without Xylem and without the AI assistant**, must not
 depend on beta features, and stays public (MIT). Xylem should have a strict identity of its own but stay closely linked. The
 assistant is a separate process that only uses the platform's local API. Nobody else really uses the public repo yet, so
@@ -48,8 +48,10 @@ the platform keeps running.
 setup against the mock): the build-time list works in the SEA (fixture module `hello` loaded, its `/api/v1/m/hello/ping` and a
 pin-free route answered, the broken/too-new/greedy fixtures skipped); the normal build (no modules) passes all smoke checks.
 Contrary to the old assumption, a Node **24** SEA *can* `import()` a module from disk too (`--runtime-modules` test build) — the
-build-time list is kept anyway: it doesn't depend on the Node version (CI builds with Node 22, not checked), keeps one self-contained
-exe, and nothing next to the exe can inject code into it.
+build-time list is kept anyway: it doesn't depend on the Node version, keeps one self-contained exe, and nothing next to the exe can
+inject code into it. **Node 22 checked 2026-11-22** (CI's version): an exe built by Node 22.23.5's own `node.exe` (official nodejs.org
+zip, after M5) passes all 26 smoke checks and `tools/dev/v1-client.mjs`, inside the dev setup only. The C launcher wrapper
+(`build-all.sh`: zig + xz) was not built locally; it only unpacks the same payload.
 
 ### 2. Dashboard
 The 🎮 Xylem button, phone tab and tray item appear only when the snapshot lists the module (`modules: [...]`). `public/app.js`
@@ -114,6 +116,9 @@ Order: **M0 → M1 → M5 → assistant v0 → M2 → assistant v1**; M3/M4 opti
 - **M5 Public API.** Token + settings card, `/api/v1/events`, the five platform commands, `/deck/signal` + plugin "신호" action
   (rebuild + commit the plugin), `docs/contracts/` final. The assistant's v0 needs only M1 + M5.
   Contract drafts (`docs/contracts/`) are reviewed by the assistant's builder at Gate 1 before M5 code starts.
+  **Done 2026-11-22** (mock only, not released): Gate 1 signed off by gemini; `src/api.js` + `handleV1()` in `server.js`, settings card
+  API 토큰, plugin 1.2.0, contracts v1. Tests: smoke `v1/*` checks, `node tools/dev/v1-client.mjs` (exit test), boundary report unchanged
+  (75). gemini's StreamMaid `AllmindClient` was run against the real mock: all commands and events work.
 - **M2 Move Xylem server code** (`dogfight`, `roulette`, `draw`, `textbox`, `vtsthrow`, `xylem` pack manager) into `modules/xylem/`, registered
   through `ctx`, plus Xylem's `/api/v1/m/xylem/*` commands; `server.js` loses its Xylem imports, routes and `PIN_FREE` entries; the
   boundary check now fails on violations. Smoke script identical. **Before assistant v1.**
