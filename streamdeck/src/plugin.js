@@ -1,4 +1,5 @@
-// Allmind Stream Deck plugin: BGM + soundboard + 할 일 keys that show what's playing / what's next.
+// Allmind Stream Deck plugin: BGM + soundboard + 할 일 keys that show what's playing / what's next,
+// and the generic 신호 key (ptt/mute/kill) for a local client such as the assistant.
 //
 // Stream Deck starts this file with Node (bundled to bin/plugin.js by tools/build-streamdeck.mjs) and
 // these arguments: -port <n> -pluginUUID <id> -registerEvent <name> -info <json>. We speak the plain
@@ -18,6 +19,10 @@ const REGISTER = arg('registerEvent');
 const ACT_BGM = 'com.hoshia.allmind.bgm';
 const ACT_SB = 'com.hoshia.allmind.sb';
 const ACT_TODO = 'com.hoshia.allmind.todo';
+// 신호: GET /deck/signal?name=<ptt|mute|kill>&state=<down|up> on keyDown AND keyUp (the only action that sends keyUp),
+// republished by Allmind as `deck-signal` on /api/v1/events. Allmind doesn't interpret the names; the client decides
+// tap vs hold from the timestamps. An older Allmind answers 404 → the key shows an alert.
+const ACT_SIG = 'com.hoshia.allmind.signal';
 const NEED = '0.31.0';
 const NEED_LOOP_TODO = '0.42.0'; // bgm-loop, todo-next/undo (older Allmind answers "없는 동작")
 
@@ -61,6 +66,9 @@ sd.on('message', (raw) => {
     case 'keyDown':
       if (keys.has(context)) keys.get(context).settings = payload.settings || keys.get(context).settings;
       press(context).catch((e) => log('press', e.message));
+      break;
+    case 'keyUp':
+      if (keys.get(context)?.action === ACT_SIG) release(context).catch((e) => log('release', e.message));
       break;
     case 'propertyInspectorDidAppear':
       toPI(context);
@@ -185,8 +193,9 @@ const OPS = {
   [ACT_BGM]: { toggle: 'bgm-toggle', track: 'bgm-select', next: 'bgm-next', prev: 'bgm-prev', 'vol-up': 'bgm-vol-up', 'vol-down': 'bgm-vol-down', loop: 'bgm-loop' },
   [ACT_SB]: { play: 'sb-play', stop: 'sb-stop', 'vol-up': 'sb-vol-up', 'vol-down': 'sb-vol-down' },
   [ACT_TODO]: { next: 'todo-next', undo: 'todo-undo' },
+  [ACT_SIG]: { ptt: 'signal', mute: 'signal', kill: 'signal' },
 };
-const defaultOp = (action) => (action === ACT_BGM ? 'toggle' : action === ACT_TODO ? 'next' : 'play');
+const defaultOp = (action) => (action === ACT_BGM ? 'toggle' : action === ACT_TODO ? 'next' : action === ACT_SIG ? 'ptt' : 'play');
 const tooOld = () => am.version && cmpVersion(am.version, NEED_LOOP_TODO) < 0;
 
 async function press(context) {
@@ -194,6 +203,7 @@ async function press(context) {
   if (!k) return;
   if (!am.up) { send('showAlert', context); ensure(); return; }
   const op = k.settings.op || defaultOp(k.action);
+  if (k.action === ACT_SIG) return signal(context, 'down');
   const name = OPS[k.action]?.[op];
   if (!name) return send('showAlert', context);
   const params = {};
@@ -203,6 +213,23 @@ async function press(context) {
   const r = await call(name, params);
   if (!r.ok) { log(name, 'failed:', r.error); send('showAlert', context); return; }
   if (name === 'todo-next' || name === 'todo-undo') send('showOk', context);
+}
+
+// 신호 key: down on press, up on release; the key lights up while held
+async function signal(context, state) {
+  const k = keys.get(context);
+  if (!k) return;
+  const op = k.settings.op || 'ptt';
+  if (!OPS[ACT_SIG][op]) return send('showAlert', context);
+  k.held = state === 'down';
+  render(context);
+  const r = await call('signal', { name: op, state });
+  if (!r.ok) { log('signal', op, state, 'failed:', r.error); send('showAlert', context); }
+}
+async function release(context) {
+  const k = keys.get(context);
+  if (!k || !k.held) return; // no keyDown seen (e.g. the key appeared mid-press)
+  return signal(context, 'up');
 }
 
 // ---------- drawing ----------
@@ -222,6 +249,7 @@ const G = {
   loop: (c) => `<path d="M40 62 V54 Q40 40 54 40 H92" stroke="${c}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M88 28 L104 40 L88 52 Z" fill="${c}"/><path d="M104 50 V58 Q104 72 90 72 H52" stroke="${c}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M56 60 L40 72 L56 84 Z" fill="${c}"/>`,
   // a progress ring under the loop while the loop files are being made (p 0–100)
   ring: (c, p) => { const r = 44, L = 2 * Math.PI * r; return `<circle cx="72" cy="56" r="${r}" stroke="${C.dim}" stroke-width="5" fill="none"/><circle cx="72" cy="56" r="${r}" stroke="${c}" stroke-width="5" fill="none" stroke-dasharray="${(L * p) / 100} ${L}" transform="rotate(-90 72 56)"/>`; },
+  mic: (c) => `<rect x="58" y="18" width="28" height="50" rx="14" fill="${c}"/><path d="M44 54 Q44 80 72 80 Q100 80 100 54" stroke="${c}" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M72 80 V94 M56 94 H88" stroke="${c}" stroke-width="7" stroke-linecap="round"/>`,
   check: (c, done) => `<rect x="38" y="22" width="68" height="68" rx="12" stroke="${c}" stroke-width="7" fill="none"/>${done ? `<path d="M52 56 L66 70 L92 40" stroke="${c}" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` : ''}`,
   undo: (c) => `<path d="M50 44 H86 Q104 44 104 62 Q104 80 86 80 H58" stroke="${c}" stroke-width="8" fill="none" stroke-linecap="round"/><path d="M58 28 L38 44 L58 60 Z" fill="${c}"/>`,
   // small count in the top-right corner
@@ -256,9 +284,15 @@ const db = (v) => (Number.isFinite(v) ? `${Math.round(v)} dB` : '');
 
 function view(k) {
   const op = k.settings.op || defaultOp(k.action);
-  if (!am.up) return { image: svg(C.bg, (k.action === ACT_BGM ? G.note : k.action === ACT_TODO ? (c) => G.check(c, false) : G.bell)(C.dim) + G.off(C.red)), title: '연결\n안 됨' };
+  if (!am.up) return { image: svg(C.bg, (k.action === ACT_BGM ? G.note : k.action === ACT_TODO ? (c) => G.check(c, false) : k.action === ACT_SIG ? G.mic : G.bell)(C.dim) + G.off(C.red)), title: '연결\n안 됨' };
   const st = am.state || { bgm: {}, sb: {} };
   if ((k.action === ACT_TODO || op === 'loop') && tooOld()) return { image: svg(C.bg, (k.action === ACT_TODO ? (c) => G.check(c, false) : G.loop)(C.dim)), title: 'Allmind\n업데이트 필요' };
+  if (k.action === ACT_SIG) {
+    const held = !!k.held;
+    if (op === 'mute') return { image: svg(held ? '#33240a' : C.bg, G.vol(held ? C.amber : C.teal, false) + G.off(held ? C.amber : C.mute)), title: '음소거' };
+    if (op === 'kill') return { image: svg(held ? '#3a1010' : C.bg, G.stop(held ? C.red : C.mute)), title: '어시스턴트\n끄기' };
+    return { image: svg(held ? '#0f2a1b' : C.bg, G.mic(held ? C.on : C.teal)), title: held ? '듣는 중' : '말하기' };
+  }
   if (k.action === ACT_TODO) {
     const t = st.todo || { total: 0, left: 0, next: '' };
     if (op === 'undo') return { image: svg(C.bg, G.undo(t.total > t.left ? C.teal : C.mute)), title: '체크\n되돌리기' };

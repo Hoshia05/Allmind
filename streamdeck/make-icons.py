@@ -35,6 +35,14 @@ def check(d, s, c):  # 할 일: a rounded box with a tick
     d.line([(52 * w, 56 * w), (66 * w, 70 * w), (92 * w, 40 * w)], fill=c, width=int(10 * w), joint='curve')
 
 
+def mic(d, s, c):  # 신호 (assistant push-to-talk etc.): a microphone
+    w = s / 144
+    d.rounded_rectangle([58 * w, 18 * w, 86 * w, 68 * w], radius=int(14 * w), fill=c)
+    d.arc([44 * w, 26 * w, 100 * w, 82 * w], start=0, end=180, fill=c, width=int(7 * w))
+    d.line([(72 * w, 82 * w), (72 * w, 96 * w)], fill=c, width=int(7 * w))
+    d.line([(56 * w, 96 * w), (88 * w, 96 * w)], fill=c, width=int(7 * w))
+
+
 def glyph(fn, size, fg, bg=None, scale=1.0, dy=0):
     big = size * S
     im = Image.new('RGBA', (big, big), bg or (0, 0, 0, 0))
@@ -70,9 +78,11 @@ for n, s in [('', 20), ('@2x', 40)]:
     save(glyph(note, s, (255, 255, 255, 255), scale=1.25, dy=0.05), f'action-bgm{n}.png')
     save(glyph(bell, s, (255, 255, 255, 255), scale=1.25, dy=0.0), f'action-sb{n}.png')
     save(glyph(check, s, (255, 255, 255, 255), scale=1.25, dy=0.05), f'action-todo{n}.png')
+    save(glyph(mic, s, (255, 255, 255, 255), scale=1.25, dy=0.0), f'action-signal{n}.png')
 BG = (16, 26, 29, 255)
 for n, s in [('', 72), ('@2x', 144)]:
     save(glyph(note, s, (47, 216, 200, 255), BG), f'key-bgm{n}.png')
     save(glyph(bell, s, (47, 216, 200, 255), BG), f'key-sb{n}.png')
     save(glyph(check, s, (47, 216, 200, 255), BG), f'key-todo{n}.png')
+    save(glyph(mic, s, (47, 216, 200, 255), BG), f'key-signal{n}.png')
 print('wrote', sorted(os.listdir(OUT)))

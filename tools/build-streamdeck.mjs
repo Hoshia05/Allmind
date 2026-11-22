@@ -36,8 +36,9 @@ fs.writeFileSync(path.join(PLUGIN, 'bin', 'LICENSE-ws.txt'), fs.readFileSync(pat
 fs.mkdirSync(OUT, { recursive: true });
 const tmp = fs.mkdtempSync(path.join(ROOT, '.build-sd-'));
 try {
-  const cli = path.join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'streamdeck.cmd' : 'streamdeck');
-  execFileSync(cli, ['pack', PLUGIN, '-o', tmp, '-f', '--no-update-check'], { stdio: 'inherit' });
+  // the CLI's own entry, run with this Node: works on Windows too (Node refuses to execFile the .cmd shim: EINVAL)
+  const cli = path.join(ROOT, 'node_modules', '@elgato', 'cli', 'bin', 'streamdeck.mjs');
+  execFileSync(process.execPath, [cli, 'pack', PLUGIN, '-o', tmp, '-f', '--no-update-check'], { stdio: 'inherit' });
   const file = fs.readdirSync(tmp).find((f) => f.endsWith('.streamDeckPlugin'));
   if (!file) throw new Error('streamdeck pack made no file');
   fs.copyFileSync(path.join(tmp, file), path.join(OUT, 'Allmind.streamDeckPlugin'));

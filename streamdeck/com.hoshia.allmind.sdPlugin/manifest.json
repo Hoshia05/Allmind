@@ -1,10 +1,10 @@
 {
   "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
   "Name": "Allmind",
-  "Version": "1.1.0.0",
+  "Version": "1.2.0.0",
   "Author": "Hoshia",
   "UUID": "com.hoshia.allmind",
-  "Description": "Allmind의 BGM·사운드보드·할 일을 스트림덱 키로 — 지금 재생 중인 곡, 무한 반복, 오늘 할 것이 키에 보여요.",
+  "Description": "Allmind의 BGM·사운드보드·할 일을 스트림덱 키로 — 지금 재생 중인 곡, 무한 반복, 오늘 할 것이 키에 보여요. 신호 키는 어시스턴트용(말하기·음소거·끄기)이에요.",
   "Icon": "imgs/plugin",
   "Category": "Allmind",
   "CategoryIcon": "imgs/category",
@@ -72,6 +72,24 @@
       "States": [
         {
           "Image": "imgs/key-todo",
+          "TitleAlignment": "bottom",
+          "FontSize": 11
+        }
+      ]
+    },
+    {
+      "UUID": "com.hoshia.allmind.signal",
+      "Name": "신호",
+      "Tooltip": "어시스턴트용: 말하기(누르는 동안 / 탭), 음소거, 끄기 — Allmind 0.48 이상",
+      "Icon": "imgs/action-signal",
+      "PropertyInspectorPath": "ui/pi.html",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/key-signal",
           "TitleAlignment": "bottom",
           "FontSize": 11
         }

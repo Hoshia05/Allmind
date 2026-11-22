@@ -62,11 +62,15 @@ const OPS = {
   'com.hoshia.allmind.bgm': [['toggle', '재생 / 일시정지'], ['track', '이 곡 재생'], ['next', '다음 곡'], ['prev', '이전 곡'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기'], ['loop', '🔁 무한 반복 켜기/끄기']],
   'com.hoshia.allmind.sb': [['play', '사운드 재생'], ['stop', '정지'], ['vol-up', '볼륨 올리기'], ['vol-down', '볼륨 내리기']],
   'com.hoshia.allmind.todo': [['next', '다음 항목 체크'], ['undo', '마지막 체크 되돌리기']],
+  'com.hoshia.allmind.signal': [['ptt', '말하기 (PTT)'], ['mute', '음소거'], ['kill', '어시스턴트 끄기']],
 };
 const HINTS = {
   loop: '지금 재생 중인 곡의 무한 반복을 켜고 꺼요. 대시보드 셋리스트의 🔁에서 한 번 저장해 둔 곡만 돼요. 끄면 지금 위치에서 원곡으로 이어져요.',
   next: '대시보드 "오늘 할 것"에서 아직 안 한 첫 항목을 체크해요. 키에 그 항목과 남은 개수가 보여요. 녹화 중이면 ⭐ 마크도 남아요.',
   undo: '실수로 눌렀을 때: 가장 최근에 체크한 항목을 다시 안 한 것으로.',
+  ptt: '어시스턴트에게 말하기: 짧게 누르면 켜고 끄기, 누르고 있으면 누르는 동안만 들어요. Allmind는 신호만 전달하고, 어시스턴트가 알아서 판단해요.',
+  mute: '어시스턴트 목소리를 바로 끄거나 켜요 (어시스턴트가 처리).',
+  kill: '어시스턴트를 바로 멈춰요 (어시스턴트가 처리). Allmind와 방송에는 아무 영향이 없어요.',
 };
 let ws, uuid, action, settings = {}, info = { tracks: [], sounds: [] };
 
