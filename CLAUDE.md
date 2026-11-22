@@ -74,6 +74,11 @@ sh tools/dev/down.sh               # always stop them when done
 node tools/dev/obs.mjs StartRecord # send any obs-websocket request to the mock
 node tools/dev/sse-stats.mjs 10    # what the dashboard receives per second
 ```
+**Smoke test (M0, `docs/plans/modules.md`): `node tools/dev/smoke.mjs`** starts the mock, runs one call per Xylem feature + the
+platform basics, stops it, and compares with `tools/dev/smoke-baseline.json` (`--running` = use a mock that is already up;
+`--update-baseline` only when a behavior change is intended, and say so in the commit). It must pass before and after every
+module/API step. On Windows it also fails if the run created `%APPDATA%/Allmind` or `%LOCALAPPDATA%/Allmind`.
+
 **On Windows** (Git Bash, verified 2026-11-22 on the owner's main PC): the same commands work. Needs Node ≥ 22.4 and ffmpeg
 for the fixtures; if ffmpeg isn't on PATH, pass its folder: `FFMPEG_DIR="/c/path/to/ffmpeg/bin" sh tools/dev/up.sh` (only the first
 run, which makes `.dev/`, needs it). Clone with **LF line endings** (`git clone -c core.autocrlf=false …`): with Git for Windows'

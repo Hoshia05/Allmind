@@ -89,7 +89,7 @@ part of the platform's command list. This needs Xylem as a module, so it arrives
 Order: **M0 → M1 → M5 → assistant v0 → M2 → assistant v1**; M3/M4 optional after M2, M6 later.
 - **M0 Characterization tests first.** `tools/dev/smoke.mjs`: against the running mock (`sh tools/dev/up.sh`), one call per Xylem
   feature (`draw/test-run`, `roulette/test`, `dogfight/cmd`, `text`, VTS, pack) and the platform basics; baseline recorded. Must pass
-  before and after every later step.
+  before and after every later step. **Done 2026-11-22:** 20 checks, baseline `tools/dev/smoke-baseline.json` (0.47.1).
 - **M1 Contract + loader, empty registry.** `ctx`, `GET /api/v1/info`, `tools/check-boundary.mjs` (report-only until M2, then failing:
   `src/` must not import `modules/` or name a module route). SEA question settled with a real build.
 - **M5 Public API.** Token + settings card, `/api/v1/events`, the five platform commands, `/deck/signal` + plugin "신호" action

@@ -1,0 +1,234 @@
+{
+  "recorded": "2026-11-22",
+  "version": "0.47.1",
+  "checks": {
+    "platform/ping": {
+      "status": 200,
+      "app": "allmind"
+    },
+    "platform/pages": {
+      "/": 200,
+      "/launcher": 200,
+      "/mark": 200
+    },
+    "platform/dashboard-sse": {
+      "status": 200,
+      "snapshotKeys": [
+        "alertSource",
+        "bgm",
+        "chzzk",
+        "chzzkOpen",
+        "donation",
+        "donationActive",
+        "drive",
+        "google",
+        "interact",
+        "links",
+        "marks",
+        "obs",
+        "obsAudio",
+        "obsDebug",
+        "obsPanel",
+        "obsStreaming",
+        "preflight",
+        "prep",
+        "program",
+        "remote",
+        "reports",
+        "shortcuts",
+        "soundboard",
+        "split",
+        "streamReconnect",
+        "studio",
+        "youtube",
+        "ytChat"
+      ]
+    },
+    "platform/scene": {
+      "set": {
+        "status": 200,
+        "ok": true
+      },
+      "back": {
+        "status": 200,
+        "ok": true
+      },
+      "unknown": {
+        "status": 400,
+        "ok": false
+      }
+    },
+    "platform/bgm": {
+      "next": {
+        "status": 200,
+        "ok": true
+      },
+      "prev": {
+        "status": 200,
+        "ok": true
+      },
+      "volume": {
+        "status": 200,
+        "ok": true
+      },
+      "toggle": {
+        "status": 200,
+        "ok": true
+      },
+      "toggleBack": {
+        "status": 200,
+        "ok": true
+      }
+    },
+    "platform/soundboard": {
+      "play": {
+        "status": 200,
+        "ok": true
+      },
+      "stop": {
+        "status": 200,
+        "ok": true
+      }
+    },
+    "platform/todo": {
+      "add": {
+        "status": 200,
+        "ok": true
+      },
+      "gotId": true,
+      "check": {
+        "status": 200,
+        "ok": true
+      },
+      "uncheck": {
+        "status": 200,
+        "ok": true
+      },
+      "remove": {
+        "status": 200,
+        "ok": true
+      }
+    },
+    "platform/mark": {
+      "idle": 409,
+      "recording": 200,
+      "marksStatus": 200,
+      "label": {
+        "status": 200,
+        "ok": true
+      }
+    },
+    "platform/chat-and-donation": {
+      "chatEvent": "chat",
+      "donationEvent": "donations",
+      "chatFields": [
+        "amount",
+        "badges",
+        "donationType",
+        "emojis",
+        "id",
+        "key",
+        "kind",
+        "months",
+        "nick",
+        "platform",
+        "role",
+        "sub",
+        "text",
+        "time",
+        "uid",
+        "verified"
+      ]
+    },
+    "platform/deck": {
+      "sse": 200,
+      "hello": "hello",
+      "toggle": [
+        200,
+        200
+      ],
+      "unknown": 404
+    },
+    "platform/guard": {
+      "foreignHost": 403,
+      "foreignOrigin": 403,
+      "crossSiteDeck": 403
+    },
+    "xylem/state": {
+      "status": 200,
+      "keys": [
+        "allmind",
+        "board",
+        "chat",
+        "dogfight",
+        "draw",
+        "ok",
+        "overlays",
+        "pack",
+        "roulette",
+        "text",
+        "vts"
+      ],
+      "packModules": [
+        "dogfight",
+        "draw",
+        "roulette",
+        "text",
+        "vts"
+      ]
+    },
+    "xylem/pages": {
+      "/xylem": 200,
+      "/dogfight": 200,
+      "/roulette": 200,
+      "/roulette-board": 200,
+      "/text?id=1": 200,
+      "/draw": 200
+    },
+    "xylem/pack-check": {
+      "status": 200,
+      "ok": true
+    },
+    "xylem/draw": {
+      "testRun": {
+        "status": 200,
+        "ok": true
+      },
+      "sse": 200,
+      "gotEvent": true
+    },
+    "xylem/roulette": {
+      "test": {
+        "status": 200,
+        "ok": true
+      },
+      "spins": "array",
+      "sse": 200,
+      "gotEvent": true
+    },
+    "xylem/dogfight": {
+      "cmd": 200,
+      "sse": 200,
+      "event": "cmd"
+    },
+    "xylem/text": {
+      "set": {
+        "status": 200,
+        "ok": true
+      },
+      "clear": {
+        "status": 200,
+        "ok": true
+      },
+      "sse": 200,
+      "event": "box"
+    },
+    "xylem/vts-throw": {
+      "status": 200,
+      "ok": true
+    },
+    "xylem/tts-voices": {
+      "status": 200
+    }
+  }
+}
