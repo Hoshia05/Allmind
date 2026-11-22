@@ -45,6 +45,7 @@ import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
 import { API_LEVEL, discover, createRegistry } from './modules.js';
+import { ApiV1, publicChat } from './api.js';
 import MODULE_LIST from './modules-list.js'; // null from source (discover modules/*/ at start); a static list in the exe
 
 const VERSION = '0.47.1';
@@ -177,7 +178,8 @@ const PIN_FREE_API = new Set([
 ]);
 // the draw overlay's speech files (/api/draw/tts/<16 hex>.wav): random ids that only the overlay is told about
 const PIN_FREE_PREFIX = ['/api/draw/tts/'];
-const pinNeeded = (p) => (p.startsWith('/api/') ? !PIN_FREE_API.has(p) && !PIN_FREE_PREFIX.some((x) => p.startsWith(x)) : PIN_PAGES.has(p));
+// /api/v1 has its own API token instead of the PIN (docs/contracts/auth.md)
+const pinNeeded = (p) => (p.startsWith('/api/v1/') ? false : p.startsWith('/api/') ? !PIN_FREE_API.has(p) && !PIN_FREE_PREFIX.some((x) => p.startsWith(x)) : PIN_PAGES.has(p));
 const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
 
 // ---------- main ----------
@@ -318,6 +320,7 @@ async function main() {
   // The setlist can be hundreds of songs, so it isn't part of every state
   // update: it goes out as its own event, only when it actually changes.
   let moduleReg = null; // optional modules (src/modules.js), loaded before the first request
+  const api = new ApiV1({ dataDir: DATA_DIR }); // /api/v1: token + the event stream's own client set (src/api.js)
   let tracksJson = '[]';
   const bgmState = () => {
     const { tracks, ...rest } = bgm.snapshot();
@@ -457,6 +460,7 @@ async function main() {
         } catch (e) { console.log(`[split] YouTube switch failed: ${e.message}`); out.youtube = { ok: false, error: `유튜브 방송을 바꾸다 막혔어요${e.status ? ` (오류 ${e.status})` : ''} — YouTube 스튜디오에서 확인해 주세요` }; }
       }
       out.part = split.part;
+      api.emit('part', { part: split.part, previous: out.from, mode, recording });
       out.ms = Date.now() - t0;
       split.last = out;
       console.log(`[split] part ${out.from} → ${out.part} in ${out.ms} ms; youtube ${out.youtube ? (out.youtube.ok ? 'ok' : out.youtube.error) : '—'}`);
@@ -476,6 +480,7 @@ async function main() {
   const setStreaming = (active) => {
     if (active === obsStreaming) return;
     obsStreaming = active;
+    api.emit('stream', { what: 'live', on: active });
     youtube.onStreaming(active);
     if (active) {
       split.part = 1; split.last = null;
@@ -558,6 +563,22 @@ async function main() {
   });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
   const deck = new Deck({ config, bgm, soundboard, markers, todo });
+
+  // ---------- /api/v1/events sources (docs/contracts/events.md); all event-driven, nothing polled ----------
+  const v1Chat = (list) => { for (const m of list) { const e = publicChat(m); if (e) api.emit(e[0], e[1]); } };
+  chzzk.on('live-chat', v1Chat); // live Chzzk lines only (no RECENT replay, no addExternal / 테스트 추첨 lines)
+  ytChat.on('chat', v1Chat);
+  let v1Recording = null;
+  obs.on('RecordStateChanged', (e) => {
+    const s = String(e.outputState || '');
+    const on = /_STARTED$|_RESUMED$|_PAUSED$/.test(s) ? true : /_STOPPING$|_STOPPED$/.test(s) ? false : v1Recording;
+    if (on !== v1Recording && on !== null) { v1Recording = on; api.emit('stream', { what: 'recording', on }); }
+  });
+  obs.on('connected', () => api.emit('stream', { what: 'obs', on: true }));
+  obs.on('disconnected', () => api.emit('stream', { what: 'obs', on: false }));
+  obs.on('CurrentProgramSceneChanged', ({ sceneName }) => api.emit('stream', { what: 'scene', scene: sceneName }));
+  markers.on('mark', (m) => api.emit('mark', m));
+  deck.onSignal = (s) => api.emit('deck-signal', s);
   const access = new Access(); // optional PIN for other devices (src/access.js)
   let chatWasUp = null;
   chzzk.on('change', () => {
@@ -1107,11 +1128,23 @@ async function main() {
     'POST /api/launcher/deck-plugin': () => {
       const buf = readAsset('public/streamdeck/Allmind.streamDeckPlugin');
       if (!buf) throw new Error('플러그인 파일이 이 버전에 없어요');
-      if (process.platform !== 'win32') return { dryRun: true, bytes: buf.length };
+      if (process.platform !== 'win32' || win.isDev) return { dryRun: true, bytes: buf.length };
       const f = path.join(os.tmpdir(), 'Allmind.streamDeckPlugin');
       fs.writeFileSync(f, buf);
       win.openInDefaultBrowser(f);
       return { opened: true };
+    },
+    // ---------- API 토큰 card (docs/contracts/auth.md): the token is shown only right after it is made ----------
+    'GET /api/launcher/api-token': () => {
+      const token = api.hasToken ? null : api.renew(); // the first time the card is opened
+      return { token, ...apiCard() };
+    },
+    'POST /api/launcher/api-token': (b) => ({ token: b.renew || !api.hasToken ? api.renew() : null, ...apiCard() }),
+    'POST /api/launcher/api-scenes': (b) => {
+      const allowedScenes = [...new Set((Array.isArray(b.scenes) ? b.scenes : []).map((x) => String(x).slice(0, 200)).filter(Boolean))].slice(0, 100);
+      saveConfig({ api: { allowedScenes } });
+      config.api = { ...(config.api || {}), allowedScenes };
+      return apiCard();
     },
     'POST /api/launcher/deck-save': (b) => {
       const token = String(b.token || '').replace(/[^\w-]/g, '').slice(0, 64);
@@ -1297,7 +1330,113 @@ async function main() {
     }
   }
   // GET /api/v1/info — feature detection for the assistant and other local clients (docs/contracts/)
-  const v1Info = () => ({ version: VERSION, apiLevel: API_LEVEL, modules: moduleReg.info(), capabilities: [] });
+  const V1_CAPABILITIES = ['events', 'scene', 'mark', 'bgm', 'sound', 'todo', 'deck-signal'];
+  const v1Info = () => ({ ok: true, version: VERSION, apiLevel: API_LEVEL, modules: moduleReg.info(), capabilities: V1_CAPABILITIES });
+
+  // ---------- /api/v1 commands (docs/contracts/commands.md) ----------
+  // Exactly these five, each wrapping what the dashboard already does. Account-level/destructive actions are never here
+  // (stream/record start-stop, split, title/category, chat send, /api/chzzk/act, settings/launcher, updates).
+  class V1Error extends Error { constructor(status, code, msg) { super(msg); this.status = status; this.code = code; } }
+  const v1fail = (status, code, msg) => { throw new V1Error(status, code, msg); };
+  const needObs = () => { if (!obs.connected) v1fail(502, 'obs-unavailable', 'OBS에 연결되어 있지 않아요'); };
+  const v1Commands = {
+    'POST /api/v1/scene': async (b) => {
+      const name = String(b.name || '');
+      if (!name) v1fail(400, 'bad-request', 'name(장면 이름)이 없어요');
+      // a wrong scene can show a desktop or a private source: only what the owner ticked in the settings window
+      if (!(config.api?.allowedScenes || []).includes(name)) v1fail(403, 'not-allowed', '설정 창에서 어시스턴트에게 허용한 장면이 아니에요');
+      needObs();
+      if (!studio.scenes.includes(name)) v1fail(400, 'bad-request', `"${name}" 장면이 OBS에 없어요`);
+      await studio.setScene(name);
+      return { scene: name };
+    },
+    'POST /api/v1/mark': async (b) => {
+      const r = await markers.mark(b.label);
+      if (!r.ok) {
+        if (r.reason === 'OBS not connected') v1fail(502, 'obs-unavailable', 'OBS에 연결되어 있지 않아요');
+        v1fail(409, 'conflict', r.reason === 'not recording' ? '녹화 중이 아니에요' : '표시하지 못했어요');
+      }
+      return { t: r.t, part: markers.part() || 1, count: r.count };
+    },
+    'POST /api/v1/bgm': async (b) => {
+      const id = String(b.id || '');
+      const db = Number(b.db);
+      switch (b.action) {
+        case 'toggle': await bgm.toggle(); break;
+        case 'next': await bgm.next(); break;
+        case 'prev': await bgm.prev(); break;
+        case 'select':
+          if (!bgm.tracks.has(id)) v1fail(400, 'bad-request', '그 곡이 셋리스트에 없어요');
+          await bgm.select(id);
+          break;
+        case 'volume':
+          if (b.db === undefined || b.db === null || !Number.isFinite(db) || db < -60 || db > 0) v1fail(400, 'bad-request', 'db는 -60 … 0 사이 숫자예요');
+          await bgm.setVolume(db);
+          break;
+        default: v1fail(400, 'bad-request', 'action은 toggle, next, prev, select, volume 중 하나예요');
+      }
+      return {};
+    },
+    'POST /api/v1/sound': async (b) => {
+      if (b.action === 'stop') { await soundboard.stop(); return {}; }
+      if (b.action !== 'play') v1fail(400, 'bad-request', 'action은 play, stop 중 하나예요');
+      const id = String(b.id || '');
+      if (!soundboard.sounds.some((s) => s.id === id)) v1fail(400, 'bad-request', '그 사운드가 사운드보드에 없어요');
+      if (!soundboard.sourceOk) v1fail(409, 'conflict', 'OBS에 "Soundboard" 소스가 없어요');
+      await soundboard.play(id);
+      return {};
+    },
+    'POST /api/v1/todo': async (b) => {
+      if (b.action === 'next' || b.action === 'undo') {
+        const r = await deck.run(b.action === 'next' ? 'todo-next' : 'todo-undo', new URLSearchParams(), true);
+        if (r.status !== 200) v1fail(409, 'conflict', r.body.error);
+        return { item: r.body.item };
+      }
+      if (b.action === 'check') {
+        const id = String(b.id || '');
+        if (!todo?.items.some((x) => x.id === id)) v1fail(400, 'bad-request', '그 할 일이 없어요');
+        await todo.check(id, !!b.done);
+        return {};
+      }
+      v1fail(400, 'bad-request', 'action은 check, next, undo 중 하나예요');
+    },
+  };
+  const lanOn = () => !['127.0.0.1', 'localhost', '::1'].includes(String(config.server.host || '0.0.0.0'));
+  // the settings window's API 토큰 card; `dashboards` lets a test prove /api/v1/events doesn't count as one
+  const apiCard = () => ({ ...api.status(), dashboards: clients.size, allowedScenes: config.api?.allowedScenes || [], scenes: studio.scenes || [], lanAccess: lanOn() });
+
+  // Every /api/v1 request: lanAccess → token → info / events / command / module command. JSON answers with a stable `code`
+  // on failure; one log line per call (`[api] <caller> <METHOD route> → <status>`), never request bodies.
+  async function handleV1(req, res, url, key) {
+    const caller = ApiV1.caller(req);
+    const send = (status, body) => { console.log(`[api] ${caller} ${key} → ${status}`); json(res, status, body); };
+    const fail = (status, code, error) => send(status, { ok: false, code, error });
+    if (!isLocal(req) && !lanOn()) return fail(403, 'lan-off', '다른 기기 연결이 꺼져 있어요 (설정 창)');
+    const bad = api.check(req, url);
+    if (bad) return fail(bad.status, bad.code, bad.error);
+    api.used(caller, key);
+    if (key === 'GET /api/v1/info') return send(200, v1Info());
+    if (key === 'GET /api/v1/events') {
+      return api.attach(req, res, caller, {
+        version: VERSION, apiLevel: API_LEVEL, caller,
+        state: { obs: !!obs.connected, live: !!obsStreaming, recording: !!markers.status().recording, scene: studio.scene || null, part: markers.part() },
+      });
+    }
+    const cmd = v1Commands[key];
+    const mod = cmd ? null : moduleReg.route(req.method, url.pathname);
+    if (!cmd && !mod) return fail(404, 'not-found', '없는 API예요');
+    if (mod?.raw) { console.log(`[api] ${caller} ${key} (module stream)`); return runModuleRoute(mod, req, res, url); }
+    try {
+      const body = req.method === 'POST' ? await readBody(req) : {};
+      const r = cmd ? await cmd(body) : await mod.handler(body, { req, url });
+      stateChanged();
+      send(200, { ok: true, ...(r && typeof r === 'object' ? r : {}) });
+    } catch (e) {
+      if (e instanceof V1Error) return fail(e.status, e.code, e.message);
+      if (cmd && !obs.connected) return fail(502, 'obs-unavailable', 'OBS에 연결되어 있지 않아요');
+      fail(400, 'bad-request', e.message);
+    }
+  }
 
   server.on('request', async (req, res) => {
     await modulesReady; // only the first requests after start can wait here (a few ms)
@@ -1337,14 +1476,8 @@ async function main() {
     }
 
     // ---------- public local API /api/v1 (docs/contracts/) ----------
-    // Until M5 adds the API token, /api/v1 answers only on loopback (127.0.0.1 / ::1).
-    if (url.pathname.startsWith('/api/v1/')) {
-      if (!isLocal(req)) return json(res, 403, { ok: false, error: '/api/v1은 아직 방송 PC 안에서만 쓸 수 있어요' });
-      if (key === 'GET /api/v1/info') return json(res, 200, v1Info());
-      const m = moduleReg.route(req.method, url.pathname);
-      if (m) return runModuleRoute(m, req, res, url);
-      return json(res, 404, { ok: false, error: '없는 API예요' });
-    }
+    // API token on every call, also from loopback; other devices only while lanAccess is on (docs/contracts/auth.md)
+    if (url.pathname.startsWith('/api/v1/')) return handleV1(req, res, url, key);
 
     // ⭐ Mark moment: one request from anywhere on the LAN (a hotkey, a Stream
     // Deck key, the /mark page). 200 {ok,t,count} or 409 {ok:false,reason}.

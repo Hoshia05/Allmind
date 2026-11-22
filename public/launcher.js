@@ -497,6 +497,47 @@ $('deckTokenSave').addEventListener('click', async () => {
 });
 loadDeck(); // token + addresses (the URL list itself is only shown when the details are opened)
 
+// ---------------- API 토큰 (/api/v1, docs/contracts/auth.md) ----------------
+// The token exists in clear only in the answer that made it: shown once here, then only its hash is kept.
+function renderApi(r) {
+  if (!r || !r.ok) return;
+  if (r.token) {
+    $('apiToken').textContent = r.token;
+    $('apiNewRow').hidden = false;
+    $('apiNewHint').hidden = false;
+  }
+  const when = (t) => (t ? new Date(t).toLocaleString('ko-KR') : '');
+  const use = r.lastUse ? `마지막 사용 ${when(r.lastUse.at)} (${escapeAttr(r.lastUse.caller)})` : '아직 쓴 적 없어요';
+  $('apiStatus').innerHTML = r.hasToken
+    ? `토큰 있음 · 만든 때 ${when(r.createdAt)} · ${use} · 연결된 프로그램 ${r.streams}개${r.lanAccess ? '' : ' · 다른 기기 연결은 꺼져 있어요 (이 PC에서만)'}`
+    : '아직 토큰이 없어요';
+  const allowed = new Set(r.allowedScenes || []);
+  const names = [...new Set([...(r.scenes || []), ...allowed])];
+  $('apiScenes').innerHTML = names.length
+    ? names.map((n) => `<label class="check"><input type="checkbox" data-scene="${escapeAttr(n)}"${allowed.has(n) ? ' checked' : ''}><span>${escapeAttr(n)}${(r.scenes || []).includes(n) ? '' : ' <span class="muted">(지금 OBS에 없음)</span>'}</span></label>`).join('')
+    : '<span class="muted small">OBS에 연결되면 장면이 나와요.</span>';
+  setMod('m-api', r.hasToken ? 'ok' : 'off', r.hasToken ? (r.streams ? `연결 ${r.streams}개` : '토큰 있음') : '안 씀');
+}
+// opening the card the first time makes the first token (GET), like the Stream Deck key
+$('m-api').addEventListener('toggle', async () => { if ($('m-api').open) renderApi(await call('/api-token')); });
+$('apiTokenCopy').addEventListener('click', async () => {
+  const t = $('apiToken').textContent;
+  try { await navigator.clipboard.writeText(t); toast('토큰을 복사했어요'); }
+  catch { prompt('토큰을 복사하세요 (Ctrl+C)', t); }
+});
+$('apiRenew').addEventListener('click', async () => {
+  if (!confirm('토큰을 새로 만들까요? 예전 토큰은 바로 못 쓰게 돼요.')) return;
+  const r = await call('/api-token', { renew: true });
+  renderApi(r);
+  if (r.ok) toast('새 토큰을 만들었어요 — 어시스턴트 설정에 붙여 넣어 주세요');
+});
+$('apiScenesSave').addEventListener('click', async () => {
+  const scenes = [...document.querySelectorAll('#apiScenes input[data-scene]:checked')].map((el) => el.dataset.scene);
+  const r = await call('/api-scenes', { scenes });
+  renderApi(r);
+  if (r.ok) toast(scenes.length ? `장면 ${scenes.length}개를 허용했어요` : '어시스턴트는 이제 장면을 못 바꿔요');
+});
+
 // ---------------- optional PIN for other devices (다른 기기에서 열기 card, src/access.js) ----------------
 const ago = (t) => {
   const m = Math.round((Date.now() - t) / 60000);

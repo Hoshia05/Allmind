@@ -162,13 +162,283 @@
         "apiLevel",
         "capabilities",
         "modules",
+        "ok",
         "version"
       ],
       "apiLevel": 1,
       "modules": [],
       "capabilitiesIsList": true,
+      "capabilities": [
+        "events",
+        "scene",
+        "mark",
+        "bgm",
+        "sound",
+        "todo",
+        "deck-signal"
+      ],
       "unknown": 404,
       "post": 404
+    },
+    "v1/auth": {
+      "none": {
+        "status": 401,
+        "ok": false,
+        "code": "token-missing"
+      },
+      "wrong": {
+        "status": 401,
+        "ok": false,
+        "code": "token-invalid"
+      },
+      "query": {
+        "status": 401,
+        "ok": false,
+        "code": "token-missing"
+      },
+      "notBearer": {
+        "status": 401,
+        "ok": false,
+        "code": "token-missing"
+      },
+      "ok": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "eventsNoToken": {
+        "status": 401,
+        "ok": false,
+        "code": "token-missing"
+      },
+      "foreignOrigin": 403,
+      "unknown": {
+        "status": 404,
+        "ok": false,
+        "code": "not-found"
+      }
+    },
+    "v1/excluded-actions": {
+      "/api/v1/chat/send": 404,
+      "/api/v1/obs/output": 404,
+      "/api/v1/record/split": 404,
+      "/api/v1/prep/apply": 404,
+      "/api/v1/chzzk/act": 404,
+      "/api/v1/launcher/save": 404,
+      "/api/v1/update/install": 404,
+      "/api/v1/stream": 404
+    },
+    "v1/events": {
+      "sse": 200,
+      "helloKeys": [
+        "apiLevel",
+        "at",
+        "caller",
+        "state",
+        "version"
+      ],
+      "stateKeys": [
+        "live",
+        "obs",
+        "part",
+        "recording",
+        "scene"
+      ],
+      "streams": 1,
+      "dashboards": 0,
+      "chatKeys": [
+        "at",
+        "id",
+        "kind",
+        "nick",
+        "platform",
+        "role",
+        "sub",
+        "text",
+        "uid",
+        "verified"
+      ],
+      "chatPlatform": "chzzk",
+      "donationKeys": [
+        "amount",
+        "at",
+        "donationType",
+        "id",
+        "nick",
+        "platform",
+        "role",
+        "text",
+        "uid"
+      ],
+      "donAsChat": false,
+      "testLines": 0,
+      "signal": [
+        200,
+        200
+      ],
+      "signalKeys": [
+        "at",
+        "name",
+        "state"
+      ],
+      "signalState": "down",
+      "badName": 400,
+      "badState": 400
+    },
+    "v1/commands": {
+      "sceneNotAllowed": {
+        "status": 403,
+        "ok": false,
+        "code": "not-allowed"
+      },
+      "allow": 200,
+      "scene": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "sceneEvent": "stream",
+      "sceneBack": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "sceneMissing": {
+        "status": 400,
+        "ok": false,
+        "code": "bad-request"
+      },
+      "markIdle": {
+        "status": 409,
+        "ok": false,
+        "code": "conflict"
+      },
+      "mark": {
+        "status": 200,
+        "ok": true,
+        "code": null,
+        "keys": [
+          "count",
+          "ok",
+          "part",
+          "t"
+        ]
+      },
+      "markEventKeys": [
+        "at",
+        "index",
+        "label",
+        "part",
+        "t"
+      ],
+      "split": 200,
+      "partEvent": {
+        "keys": [
+          "at",
+          "mode",
+          "part",
+          "previous",
+          "recording"
+        ],
+        "part": 2,
+        "previous": 1
+      },
+      "bgm": {
+        "next": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "volume": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "toggle": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "toggleBack": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "bad": {
+          "status": 400,
+          "ok": false,
+          "code": "bad-request"
+        }
+      },
+      "sound": {
+        "play": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "stop": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "unknown": {
+          "status": 400,
+          "ok": false,
+          "code": "bad-request"
+        }
+      },
+      "todo": {
+        "next": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "undo": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "check": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "uncheck": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "bad": {
+          "status": 400,
+          "ok": false,
+          "code": "bad-request"
+        }
+      }
+    },
+    "v1/token-renew": {
+      "oldToken": {
+        "status": 401,
+        "ok": false,
+        "code": "token-invalid"
+      },
+      "newToken": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "streamsAfter": 0,
+      "statusKeys": [
+        "allowedScenes",
+        "createdAt",
+        "dashboards",
+        "hasToken",
+        "lanAccess",
+        "lastUse",
+        "ok",
+        "scenes",
+        "streams",
+        "token"
+      ]
     },
     "xylem/state": {
       "status": 200,

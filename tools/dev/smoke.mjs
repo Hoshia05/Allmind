@@ -185,16 +185,149 @@ check('platform', 'guard', async () => ({
 }));
 
 // public local API (/api/v1, docs/contracts/)
+// M5: every /api/v1 call needs the token (Authorization: Bearer), also on loopback. The smoke test makes a fresh one through
+// the settings window's route (loopback only), like the owner pressing 새로 만들기.
+let TOKEN = '';
+const auth = (t = TOKEN) => ({ authorization: `Bearer ${t}`, 'x-allmind-client': 'smoke/1' });
+const v1 = (r) => ({ status: r.status, ok: r.json?.ok ?? null, code: r.json?.code ?? null });
+const v1post = (p, body) => post(p, body, { headers: auth() });
+async function newToken() {
+  const r = await post('/api/launcher/api-token', { renew: true });
+  if (!r.json?.token) throw new Error(`no token from /api/launcher/api-token (${r.status} ${r.text.slice(0, 100)})`);
+  TOKEN = r.json.token;
+  return r;
+}
+const apiStatus = async () => (await get('/api/launcher/api-token')).json || {};
+
 check('platform', 'v1-info', async () => {
-  const r = await get('/api/v1/info');
+  await newToken();
+  const r = await get('/api/v1/info', { headers: auth() });
   const j = r.json || {};
   if (j.version !== VERSION) throw new Error(`info.version ${j.version} != ${VERSION}`);
   return {
     status: r.status, keys: Object.keys(j).sort(), apiLevel: j.apiLevel,
     modules: Array.isArray(j.modules) ? j.modules.map((m) => m.id) : null,
     capabilitiesIsList: Array.isArray(j.capabilities),
-    unknown: (await get('/api/v1/nope')).status,
-    post: (await post('/api/v1/info')).status,
+    capabilities: j.capabilities,
+    unknown: (await get('/api/v1/nope', { headers: auth() })).status,
+    post: (await post('/api/v1/info', {}, { headers: auth() })).status,
+  };
+});
+check('v1', 'auth', async () => ({
+  none: v1(await get('/api/v1/info')),
+  wrong: v1(await get('/api/v1/info', { headers: auth('x'.repeat(43)) })),
+  query: v1(await get(`/api/v1/info?token=${TOKEN}`)),
+  notBearer: v1(await get('/api/v1/info', { headers: { authorization: TOKEN } })),
+  ok: v1(await get('/api/v1/info', { headers: auth() })),
+  eventsNoToken: v1(await get('/api/v1/events')),
+  foreignOrigin: (await post('/api/v1/mark', {}, { headers: { ...auth(), origin: 'http://evil.example' } })).status,
+  unknown: v1(await get('/api/v1/nope', { headers: auth() })),
+}));
+check('v1', 'excluded-actions', async () => {
+  const out = {};
+  for (const p of ['/api/v1/chat/send', '/api/v1/obs/output', '/api/v1/record/split', '/api/v1/prep/apply', '/api/v1/chzzk/act', '/api/v1/launcher/save', '/api/v1/update/install', '/api/v1/stream']) {
+    out[p] = (await v1post(p, {})).status;
+  }
+  return out;
+});
+check('v1', 'events', async () => {
+  const s = sse('/api/v1/events', { headers: auth() });
+  try {
+    const hello = await s.wait((e) => e.event === 'hello');
+    const st = await apiStatus();
+    const tag = `v1-${Date.now()}`;
+    await mockChat({ nick: '에이피아이', text: tag });
+    const chat = await s.wait((e) => e.event === 'chat' && e.data?.text === tag);
+    await mockChat({ nick: '에이피아이', text: `${tag}-don`, amount: 2000 });
+    const don = await s.wait((e) => e.event === 'donation' && e.data?.text === `${tag}-don`);
+    await sleep(300);
+    const donAsChat = s.events.some((e) => e.event === 'chat' && e.data?.text === `${tag}-don`);
+    // 🧪 테스트 추첨: fake viewers (uid test:…) must never reach /api/v1/events
+    await post('/api/draw/test-run', { n: 4 });
+    await sleep(3500);
+    await post('/api/draw/reset');
+    const testLines = s.events.filter((e) => String(e.data?.uid || '').startsWith('test:')).length;
+    const sig = await get('/deck/signal?name=ptt&state=down');
+    const sigEv = await s.wait((e) => e.event === 'deck-signal' && e.data?.name === 'ptt');
+    const sigUp = await get('/deck/signal?name=ptt&state=up');
+    const badName = (await get('/deck/signal?name=nope&state=down')).status;
+    const badState = (await get('/deck/signal?name=mute&state=hold')).status;
+    return {
+      sse: s.status(), helloKeys: Object.keys(hello.data).sort(), stateKeys: Object.keys(hello.data.state || {}).sort(),
+      streams: st.streams, dashboards: st.dashboards, // an open /api/v1/events must not count as a dashboard
+      chatKeys: Object.keys(chat.data).sort(), chatPlatform: chat.data.platform, donationKeys: Object.keys(don.data).sort(),
+      donAsChat, testLines,
+      signal: [sig.status, sigUp.status], signalKeys: Object.keys(sigEv.data).sort(), signalState: sigEv.data.state, badName, badState,
+    };
+  } finally { s.close(); }
+});
+check('v1', 'commands', async () => {
+  const s = sse('/api/v1/events', { headers: auth() });
+  try {
+    await s.wait((e) => e.event === 'hello');
+    const out = {};
+    await post('/api/launcher/api-scenes', { scenes: [] });
+    out.sceneNotAllowed = v1(await v1post('/api/v1/scene', { name: 'BRB' }));
+    out.allow = (await post('/api/launcher/api-scenes', { scenes: ['BRB', 'Main'] })).status;
+    out.scene = v1(await v1post('/api/v1/scene', { name: 'BRB' }));
+    out.sceneEvent = (await s.wait((e) => e.event === 'stream' && e.data?.what === 'scene' && e.data?.scene === 'BRB')).event;
+    out.sceneBack = v1(await v1post('/api/v1/scene', { name: 'Main' }));
+    out.sceneMissing = v1(await v1post('/api/v1/scene', {}));
+    await post('/api/launcher/api-scenes', { scenes: [] });
+
+    out.markIdle = v1(await v1post('/api/v1/mark', {}));
+    obsCmd('StartRecord');
+    await s.wait((e) => e.event === 'stream' && e.data?.what === 'recording' && e.data?.on === true);
+    let m = null;
+    for (let i = 0; i < 20 && m?.status !== 200; i++) { await sleep(250); m = await v1post('/api/v1/mark', { label: 'v1' }); }
+    out.mark = { ...v1(m), keys: Object.keys(m.json || {}).sort() };
+    const mev = await s.wait((e) => e.event === 'mark' && e.data?.label === 'v1');
+    out.markEventKeys = Object.keys(mev.data).sort();
+    const split = await post('/api/record/split', { title: 'smoke 2부' });
+    out.split = split.status;
+    const pev = await s.wait((e) => e.event === 'part', 10000);
+    out.partEvent = { keys: Object.keys(pev.data).sort(), part: pev.data.part, previous: pev.data.previous };
+    obsCmd('StopRecord');
+    await sleep(800);
+
+    await post('/api/sb/create-source');
+    out.bgm = {
+      next: v1(await v1post('/api/v1/bgm', { action: 'next' })),
+      volume: v1(await v1post('/api/v1/bgm', { action: 'volume', db: -20 })),
+      toggle: v1(await v1post('/api/v1/bgm', { action: 'toggle' })),
+      toggleBack: v1(await v1post('/api/v1/bgm', { action: 'toggle' })),
+      bad: v1(await v1post('/api/v1/bgm', { action: 'explode' })),
+    };
+    out.sound = {
+      play: v1(await v1post('/api/v1/sound', { action: 'play', id: '박수.mp3' })),
+      stop: v1(await v1post('/api/v1/sound', { action: 'stop' })),
+      unknown: v1(await v1post('/api/v1/sound', { action: 'play', id: '없는 소리.mp3' })),
+    };
+    const add = await post('/api/todo/add', { title: 'v1 할 일', tonight: true });
+    out.todo = {
+      next: v1(await v1post('/api/v1/todo', { action: 'next' })),
+      undo: v1(await v1post('/api/v1/todo', { action: 'undo' })),
+      check: v1(await v1post('/api/v1/todo', { action: 'check', id: add.json?.item?.id, done: true })),
+      uncheck: v1(await v1post('/api/v1/todo', { action: 'check', id: add.json?.item?.id, done: false })),
+      bad: v1(await v1post('/api/v1/todo', { action: 'nope' })),
+    };
+    await post('/api/todo/remove', { id: add.json?.item?.id });
+    return out;
+  } finally { s.close(); }
+});
+check('v1', 'token-renew', async () => {
+  const old = TOKEN;
+  const s = sse('/api/v1/events', { headers: auth() });
+  await s.wait((e) => e.event === 'hello');
+  await newToken(); // 새로 만들기: the old token stops working and its streams are closed
+  await sleep(300);
+  const st = await apiStatus();
+  s.close();
+  return {
+    oldToken: v1(await get('/api/v1/info', { headers: auth(old) })),
+    newToken: v1(await get('/api/v1/info', { headers: auth() })),
+    streamsAfter: st.streams,
+    statusKeys: Object.keys(st).sort(),
   };
 });
 

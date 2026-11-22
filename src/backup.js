@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 const FORMAT = 'allmind-settings';
 const KDF = { N: 2 ** 16, r: 8, p: 1 };
 // Local-only state that would be wrong on another PC.
-const SKIP_STATE = new Set(['uploads']); // Drive queue: paths to recordings on this PC
+const SKIP_STATE = new Set(['uploads', 'api-token']); // Drive queue: paths to recordings on this PC; the API token stays with this install
 
 function key(passphrase, salt, k = KDF) {
   return crypto.scryptSync(String(passphrase).normalize('NFC'), salt, 32, { N: k.N, r: k.r, p: k.p, maxmem: 256 * 1024 * 1024 });

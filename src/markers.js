@@ -420,6 +420,7 @@ export class Markers extends EventEmitter {
     r.marks.push(m);
     this._save(r);
     this.emit('change');
+    this.emit('mark', { index: r.marks.length - 1, t: m.t, part: r.part || 1, label }); // → /api/v1/events
     // into the video file too (Hybrid MP4, OBS 30.2+); failure is fine
     this.obs.call('CreateRecordChapter', label ? { chapterName: label } : {}).then(
       () => { if (r.chapters !== true) { r.chapters = true; this._save(r); } },

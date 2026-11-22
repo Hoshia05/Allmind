@@ -10,6 +10,9 @@
 // PIN for other devices creates a token if there is none — the plugin has no browser to enter a PIN in.
 import crypto from 'node:crypto';
 
+// /deck/signal (M5): generic signals for a local client such as the assistant; the platform doesn't interpret the names
+const SIGNAL_NAMES = new Set(['ptt', 'mute', 'kill']);
+const SIGNAL_STATES = new Set(['down', 'up', 'tap']);
 const norm = (s) => String(s ?? '').normalize('NFC').trim().toLowerCase();
 const num = (v, d) => (Number.isFinite(Number(v)) && v !== '' && v != null ? Number(v) : d);
 
@@ -20,6 +23,7 @@ export class Deck {
     this.sb = soundboard;
     this.markers = markers;
     this.todo = todo;
+    this.onSignal = null; // set by server.js: republishes as `deck-signal` on /api/v1/events
     // Live state for the Allmind Stream Deck plugin (GET /deck/events). Separate from the dashboard's
     // SSE on purpose: a deck plugin is always connected, and must not count as "a dashboard is open".
     this.clients = new Set();
@@ -46,6 +50,7 @@ export class Deck {
       'bgm-loop': { label: 'BGM 🔁 무한 반복 켜기/끄기 (지금 곡)', run: (p) => this._bgmLoop(p.get('on')) },
       'todo-next': { label: '할 일: 오늘 할 것 다음 항목 체크', run: () => this._todoNext() },
       'todo-undo': { label: '할 일: 마지막 체크 되돌리기', run: () => this._todoUndo() },
+      'signal': { label: '신호 (어시스턴트용)', run: (p) => this._signal(p.get('name'), p.get('state')) },
       'mark': { label: '⭐ 순간 표시', run: async (p) => { const r = await this.markers.mark(p.get('label')); if (!r.ok) throw new Error(r.reason === 'not recording' ? '녹화 중이 아니에요' : r.reason === 'OBS not connected' ? 'OBS에 연결되어 있지 않아요' : r.reason || '표시하지 못했어요'); return { t: r.t }; } },
     };
   }
@@ -158,6 +163,15 @@ export class Deck {
     this.clients.add(res);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     req.on('close', () => { clearInterval(ping); this.clients.delete(res); });
+  }
+
+  _signal(name, state) {
+    name = String(name || '');
+    state = String(state || '');
+    if (!SIGNAL_NAMES.has(name)) throw new Error('name은 ptt, mute, kill 중 하나예요');
+    if (!SIGNAL_STATES.has(state)) throw new Error('state는 down, up, tap 중 하나예요');
+    this.onSignal?.({ name, state });
+    return { name, state };
   }
 
   async _sbPlay(name) {
