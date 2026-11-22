@@ -6,6 +6,8 @@
 #   .dev/config.json  Allmind config pointing at the mock OBS/Chzzk
 set -e
 cd "$(dirname "$0")/../.."
+# Node needs a native path (Git Bash on Windows: C:/… from pwd -W, not /c/…)
+HERE=$(pwd -W 2>/dev/null || pwd)
 D=.dev; mkdir -p $D/frames $D/music/Lofi $D/music/Game $D/sounds $D/data
 f() { ffmpeg -v error -y "$@"; }
 [ -f $D/frames/idle.jpg ] || {
@@ -24,10 +26,10 @@ done
 [ -f $D/config.json ] || cat > $D/config.json <<JSON
 {
   "obs": { "password": "hunter2", "url": "ws://127.0.0.1:4455", "path": "" },
-  "bgm": { "folder": "$PWD/$D/music" },
-  "soundboard": { "folder": "$PWD/$D/sounds" },
+  "bgm": { "folder": "$HERE/$D/music" },
+  "soundboard": { "folder": "$HERE/$D/sounds" },
   "chzzk": { "apiBase": "http://127.0.0.1:9333", "gameApiBase": "http://127.0.0.1:9333", "chatServer": "ws://127.0.0.1:9333/chat", "pollSeconds": 5, "channelId": "0123456789abcdef0123456789abcdef" },
-  "app": { "startObs": false },
+  "app": { "startObs": false, "openWindowOnStart": false },
   "update": { "apiBase": "http://127.0.0.1:9333" },
   "google": { "clientId": "mock-google-id", "clientSecret": "mock-google-secret", "authUrl": "http://127.0.0.1:9333/g/auth", "tokenUrl": "http://127.0.0.1:9333/g/token", "revokeUrl": "http://127.0.0.1:9333/g/revoke", "apiBase": "http://127.0.0.1:9333/g", "uploadBase": "http://127.0.0.1:9333/g/upload" },
   "chzzkOpen": { "clientId": "mock-chzzk-id", "clientSecret": "mock-chzzk-secret", "authUrl": "http://127.0.0.1:9333/c/account-interlock", "apiBase": "http://127.0.0.1:9333/c" },

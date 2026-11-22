@@ -24,6 +24,7 @@ export function cmpVersion(a, b) {
 
 export function updatesDir() {
   if (process.env.ALLMIND_UPDATES_DIR) return process.env.ALLMIND_UPDATES_DIR;
+  if (process.env.ALLMIND_DEV === '1') return path.resolve('.dev', 'updates'); // dev harness: never %LOCALAPPDATA%
   return path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.allmind'), 'Allmind', 'updates');
 }
 

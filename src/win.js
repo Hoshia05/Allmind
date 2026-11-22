@@ -11,6 +11,11 @@ import crypto from 'node:crypto';
 import { cmpVersion } from './update.js';
 
 export const isWin = process.platform === 'win32';
+// Dev harness (tools/dev/up.sh sets ALLMIND_DEV=1): running from source on Windows must not open windows, add a tray icon,
+// copy a launcher into %LOCALAPPDATA%Allmind, tag taskbar windows or query the firewall; everything stays in .dev/.
+// See CLAUDE.md "Develop & test".
+export const isDev = process.env.ALLMIND_DEV === '1';
+const desktop = isWin && !isDev;
 const OBS_DEBUG_ARGS = ['--remote-debugging-port=9222', '--remote-allow-origins=*'];
 
 function run(file, args, opts = {}) {
@@ -169,7 +174,7 @@ function findBrowser() {
 
 // Opens a page as its own app-style window (no tabs or address bar).
 export function openAppWindow(url, { width = 480, height = 760 } = {}) {
-  if (!isWin) {
+  if (!desktop) {
     console.log(`[window] would open ${url}`);
     return;
   }
@@ -196,7 +201,7 @@ export function stableLauncherPath() {
 export function ensureStableLauncher(version) {
   const from = process.env.ALLMIND_LAUNCHER; // set by the launcher exe that started us
   const to = stableLauncherPath();
-  if (!isWin || !from || !to) return;
+  if (!desktop || !from || !to) return;
   try {
     const verFile = path.join(path.dirname(to), 'launcher.version');
     if (path.resolve(from).toLowerCase() === path.resolve(to).toLowerCase()) return; // we were started from it
@@ -259,7 +264,7 @@ export function replaceLauncher(origin, from, log = console.log) {
   }
 }
 export function syncOriginLauncher() {
-  return isWin ? replaceLauncher(process.env.ALLMIND_ORIGIN, process.env.ALLMIND_LAUNCHER) : 'none';
+  return desktop ? replaceLauncher(process.env.ALLMIND_ORIGIN, process.env.ALLMIND_LAUNCHER) : 'none';
 }
 
 const STAMP_SCRIPT = `
@@ -340,7 +345,7 @@ let lastStamp = 0;
 // appear later than the 15 s after we open it (slow Edge start, Edge restoring it) or Edge may reset it
 export function stampAppWindows() {
   const exe = stableLauncherPath();
-  if (!isWin || !exe || !fs.existsSync(exe) || stamping || Date.now() - lastStamp < 5000) return;
+  if (!desktop || !exe || !fs.existsSync(exe) || stamping || Date.now() - lastStamp < 5000) return;
   stamping = true;
   lastStamp = Date.now();
   powershell(STAMP_SCRIPT, { timeout: 40000, env: { ...process.env, SD_EXE: exe } }).then((r) => {
@@ -351,7 +356,7 @@ export function stampAppWindows() {
 }
 
 export function openInDefaultBrowser(url) {
-  if (!isWin) return console.log(`[browser] would open ${url}`);
+  if (!desktop) return console.log(`[browser] would open ${url}`);
   // Not `cmd /c start`: cmd treats every & in the address as "next command", so a login URL such as
   // …?clientId=…&redirectUri=…&state=… arrived cut off after the first parameter (치지직: "state 존재하지 않습니다").
   spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
@@ -377,7 +382,7 @@ export function openFolder(dir) {
 
 // A plain Windows message box (used when there's no window to show errors in).
 export async function alertBox(text, title = 'Allmind') {
-  if (!isWin) return console.error(`[alert] ${text}`);
+  if (!desktop) return console.error(`[alert] ${text}`);
   await powershell(
     `Add-Type -AssemblyName System.Windows.Forms; [void][System.Windows.Forms.MessageBox]::Show($env:SD_TEXT, $env:SD_TITLE)`,
     { timeout: 10 * 60 * 1000, env: { ...process.env, SD_TEXT: text, SD_TITLE: title } },
@@ -410,7 +415,7 @@ const FW_NAME = 'Allmind';
 const FW_NAMES_OLD = ['Arkbird', 'Stream Desk']; // rule names before the renames; still honoured, replaced on next "방화벽 허용"
 const FW_ALL = [FW_NAME, ...FW_NAMES_OLD].map((n) => `'${n}'`).join(',');
 export async function firewallStatus(port) {
-  if (!isWin) return { ok: true, checked: false };
+  if (!desktop) return { ok: true, checked: false };
   const r = await powershell(`
 $r = Get-NetFirewallRule -DisplayName ${FW_ALL} -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' }
 $ports = @($r | Get-NetFirewallPortFilter | ForEach-Object { $_.LocalPort })
@@ -419,7 +424,7 @@ $ports = @($r | Get-NetFirewallPortFilter | ForEach-Object { $_.LocalPort })
   return { ok: ports.includes(String(port)) || ports.includes('Any'), checked: true };
 }
 export async function allowFirewall(port) {
-  if (!isWin) return;
+  if (!desktop) return;
   const inner = `Remove-NetFirewallRule -DisplayName ${FW_ALL} -ErrorAction SilentlyContinue; New-NetFirewallRule -DisplayName '${FW_NAME}' -Direction Inbound -Protocol TCP -LocalPort ${Number(port)} -Action Allow -Profile Any | Out-Null`;
   const enc = Buffer.from(inner, 'utf16le').toString('base64');
   const r = await powershell(
@@ -449,7 +454,7 @@ export function runAtLoginEnabled() {
   return isWin && fs.existsSync(startupShortcut());
 }
 export async function setRunAtLogin(on, exe) {
-  if (!isWin) return;
+  if (!desktop) return;
   const lnk = startupShortcut();
   if (!on) {
     try { fs.unlinkSync(lnk); } catch {}
@@ -468,7 +473,7 @@ $s.Save()
 // A tiny PowerShell process owns the tray icon and prints the menu choice
 // on stdout. It exits on its own if Allmind goes away.
 export function startTray({ exe, onOpen, onDashboard, onXylem, onQuit, labels }) {
-  if (!isWin) return null;
+  if (!desktop) return null;
   const script = `
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 $ni = New-Object System.Windows.Forms.NotifyIcon
@@ -517,7 +522,7 @@ $t.Start()
 // "이 PC에서 지우기": delete these folders/files once this process has exited (its own exe, log file and
 // settings are in use until then). A hidden PowerShell waits for our pid, then retries for ~30 s.
 export function removeAfterExit(paths) {
-  if (!isWin) return false;
+  if (!desktop) return false;
   const script = `
 $ErrorActionPreference = 'SilentlyContinue'
 try { Wait-Process -Id ([int]$env:SD_PID) -Timeout 60 } catch {}

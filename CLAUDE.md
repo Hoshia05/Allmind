@@ -74,6 +74,16 @@ sh tools/dev/down.sh               # always stop them when done
 node tools/dev/obs.mjs StartRecord # send any obs-websocket request to the mock
 node tools/dev/sse-stats.mjs 10    # what the dashboard receives per second
 ```
+**On Windows** (Git Bash, verified 2026-11-22 on the owner's main PC): the same commands work. Needs Node ≥ 22.4 and ffmpeg
+for the fixtures; if ffmpeg isn't on PATH, pass its folder: `FFMPEG_DIR="/c/path/to/ffmpeg/bin" sh tools/dev/up.sh` (only the first
+run, which makes `.dev/`, needs it). Clone with **LF line endings** (`git clone -c core.autocrlf=false …`): with Git for Windows'
+default `autocrlf=true` the `.sh` files get CRLF and `sh` fails on them. `up.sh` sets `ALLMIND_DEV=1` (`win.isDev`), which on
+Windows skips the tray icon, app windows (`openAppWindow` / default browser only log "would open"), the `%LOCALAPPDATA%Allmind`
+launcher copy and origin sync, taskbar tagging, the firewall check/rule, run-at-login, `alertBox` and remove-all's deleter; updater
+downloads go to `.dev/updates`, the mock's recordings/Drive to `.dev/rec`, `.dev/drive`, the OBS log tail to `.dev/obs-logs`.
+Nothing is written to `%APPDATA%Allmind` or `%LOCALAPPDATA%Allmind` (from source, `CONFIG_DIR` is the checkout anyway). Still
+real on Windows in dev: TTS (PowerShell `System.Speech` → `.dev/data/tts`), the OBS-uptime PowerShell query, folder pickers you click.
+`down.sh` stops the native node processes from Git Bash too. Never run the built exe on a dev PC: it uses `%APPDATA%Allmind`.
 Logs: `.dev/server.log`, `.dev/mock.log`. Playwright + Chromium are available for UI
 checks and screenshots (no WebKit, so Safari/iPad behaviour can't be tested here).
 Use **Python** Playwright (`python3 -I script.py`, `from playwright.sync_api import sync_playwright`) where it's installed;

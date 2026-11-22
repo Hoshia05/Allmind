@@ -1476,6 +1476,7 @@ async function main() {
   });
 
   console.log(`Allmind ${VERSION} on port ${PORT} — ${lanAddresses().join(', ') || 'no network'}`);
+  if (win.isDev) console.log('[dev] ALLMIND_DEV=1: no tray, app window, launcher copy, taskbar tagging or firewall check');
   if (!IS_EXE) {
     console.log(`\n  Launcher:  ${launcherUrl()}\n  Dashboard: ${lanAddresses()[0] || `http://localhost:${PORT}`}\n`);
   }
@@ -1498,7 +1499,7 @@ async function main() {
       onQuit: quit,
     });
   }
-  firewall().then((st) => console.log(`[firewall] inbound rule for ${PORT}: ${st.ok ? 'present' : 'MISSING'}`));
+  firewall().then((st) => console.log(`[firewall] inbound rule for ${PORT}: ${st.checked === false ? 'not checked' : st.ok ? 'present' : 'MISSING'}`));
   // If "start with Windows" is on, point it at this copy of the exe (the old one may be gone).
   if (IS_EXE && win.runAtLoginEnabled()) win.setRunAtLogin(true, process.execPath).catch(() => {});
   if (config.app.startObs && !args.has('--restart') && !config._firstRun) {
