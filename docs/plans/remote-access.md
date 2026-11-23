@@ -1,6 +1,6 @@
 # Remote access modes — home network or Tailscale
 
-**Status: plan (2026-11-23), building now on `main`, no version bump.** Owner's request 2026-11-23; spec in the vault
+**Status: built 2026-11-23 on `main` (mock-tested, unreleased, no version bump).** Owner's request 2026-11-23; spec in the vault
 (`Projects/Allmind/Remote Access Modes.md`). From now on this file is the source of truth; the vault note only tracks state.
 
 ## Why
@@ -54,7 +54,7 @@ https://github.com/tailscale/tailscale (`net/tsaddr/tsaddr.go`, `ipn/ipnlocal/se
   `/api/v1`), one `[access]` log line per reason per minute. A refused device never reaches the PIN page.
 
 ### 3. Serve/Funnel guard (every mode)
-A request **from loopback** carrying any of `Tailscale-User-Login`, `Tailscale-User-Name`, `Tailscale-Headers-Info`,
+A request **from the stream PC itself** (loopback or one of its own addresses — a Serve target could be the LAN address) carrying any of `Tailscale-User-Login`, `Tailscale-User-Name`, `Tailscale-Headers-Info`,
 `Tailscale-Funnel-Request`, `X-Forwarded-For`, `X-Forwarded-Host` is refused (403, logged). Runs before the Host check (the
 MagicDNS name below would otherwise let a Serve hostname through). Nothing Allmind serves on the stream PC sends these (OBS browser
 sources, the settings window, the Stream Deck plugin, StreamMaid); a local reverse proxy in front of Allmind isn't supported.

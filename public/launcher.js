@@ -547,7 +547,8 @@ function renderAccess(a, created = '') {
   $('pinOn').checked = a.enabled;
   $('pinValue').placeholder = a.hasPin ? '바꿀 때만 입력 (숫자 4~8자리)' : '숫자 4~8자리';
   const devs = a.devices.slice().sort((x, y) => y.lastSeen - x.lastSeen);
-  $('pinInfo').textContent = !a.lanAccess ? '지금은 이 PC에서만 열려서 PIN이 필요 없어요 (위의 "다른 기기에서 대시보드 열기 허용"이 꺼져 있어요)'
+  renderMode(a);
+  $('pinInfo').textContent = !a.lanAccess ? '지금은 이 PC에서만 열려서 PIN이 필요 없어요 (위의 "다른 기기에서 열기"가 꺼져 있어요)'
     : !a.enabled ? '꺼짐 — 같은 네트워크의 누구나 주소만 알면 대시보드를 열 수 있어요'
     : devs.length ? `기억하는 기기 ${devs.length}대: ${devs.map((d) => `${d.name} (${ago(d.lastSeen)})`).join(' · ')}`
     : '켜짐 — 아직 PIN을 넣은 기기가 없어요';
@@ -560,6 +561,37 @@ function renderAccess(a, created = '') {
 async function loadAccess() {
   const r = await call('/access');
   if (r.ok) renderAccess(r);
+}
+
+// ---------------- 다른 기기에서 열기: 끄기 / 같은 네트워크 + Tailscale / Tailscale만 (docs/plans/remote-access.md) ----------------
+var remoteMode = null; // var: read by the settings refresh, which can run before this line
+function renderMode(a) {
+  if (!a.remoteAccess) return;
+  remoteMode = a.remoteAccess;
+  // Tailscale only: the big LAN address above would not open — the Tailscale addresses are listed here instead
+  const lanRow = a.remoteAccess === 'lan';
+  $('addrRow').hidden = !lanRow; $('otherAddrs').hidden = !lanRow;
+  for (const el of document.querySelectorAll('input[name="remoteMode"]')) el.checked = el.value === a.remoteAccess;
+  const label = { lan: '같은 네트워크', tailscale: 'Tailscale' };
+  const list = (a.addresses || []).filter((x) => a.remoteAccess !== 'off' && (a.remoteAccess === 'lan' || x.kind === 'tailscale'));
+  $('modeAddrs').innerHTML = list.length
+    ? list.map((x) => `${label[x.kind]}: <code>${escapeAttr(x.url)}/</code>`).join('<br>')
+    : a.remoteAccess === 'off' ? '' : '주소를 찾지 못했어요';
+  const w = [];
+  if ((a.warnings || []).includes('no-tailscale')) w.push('⚠️ 이 PC에서 Tailscale 주소를 찾지 못했어요 — Tailscale이 켜져 있고 로그인돼 있는지 확인해 주세요. 지금은 이 PC에서만 열려요.');
+  if ((a.warnings || []).includes('no-pin')) w.push('🔒 아래 PIN을 켜 두는 걸 추천해요.');
+  $('modeWarn').innerHTML = w.join('<br>');
+  $('modeWarn').hidden = !w.length;
+}
+for (const el of document.querySelectorAll('input[name="remoteMode"]')) {
+  el.addEventListener('change', async () => {
+    if (!el.checked) return;
+    const r = await call('/remote-mode', { mode: el.value });
+    if (!r.ok) { loadAccess(); return; }
+    if (r.restarting) return waitForRestart(location.origin, '연결 방식을 바꾸고 다시 시작하는 중…', 30);
+    renderAccess(r);
+    toast(r.mode === 'tailscale' ? 'Tailscale 기기에서만 열려요 — 다른 기기는 연결이 끊겼어요' : '같은 네트워크와 Tailscale 기기에서 열려요');
+  });
 }
 async function saveAccess() {
   const pin = $('pinValue').value.trim();
@@ -732,7 +764,7 @@ function basicStatus() {
   const fw = info.firewall;
   step('fw.ok', fw?.ok || !fw?.checked);
   const lan = info.settings?.lanAccess !== false;
-  $('lanOff').hidden = lan; $('addrRow').hidden = !lan; $('otherAddrs').hidden = !lan;
+  $('lanOff').hidden = lan; $('addrRow').hidden = !lan || remoteMode === 'tailscale'; $('otherAddrs').hidden = !lan || remoteMode === 'tailscale';
   for (const el of $('m-mainpc').querySelectorAll('.steps, .tip-line:not(#lanOff)')) el.hidden = !lan;
   $('lanOffPort').textContent = info.settings?.port || location.port || 8080;
   if (!lan) setMod('m-mainpc', 'ok', '이 PC에서만');

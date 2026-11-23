@@ -46,6 +46,15 @@ So the question is: **who can make it do those things?**
   address → 5 min lock (doubling, max 1 h), 30 per hour overall. Turning it on and "모든 기기 로그아웃" destroy every
   connection from other devices. Mock: `ALLMIND_SELF_LOOPBACK_ONLY=1` makes the container's own LAN address act as another device.
 
+- **2026-11-23 (unreleased) — remote-access modes + Serve/Funnel guard** (`docs/plans/remote-access.md`, `src/netmode.js`):
+  `server.remoteAccess` off / lan / tailscale (migrated on read from `server.host`, so nothing changes until the owner picks), checked
+  per request by the caller's address **before** the guard and the PIN: the stream PC itself always; `lan` = private ranges +
+  tailnet, public sources refused; `tailscale` = `100.64.0.0/10` + `fd7a:115c:a1e0::/48` only. A request from the stream PC itself
+  carrying Tailscale Serve/Funnel's proxy headers is refused in every mode (closes the hole where Serve/Funnel traffic looked like the
+  stream PC: no PIN, settings open). Only this PC's own MagicDNS name joins the Host allow-list. lan ↔ tailscale applies at once and
+  closes connections the new mode refuses. Mock: `node --test tools/dev/test-netmode.mjs`, `node tools/dev/test-remote.mjs`
+  (29 checks). Real Tailscale untested (the owner's check).
+
 ## Plan (each step small, testable on the mock)
 
 1. **Same-origin guard (fixes 1 + 2, invisible to the owner):** for every non-GET `/api/*`: require

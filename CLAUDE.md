@@ -261,6 +261,20 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   asked; `isLocal` (loopback only) still guards the settings routes. `/deck/*` relies on `deck.token` (`authorized(params,
   trusted)` — the stream PC needs no key). Test as "another device": `ALLMIND_SELF_LOOPBACK_ONLY=1 sh tools/dev/up.sh`, then
   use `http://$(hostname -I | awk '{print $1}'):8080`.
+- **Remote-access modes** (2026-11-23, unreleased; `docs/plans/remote-access.md`): `src/netmode.js` (pure: `classify(addr)` →
+  loopback/tailnet/private/public, `allowed(mode, cls, self)`, `modeOf(config.server)` = `server.remoteAccess` or migrated from
+  `server.host`, `hostFor(mode)`, `proxyHeader(headers)`, `parseDnsName()`). `server.js`: module-level `MODE` (bind = `hostFor(MODE)`);
+  the first block of the request handler refuses a device the mode doesn't allow, and any request **from the stream PC itself**
+  carrying Tailscale Serve/Funnel headers (`Tailscale-User-*`, `Tailscale-Headers-Info`, `Tailscale-Funnel-Request`,
+  `X-Forwarded-For/-Host`) — plain 403, or `lan-off` JSON on `/api/v1`, `[access]` log line once a minute per reason. It runs
+  **before** `guard()` and the PIN; keep it first. `TS` + `refreshTailscale()` read `tailscale status --json` (PATH, then
+  `%ProgramFiles%\Tailscale\tailscale.exe`, 2 s timeout, ≤ 1×/min, never at start-up's critical path) → `Self.DNSName` joins
+  `ownNames()`. Settings: `POST /api/launcher/remote-mode {mode}` (lan ↔ tailscale live + `kickDisallowed()`; to/from off =
+  `restart()`), `GET /api/launcher/access` adds `remoteAccess`, labeled `addresses`, `tailscale`, `warnings`; every view keeps
+  `lanAccess` (= mode isn't off); the main settings form no longer sends `lanAccess` (an old `false` still means off). Card: the 3-way
+  choice `#modeBox` in 다른 기기에서 열기. Tests: `node --test tools/dev/test-netmode.mjs`, `node tools/dev/test-remote.mjs` (needs
+  `.dev/` fixtures made once by `up.sh`; ffmpeg isn't found when node spawns `up.sh`). A local reverse proxy in front of Allmind is
+  not supported (its forwarded headers are refused).
 
 - Never ask for or keep `service.json` / Multi-RTMP config — they contain stream keys. Same for
   `google-auth.json` / `chzzk-auth.json` (refresh tokens). The YouTube key Allmind creates is shown

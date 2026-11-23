@@ -7,7 +7,7 @@ import os from 'node:os';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { loadConfig, saveConfig, readAsset, configPath, ROOT, DATA_DIR, CONFIG_DIR, IS_EXE } from './config.js';
 import { OBSClient } from './obs.js';
 import { BGM } from './bgm.js';
@@ -44,6 +44,7 @@ import { VTSThrow } from './vtsthrow.js';
 import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
+import { MODES, classify, allowed, modeOf, hostFor, proxyHeader, parseDnsName } from './netmode.js';
 import { API_LEVEL, discover, createRegistry } from './modules.js';
 import { ApiV1, publicChat } from './api.js';
 import MODULE_LIST from './modules-list.js'; // null from source (discover modules/*/ at start); a static list in the exe
@@ -53,6 +54,8 @@ const VERSION = '0.47.1';
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
 const PORT = config.server.port;
+// Remote-access mode (docs/plans/remote-access.md): off / lan / tailscale, migrated on read from server.host.
+let MODE = modeOf(config.server);
 
 // ---------- logging (the exe has no console window) ----------
 if (IS_EXE) {
@@ -97,7 +100,7 @@ function listen(server) {
     const onOk = () => { server.off('error', onErr); resolve(); };
     server.once('error', onErr);
     server.once('listening', onOk);
-    server.listen(PORT, config.server.host);
+    server.listen(PORT, hostFor(MODE)); // off → 127.0.0.1, lan/tailscale → 0.0.0.0
   });
 }
 
@@ -138,9 +141,34 @@ function json(res, code, data) {
 // OAuth callbacks are top-level navigations back from Google/Naver and carry their own state check.
 const ownNames = () => {
   const h = os.hostname().toLowerCase();
-  return new Set(['localhost', h, `${h}.local`, ...((config.server?.allowedHosts || []).map((x) => String(x).toLowerCase()))]);
+  return new Set(['localhost', h, `${h}.local`, ...(TS.name ? [TS.name] : []), ...((config.server?.allowedHosts || []).map((x) => String(x).toLowerCase()))]);
 };
 let OWN_NAMES = null;
+// This PC's own Tailscale MagicDNS name (and tailnet IPs, for the settings card): `tailscale status --json` → Self.DNSName.
+// Only this exact name joins the Host allow-list, never *.ts.net. Short timeout, never awaited by start-up; the CLI may be
+// missing or off PATH (then nothing happens). Read-only, so it also runs in the dev harness.
+const TS = { name: null, ips: [], at: 0, busy: null };
+function refreshTailscale(maxAgeMs = 60000) {
+  if (TS.busy) return TS.busy;
+  if (TS.at && Date.now() - TS.at < maxAgeMs) return Promise.resolve(TS);
+  const candidates = ['tailscale'];
+  if (process.platform === 'win32') candidates.push(path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Tailscale', 'tailscale.exe'));
+  const tryOne = (i) => new Promise((resolve) => {
+    if (i >= candidates.length) return resolve(null);
+    execFile(candidates[i], ['status', '--json'], { timeout: 2000, windowsHide: true, maxBuffer: 4 << 20 }, (err, stdout) => {
+      const r = parseDnsName(stdout || '');
+      if (!err || r.name) return resolve(r);
+      tryOne(i + 1).then(resolve);
+    });
+  });
+  TS.busy = tryOne(0).then((r) => {
+    const name = r?.name || null;
+    if (name !== TS.name) { console.log(`[tailscale] ${name ? `this PC is ${name} (${(r.ips || []).join(', ')})` : 'no Tailscale name found'}`); OWN_NAMES = null; }
+    Object.assign(TS, { name, ips: r?.ips || [], at: Date.now(), busy: null });
+    return TS;
+  }, () => { Object.assign(TS, { at: Date.now(), busy: null }); return TS; });
+  return TS.busy;
+}
 function hostAllowed(hostHeader) {
   if (!hostHeader) return true; // HTTP/1.0 tools; browsers always send Host
   const name = String(hostHeader).replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
@@ -189,6 +217,7 @@ async function main() {
   server.on('connection', (s) => { sockets.add(s); s.on('close', () => sockets.delete(s)); });
 
   // Bind first, so a second double-click just brings up the window.
+  setTimeout(() => refreshTailscale(0), 1500); // MagicDNS name for the Host allow-list; never blocks start-up
   for (let attempt = 0; ; attempt++) {
     try {
       await listen(server);
@@ -1031,10 +1060,45 @@ async function main() {
   // PIN turned on / all devices logged out: drop every connection from other devices (open dashboards, streams),
   // so they reconnect and meet the PIN page instead of carrying on with the live feed they already had.
   const kickOtherDevices = () => { for (const s of sockets) if (!isSelf({ socket: s })) s.destroy(); };
-  const accessView = () => ({ ...access.status(), deckToken: !!deck.token, lanAccess: !['127.0.0.1', 'localhost', '::1'].includes(String(config.server.host || '0.0.0.0')) });
+  // remote-access card data: labeled addresses (LAN / Tailscale), the mode, warnings
+  const labeledAddresses = () => {
+    const out = [];
+    for (const i of Object.values(os.networkInterfaces()).flat()) {
+      if (!i || i.internal) continue;
+      const kind = classify(i.address);
+      if (kind === 'private' && i.family === 'IPv4') out.push({ kind: 'lan', url: `http://${i.address}:${PORT}` });
+      else if (kind === 'tailnet' && i.family === 'IPv4') out.push({ kind: 'tailscale', url: `http://${i.address}:${PORT}` });
+    }
+    if (TS.name) out.push({ kind: 'tailscale', url: `http://${TS.name}:${PORT}`, name: true });
+    for (const ip of TS.ips) if (ip.includes('.') && !out.some((a) => a.url.includes(`//${ip}:`))) out.push({ kind: 'tailscale', url: `http://${ip}:${PORT}` });
+    return out;
+  };
+  const accessView = () => {
+    const addresses = labeledAddresses();
+    const warnings = [];
+    if (MODE === 'tailscale' && !addresses.some((a) => a.kind === 'tailscale')) warnings.push('no-tailscale');
+    if (MODE !== 'off' && !access.enabled) warnings.push('no-pin');
+    return { ...access.status(), deckToken: !!deck.token, lanAccess: MODE !== 'off', remoteAccess: MODE, addresses, tailscale: { name: TS.name, ips: TS.ips }, warnings };
+  };
+  // close connections the current mode no longer allows (switching lan → tailscale)
+  const kickDisallowed = () => { for (const sk of sockets) if (!allowed(MODE, classify(sk.remoteAddress), isSelf({ socket: sk }))) sk.destroy(); };
   const localRoutes = {
     // ---------- optional PIN for other devices (다른 기기에서 열기 card) ----------
-    'GET /api/launcher/access': () => accessView(),
+    'GET /api/launcher/access': async () => { await refreshTailscale(); return accessView(); },
+    // 끄기 / 같은 네트워크 + Tailscale / Tailscale만. lan ↔ tailscale applies at once; to or from off rebinds = restart.
+    'POST /api/launcher/remote-mode': async (b) => {
+      const mode = String(b.mode || '');
+      if (!MODES.includes(mode)) throw new Error('알 수 없는 방식이에요');
+      const rebind = (mode === 'off') !== (MODE === 'off');
+      saveConfig({ server: { remoteAccess: mode, host: hostFor(mode) } });
+      config.server = { ...config.server, remoteAccess: mode, host: hostFor(mode) };
+      const was = MODE;
+      MODE = mode;
+      console.log(`[access] remote access: ${was} → ${mode}${rebind ? ' (restarting)' : ''}`);
+      if (rebind) { setTimeout(restart, 300); return { ...accessView(), mode, restarting: true }; }
+      kickDisallowed();
+      return { ...accessView(), mode, restarting: false };
+    },
     'POST /api/launcher/access-save': (b) => {
       const was = access.enabled;
       access.configure({ enabled: !!b.enabled, pin: b.pin });
@@ -1080,7 +1144,7 @@ async function main() {
           obsPort: Number(/:(\d+)/.exec(config.obs.url.replace(/^ws:\/\//, ''))?.[1] || 4455),
           obsPath: config.obs.path || info.exe || '',
           startObs: config.app.startObs,
-          lanAccess: !['127.0.0.1', 'localhost', '::1'].includes(String(config.server.host || '0.0.0.0')),
+          lanAccess: MODE !== 'off',
           saveChat: config.markers?.saveChat !== false,
           shortcuts: config.dashboard?.shortcuts === true,
           donation: config.sources.donation,
@@ -1113,7 +1177,7 @@ async function main() {
         soundboard: { folder: s.sbFolder || '' },
         chzzk: { channelId: parseChannelId(s.channel) || '' },
         // 다른 기기에서 열기 off = listen on this PC only (a borrowed PC on a shared studio network)
-        server: { port: Number(s.port) || 8080, host: s.lanAccess === false ? '127.0.0.1' : '0.0.0.0' },
+        server: (() => { const m = s.lanAccess === false ? 'off' : s.lanAccess === true && MODE === 'off' ? 'lan' : MODE; return { port: Number(s.port) || 8080, host: hostFor(m), remoteAccess: m }; })(),
       });
       if (s.channel && parseChannelId(s.channel) !== chzzk.channelId) chzzk.setChannel(s.channel);
       if (typeof s.runAtLogin === 'boolean' && s.runAtLogin !== win.runAtLoginEnabled()) {
@@ -1401,7 +1465,7 @@ async function main() {
       v1fail(400, 'bad-request', 'action은 check, next, undo 중 하나예요');
     },
   };
-  const lanOn = () => !['127.0.0.1', 'localhost', '::1'].includes(String(config.server.host || '0.0.0.0'));
+  const lanOn = () => MODE !== 'off';
   // the settings window's API 토큰 card; `dashboards` lets a test prove /api/v1/events doesn't count as one
   const apiCard = () => ({ ...api.status(), dashboards: clients.size, allowedScenes: config.api?.allowedScenes || [], scenes: studio.scenes || [], lanAccess: lanOn() });
 
@@ -1442,6 +1506,21 @@ async function main() {
     await modulesReady; // only the first requests after start can wait here (a few ms)
     const url = new URL(req.url, 'http://x');
     const key = `${req.method} ${url.pathname}`;
+    // ---------- remote-access mode + Tailscale Serve/Funnel guard (docs/plans/remote-access.md) ----------
+    // Before the Host check and the PIN: a device the mode doesn't allow never reaches them. A request from the stream PC
+    // itself carrying Tailscale's proxy headers came through Serve/Funnel (it would otherwise count as the stream PC).
+    {
+      const self = isSelf(req);
+      const ph = self ? proxyHeader(req.headers) : null;
+      const cls = classify(req.socket.remoteAddress);
+      if (ph || !allowed(MODE, cls, self)) {
+        const why = ph ? `proxied (${ph})` : `${cls} device in mode ${MODE}`;
+        if (Date.now() - (blockedLog.get(why) || 0) > 60000) { blockedLog.set(why, Date.now()); console.log(`[access] refused ${req.method} ${url.pathname} from ${req.socket.remoteAddress}: ${why}`); }
+        if (url.pathname.startsWith('/api/v1/')) return json(res, 403, { ok: false, code: 'lan-off', error: '이 연결 방식으로는 쓸 수 없어요 (설정 창 → 다른 기기에서 열기)' });
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        return res.end('Allmind: 이 기기에서는 열 수 없어요 (설정 창의 연결 방식을 확인해 주세요)');
+      }
+    }
     const why = guard(req, url);
     if (why) {
       const k = `${why} ${url.pathname}`;
