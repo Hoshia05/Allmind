@@ -1,6 +1,6 @@
 # Modules — a standalone platform with optional parts (Xylem, assistant)
 
-**Status: M0, M1, M5 (released in 0.48.0) and M2 (2026-11-24, unreleased) done, mock-tested; next: Gate 3 review of the Xylem commands, then M3 (dashboard gating).** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
+**Status: M0, M1, M5 (released in 0.48.0), M2 and M3 (2026-11-24, unreleased) done, mock-tested; Xylem commands signed off at Gate 3 (2026-11-24). Next: M4 (standalone build in CI) when wanted.** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
 `Projects/Allmind/Decisions.md`): the platform (today's Allmind) must run **without Xylem and without the AI assistant**, must not
 depend on beta features, and stays public (MIT). Xylem should have a strict identity of its own but stay closely linked. The
 assistant is a separate process that only uses the platform's local API. Nobody else really uses the public repo yet, so
@@ -57,6 +57,13 @@ zip, after M5) passes all 26 smoke checks and `tools/dev/v1-client.mjs`, inside 
 ### 2. Dashboard
 The 🎮 Xylem button, phone tab and tray item appear only when the snapshot lists the module (`modules: [...]`). `public/app.js`
 must not assume it exists.
+**Built in M3** (2026-11-24): the dashboard's button, phone tab and embedded view are `hidden` in the HTML and shown by `syncModuleUi()`
+when the snapshot lists `xylem` (a saved "Xylem was open" is restored only then); the 방송 리포트 skips a module's section that isn't there.
+Desktop side, the platform names no module: a module may declare its app window in `module.json`
+(`"window": { "path": "/<id>…", "title", "tray", "width", "height" }`, `"settings": ["vts"]` = its page holds those service settings).
+`src/module-ui.js` (pure, `node --test tools/dev/test-module-ui.mjs`) turns the loaded modules into the tray's one module item, the
+taskbar-tag titles (`Allmind|<titles>`) and the preflight VTS hint; none of it runs under `ALLMIND_DEV=1`. The tray and tagging
+themselves are untested on real Windows.
 
 ### 3. Public local API for the assistant (and later modules)
 Versioned contract: **`docs/contracts/`** (single source for `/api/v1` events, commands, auth, the excluded-actions rule and the
@@ -124,7 +131,8 @@ Order: **M0 → M1 → M5 → assistant v0 → M2 → assistant v1**; M3/M4 opti
   draft `docs/contracts/xylem.md` awaits Gate 3). Plan as written: (`dogfight`, `roulette`, `draw`, `textbox`, `vtsthrow`, `xylem` pack manager) into `modules/xylem/`, registered
   through `ctx`, plus Xylem's `/api/v1/m/xylem/*` commands; `server.js` loses its Xylem imports, routes and `PIN_FREE` entries; the
   boundary check now fails on violations. Smoke script identical. **Before assistant v1.**
-- **M3 Dashboard gating** (button, phone tab, tray, window-title tag, preflight lines) driven by the snapshot's module list. Optional.
+- **M3 Dashboard gating** (button, phone tab, tray, window-title tag, preflight lines) driven by the snapshot's module list.
+  **Done 2026-11-24** (mock + browser check with and without `ALLMIND_NO_MODULES=1`; tray/tagging untested on real Windows), see "Built in M3".
 - **M4 Standalone proof:** a build with `modules/` removed starts, serves the dashboard, passes the platform part of the smoke script, shows no
   Xylem UI. Put it in CI. Optional.
 - **M6 (later):** Xylem into its own repo, pulled in at build time.

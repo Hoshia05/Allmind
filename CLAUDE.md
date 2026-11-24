@@ -181,7 +181,9 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   discovered at start; `ALLMIND_MODULES_DIR`, `ALLMIND_NO_MODULES=1`) and replaced by `tools/build-exe.mjs` with a static list
   (`--modules <dir>`, `--no-modules`; the exe never loads code from disk). `server.js`: `moduleReg`, `INLINE_ROUTES` (paths a module may
   not take), module routes dispatched last (`runModuleRoute`), the request handler awaits `modulesReady`; snapshot `modules` +
-  `moduleState`. Tests: `node --test tools/dev/test-modules.mjs`, `node tools/check-boundary.mjs --strict` (must report 0 since M2).
+  `moduleState`. M3: `src/module-ui.js` (pure) turns modules' `module.json` `window`/`settings` into the tray item, taskbar-tag titles
+  and preflight VTS hint; `public/app.js` `syncModuleUi()` shows the Xylem button/phone tab only when the snapshot lists it.
+  Tests: `node --test tools/dev/test-modules.mjs tools/dev/test-module-ui.mjs`, `node tools/check-boundary.mjs --strict` (must report 0 since M2).
 - **Xylem is a module since M2** (2026-11-24, `docs/plans/m2-xylem.md`): `modules/xylem/` = `index.js` (`register(ctx)`: builds the parts,
   registers every route/page/channel with the paths they had before, the report's roulette section, the `/api/v1/m/xylem/*` commands),
   `host.js` (what the moved files used to import from `src/`, filled from `ctx`), `pack.js` (was `src/xylem.js`), `dogfight.js`,

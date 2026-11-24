@@ -39,6 +39,7 @@ import { VTS } from './vts.js';
 import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
+import { stampTitles, trayPlan, settingsPlace } from './module-ui.js';
 import { MODES, classify, allowed, modeOf, hostFor, proxyHeader, parseDnsName } from './netmode.js';
 import { API_LEVEL, discover, createRegistry } from './modules.js';
 import { ApiV1, publicChat } from './api.js';
@@ -783,6 +784,7 @@ async function main() {
     preflightBusy = runPreflight({
       obs, config, obsInfo, obsStreaming: () => obsStreaming, obsStartedAt,
       bgm, soundboard, viewer, studio, chzzk, chzzkOpen, remote, google, youtube, drive, vts, obsAudio, update: () => updater.state(),
+      vtsPlace: moduleReg ? settingsPlace(moduleReg.windows(), 'vts') : '',
     }).then((r) => { preflightLast = r; stateChanged(); return r; }).finally(() => { preflightBusy = null; });
     return preflightBusy;
   }
@@ -1676,16 +1678,22 @@ async function main() {
   updater.start();
 
   // ---------- desktop niceties ----------
-  if (win.isWin) {
+  // M3: the tray's module item and the taskbar tag follow the loaded modules (src/module-ui.js); none in dev (ALLMIND_DEV=1)
+  modulesReady.then(() => {
+    const windows = moduleReg.windows();
+    win.setAppWindowTitles(stampTitles({ desktop: win.desktop, windows }));
+    const tray = trayPlan({ desktop: win.desktop, windows });
+    if (!tray) return;
+    const m = tray.module;
     win.startTray({
       exe: process.execPath,
-      labels: { open: 'Allmind 열기', dashboard: '대시보드 열기 (이 PC)', xylem: 'Xylem 열기 (룰렛·게임)', quit: '종료' },
-      onXylem: () => win.openAppWindow(`http://127.0.0.1:${PORT}/xylem`, { width: 1200, height: 900 }),
+      labels: { open: 'Allmind 열기', dashboard: '대시보드 열기 (이 PC)', module: m ? m.label : '', quit: '종료' },
+      onModule: m ? () => win.openAppWindow(`http://127.0.0.1:${PORT}${m.path}`, { width: m.width, height: m.height }) : null,
       onOpen: openLauncher,
       onDashboard: openDashboardHere,
       onQuit: quit,
     });
-  }
+  }).catch((e) => console.log('[tray] not started:', e.message));
   firewall().then((st) => console.log(`[firewall] inbound rule for ${PORT}: ${st.checked === false ? 'not checked' : st.ok ? 'present' : 'MISSING'}`));
   // If "start with Windows" is on, point it at this copy of the exe (the old one may be gone).
   if (IS_EXE && win.runAtLoginEnabled()) win.setRunAtLogin(true, process.execPath).catch(() => {});

@@ -13,7 +13,7 @@ export class StreamReports extends EventEmitter {
   constructor(c) {
     super();
     this.c = c; // { obs, chzzk, youtube, markers, drive, todo }
-    this.sections = new Map(); // key → { build({startedAt, endedAt}), refresh?(saved) } — modules' parts (Xylem: roulette)
+    this.sections = new Map(); // key → { build({startedAt, endedAt}), refresh?(saved) } — modules' parts (e.g. a roulette section)
     this.list = loadState('reports', []);
     this.cur = loadState('report-current', null);
     this.seen = loadState('reports-seen', { id: null }).id;

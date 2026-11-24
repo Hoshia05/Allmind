@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { moduleWindows } from './module-ui.js';
 
 export const API_LEVEL = 1;
 const ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -178,6 +179,10 @@ export function createRegistry(platform) {
         }
       }
       return out;
+    },
+    // M3: the app windows loaded modules declare in module.json (validated in src/module-ui.js)
+    windows() {
+      return moduleWindows(loaded.map(({ manifest }) => manifest));
     },
     // for GET /api/v1/info: commands = the module's own /api/v1/m/<id>/ routes
     info() {

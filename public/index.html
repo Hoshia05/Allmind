@@ -19,7 +19,7 @@
   <header class="topbar">
     <div class="brand"><img class="brand-icon" src="icon.svg" alt="" width="24" height="24">Allmind</div>
     <div class="chips" id="chips"></div>
-    <a class="btn ghost small-btn" id="xylemBtn" href="/xylem" target="allmind-xylem" title="Xylem — 룰렛·공중전·텍스트 같은 시청자 참여 기능 (이 화면에서 바꿔 보기 · Ctrl+클릭 = 새 창)">🎮 Xylem</a>
+    <a class="btn ghost small-btn" id="xylemBtn" href="/xylem" target="allmind-xylem" hidden title="Xylem — 룰렛·공중전·텍스트 같은 시청자 참여 기능 (이 화면에서 바꿔 보기 · Ctrl+클릭 = 새 창)">🎮 Xylem</a>
     <nav class="links" id="links"></nav>
   </header>
 
@@ -273,7 +273,8 @@
     </aside>
   </main>
 
-  <!-- Xylem inside the dashboard (🎮 Xylem button / phone tab): loaded once, then only shown/hidden -->
+  <!-- Xylem inside the dashboard (🎮 Xylem button / phone tab): loaded once, then only shown/hidden.
+       M3: the button and the tab stay hidden unless the snapshot's module list has xylem (app.js syncModuleUi) -->
   <div class="xy-view" id="xyView" hidden><iframe id="xyFrame" title="Xylem"></iframe></div>
 
   <!-- phones: pick which panel fills the space under the picture -->
@@ -282,7 +283,7 @@
     <button data-mp="music">음악</button>
     <button data-mp="alert">알림 화면</button>
     <button data-mp="todo">할 일·OBS<span class="tab-count" id="mnavTodo"></span></button>
-    <button data-mp="xylem">🎮 Xylem</button>
+    <button data-mp="xylem" hidden>🎮 Xylem</button>
   </nav>
 
   <!-- per-device settings (saved in this browser only) -->

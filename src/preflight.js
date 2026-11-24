@@ -2,6 +2,7 @@
 // Runs when a dashboard opens the 점검 sheet, once after OBS connects, and every 10 min while a
 // dashboard is open and OBS isn't live. Costs a handful of OBS requests (no screenshots).
 import fs from 'node:fs';
+import { vtsFixHint } from './module-ui.js';
 
 // status: ok | warn | bad | info (just so you know) | off (feature not used)
 const item = (id, group, label, status, detail, fix) => ({ id, group, label, status, detail: detail || '', fix: fix || '' });
@@ -109,9 +110,8 @@ export async function runPreflight(c) {
   if (v.enabled) {
     // settings brought from a two-PC setup point at the old main PC; on one PC VTS is on 127.0.0.1
     const remote = v.host && !/^(127\.0\.0\.1|localhost|\[?::1\]?)(:|$)/i.test(v.host);
-    const fix = v.state === 'ready' ? '' : remote
-      ? `VTube Studio가 켜져 있고 API가 켜져 있는지 확인 — VTube Studio가 이 PC에 있으면 주소를 127.0.0.1:8001로 (Xylem → VTube Studio), 안 쓰면 거기서 끄기`
-      : 'VTube Studio와 API가 켜져 있는지 확인 — 안 쓰면 Xylem → VTube Studio에서 끄기';
+    // M3: the "turn it off there" part names the loaded module's page that holds VTS settings, if any (src/module-ui.js)
+    const fix = vtsFixHint({ ready: v.state === 'ready', remote, place: c.vtsPlace || '' });
     out.push(item('vts', '기타', 'VTube Studio', v.state === 'ready' ? (v.customItems ? 'ok' : 'warn') : 'warn', v.state === 'ready' ? `연결됨 · ${v.model || '모델 없음'}` : v.error || '연결 안 됨', fix));
   }
   const u = c.update();

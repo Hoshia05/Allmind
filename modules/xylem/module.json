@@ -1,1 +1,3 @@
-{ "id": "xylem", "name": "Xylem", "version": "1.0.0", "minApi": 1 }
+{ "id": "xylem", "name": "Xylem", "version": "1.0.0", "minApi": 1,
+  "window": { "path": "/xylem", "title": "Xylem", "tray": "Xylem 열기 (룰렛·게임)", "width": 1200, "height": 900 },
+  "settings": ["vts"] }

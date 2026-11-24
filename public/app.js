@@ -96,6 +96,7 @@ function chip(label, cls, title = '') {
 
 function render() {
   if (!S) return;
+  syncModuleUi();
   const { obs, bgm, donation, interact } = S;
 
   // status chips
@@ -1588,7 +1589,9 @@ function setMobilePanel(p) {
 // is instant and the panels keep their place. While Xylem shows, the dashboard's OBS pictures stop; while the
 // dashboard shows, the hidden Xylem page stops polling. Ctrl/Shift/middle-click still opens a separate window.
 let xylemOpen = false;
+let xylemLoaded = null; // M3: does the snapshot list the module? unknown until the first snapshot (syncModuleUi)
 function setXylem(on) {
+  if (on && !xylemLoaded) return; // M3: never open a module view the snapshot doesn't list
   xylemOpen = !!on;
   pref.set('xylemOpen', xylemOpen);
   const f = $('xyFrame');
@@ -1620,7 +1623,19 @@ $('mnav').addEventListener('click', (ev) => {
   if (b) { buzz(); setMobilePanel(b.dataset.mp); }
 });
 setMobilePanel(pref.get('mPanel', 'chat') === 'xylem' ? 'chat' : pref.get('mPanel', 'chat'));
-if (pref.get('xylemOpen', false)) setXylem(true);
+// M3: the 🎮 Xylem button, the phone tab and the embedded view exist only while the snapshot lists the module
+// (docs/plans/modules.md "Dashboard"). Standalone Allmind (no module) shows no Xylem trace; a saved "Xylem was open"
+// is restored only once a snapshot says the module is there.
+function syncModuleUi() {
+  const has = Array.isArray(S?.modules) && S.modules.some((m) => m.id === 'xylem');
+  if (has === xylemLoaded) return;
+  const first = xylemLoaded === null;
+  xylemLoaded = has;
+  $('xylemBtn').hidden = !has;
+  $('mnav').querySelector('[data-mp="xylem"]').hidden = !has;
+  if (!has && xylemOpen) { const keep = pref.get('xylemOpen', false); setXylem(false); pref.set('xylemOpen', keep); }
+  if (has && first && pref.get('xylemOpen', false)) setXylem(true);
+}
 // layout changes (rotate the iPad, fold/unfold the phone): some panels appear or disappear
 let layoutTimer = null;
 window.addEventListener('resize', () => {
@@ -1957,7 +1972,7 @@ async function showReport(id) {
       ${card('후원', `${p.cheese.toLocaleString()} 치즈`, `${p.donations}건${p.videos ? ` · 영도 ${p.videos}` : ''}`)}
       ${card('구독', p.subs)}
       ${card('⭐ 마크', p.marks)}
-      ${card('룰렛', `${p.roulette.spins}회`, p.roulette.todo.length ? `<span class="rep-warn">남은 결과 ${p.roulette.todo.length}개</span>` : '')}
+      ${p.roulette ? card('룰렛', `${p.roulette.spins}회`, p.roulette.todo.length ? `<span class="rep-warn">남은 결과 ${p.roulette.todo.length}개</span>` : '') : ''}
       ${card('방송 품질', h.dropPct == null ? '–' : `${h.dropPct}%`, `드롭 ${h.dropFrames ?? '–'}프레임 · 렌더 ${h.renderPct ?? '–'}% · 인코딩 ${h.encodePct ?? '–'}%`)}
     </div>
     <div class="rep-sec"><h4>방송 품질</h4><ul>
@@ -1966,7 +1981,7 @@ async function showReport(id) {
     <div class="rep-sec"><h4>유튜브 아카이브</h4><ul><li>${!p.yt?.enabled ? '<span class="muted">안 씀</span>' : p.yt.live ? `<span class="rep-good">비공개로 올라갔어요</span> · ${esc(p.yt.title || '')}${p.yt.id ? ` · <a href="https://studio.youtube.com/video/${esc(p.yt.id)}/edit" target="_blank" rel="noopener">유튜브 스튜디오</a>` : ''}` : '<span class="rep-bad">유튜브 방송이 시작되지 않았어요</span>'}</li></ul></div>
     <div class="rep-sec"><h4>녹화 업로드</h4><ul>${upHtml}</ul></div>
     ${p.plan && (p.plan.done.length || p.plan.left.length) ? `<div class="rep-sec"><h4>할 일</h4><ul>${p.plan.done.map((t) => `<li class="rep-good">✔ ${esc(t)}</li>`).join('')}${p.plan.left.map((t) => `<li class="muted">다음에: ${esc(t)}</li>`).join('')}</ul></div>` : ''}
-    ${p.roulette.todo.length ? `<div class="rep-sec"><h4>아직 안 한 룰렛 결과</h4><ul>${p.roulette.todo.slice(0, 10).map((t) => `<li>${esc(t.nick)} — ${esc(t.result)}</li>`).join('')}${p.roulette.todo.length > 10 ? `<li class="muted">외 ${p.roulette.todo.length - 10}개 — Xylem 창의 룰렛 기록에서 완료 체크</li>` : ''}</ul></div>` : ''}
+    ${p.roulette?.todo?.length ? `<div class="rep-sec"><h4>아직 안 한 룰렛 결과</h4><ul>${p.roulette.todo.slice(0, 10).map((t) => `<li>${esc(t.nick)} — ${esc(t.result)}</li>`).join('')}${p.roulette.todo.length > 10 ? `<li class="muted">외 ${p.roulette.todo.length - 10}개 — Xylem 창의 룰렛 기록에서 완료 체크</li>` : ''}</ul></div>` : ''}
     <div class="rep-sec"><h4>방송 중 생긴 문제</h4><ul>${p.problems.length ? p.problems.map((x) => `<li>${esc(new Date(x.at).toTimeString().slice(0, 5))} ${esc(x.text)}</li>`).join('') : '<li class="rep-good">없었어요</li>'}</ul></div>`;
 }
 $('reportBtn').addEventListener('click', () => { $('reportWrap').hidden = false; showReport(); });
