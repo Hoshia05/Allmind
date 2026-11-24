@@ -272,7 +272,7 @@ From source the install is always a dry run (downloads + verifies, doesn't start
   asked; `isLocal` (loopback only) still guards the settings routes. `/deck/*` relies on `deck.token` (`authorized(params,
   trusted)` — the stream PC needs no key). Test as "another device": `ALLMIND_SELF_LOOPBACK_ONLY=1 sh tools/dev/up.sh`, then
   use `http://$(hostname -I | awk '{print $1}'):8080`.
-- **Remote-access modes** (2026-11-23, unreleased; `docs/plans/remote-access.md`): `src/netmode.js` (pure: `classify(addr)` →
+- **Remote-access modes** (2026-11-23, released in 0.48.0; `docs/plans/remote-access.md`): `src/netmode.js` (pure: `classify(addr)` →
   loopback/tailnet/private/public, `allowed(mode, cls, self)`, `modeOf(config.server)` = `server.remoteAccess` or migrated from
   `server.host`, `hostFor(mode)`, `proxyHeader(headers)`, `parseDnsName()`). `server.js`: module-level `MODE` (bind = `hostFor(MODE)`);
   the first block of the request handler refuses a device the mode doesn't allow, and any request **from the stream PC itself**

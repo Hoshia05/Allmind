@@ -1,6 +1,6 @@
 # Modules — a standalone platform with optional parts (Xylem, assistant)
 
-**Status: M0, M1, M5 (released in 0.48.0), M2 and M3 (2026-11-24, unreleased) done, mock-tested; Xylem commands signed off at Gate 3 (2026-11-24). Next: M4 (standalone build in CI) when wanted.** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
+**Status: M0, M1, M5 (released in 0.48.0), M2 and M3 (2026-11-24, released in 0.49.0) done, mock-tested; Xylem commands signed off at Gate 3 (2026-11-24). Next: M4 (standalone build in CI) when wanted.** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
 `Projects/Allmind/Decisions.md`): the platform (today's Allmind) must run **without Xylem and without the AI assistant**, must not
 depend on beta features, and stays public (MIT). Xylem should have a strict identity of its own but stay closely linked. The
 assistant is a separate process that only uses the platform's local API. Nobody else really uses the public repo yet, so
