@@ -1,6 +1,6 @@
 # Modules — a standalone platform with optional parts (Xylem, assistant)
 
-**Status: M0, M1 and M5 done (2026-11-22, mock only, not released); nothing moved yet. Next: M2 before assistant v1.** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
+**Status: M0, M1, M5 (released in 0.48.0) and M2 (2026-11-24, unreleased) done, mock-tested; next: Gate 3 review of the Xylem commands, then M3 (dashboard gating).** Owner's decisions 2026-11-21 (see the vault: `Projects/Stream Sidekick/Suite Architecture.md`,
 `Projects/Allmind/Decisions.md`): the platform (today's Allmind) must run **without Xylem and without the AI assistant**, must not
 depend on beta features, and stays public (MIT). Xylem should have a strict identity of its own but stay closely linked. The
 assistant is a separate process that only uses the platform's local API. Nobody else really uses the public repo yet, so
@@ -28,7 +28,8 @@ Modules reach the platform only through a small context object (`ctx`); the assi
 ## Design
 ### 1. Module contract
 A module is a folder `modules/<id>/` with `module.json` (`id`, `name`, `version`, `minApi`) and `index.js` exporting `register(ctx)`.
-`ctx` gives: `config` (its own section only, frozen copy), `dataDir` (`DATA_DIR/<id>`, the module creates it), `events.on(name, fn)`
+`ctx` gives: `config` (its own section only, frozen copy), `dataDir` (the platform data folder, shared — changed in M2 from `DATA_DIR/<id>`
+so Xylem's existing files stay where they are; modules name their files uniquely), `events.on(name, fn)`
 (M1: `live-chat`, `chat`, `donations`; more names are added when a module needs them), `chat.send`, `route(method, path, handler, {pinFree})`
 (GET/POST; handler `(body, {req, url})` → object, answered as `{ok:true, ...}`, errors → 400), `sse(path, handler)` (raw `(req, res, url)`),
 `snapshot(key, fn)` (adds its status to the dashboard snapshot under `moduleState`), `toast`, `log` (prefixed `[id]`), and `services`
@@ -119,7 +120,8 @@ Order: **M0 → M1 → M5 → assistant v0 → M2 → assistant v1**; M3/M4 opti
   **Done 2026-11-22** (mock only, not released): Gate 1 signed off by gemini; `src/api.js` + `handleV1()` in `server.js`, settings card
   API 토큰, plugin 1.2.0, contracts v1. Tests: smoke `v1/*` checks, `node tools/dev/v1-client.mjs` (exit test), boundary report unchanged
   (75). gemini's StreamMaid `AllmindClient` was run against the real mock: all commands and events work.
-- **M2 Move Xylem server code** (`dogfight`, `roulette`, `draw`, `textbox`, `vtsthrow`, `xylem` pack manager) into `modules/xylem/`, registered
+- **M2 Move Xylem server code** — **done 2026-11-24** (mock-tested; details and the `ctx` additions in `docs/plans/m2-xylem.md`; commands
+  draft `docs/contracts/xylem.md` awaits Gate 3). Plan as written: (`dogfight`, `roulette`, `draw`, `textbox`, `vtsthrow`, `xylem` pack manager) into `modules/xylem/`, registered
   through `ctx`, plus Xylem's `/api/v1/m/xylem/*` commands; `server.js` loses its Xylem imports, routes and `PIN_FREE` entries; the
   boundary check now fails on violations. Smoke script identical. **Before assistant v1.**
 - **M3 Dashboard gating** (button, phone tab, tray, window-title tag, preflight lines) driven by the snapshot's module list. Optional.

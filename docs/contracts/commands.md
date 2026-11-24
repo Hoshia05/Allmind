@@ -48,8 +48,8 @@ Body `{ "action": "check", "id": "<item id>", "done": true }`, `{ "action": "nex
 - A module's assistant-facing commands are **its own routes**, registered through `ctx.route` under `/api/v1/m/<id>/…` and
   listed in `/api/v1/info` `modules[].commands`. They are not part of the platform's command list and appear only when the module
   is loaded. Same auth, logging and error format as above (the platform wraps them).
-- **Xylem** (overlay text, 시청자 추첨 open/close/draw, roulette, VTS throw) arrives with M2, before Sidekick v1; its routes get
-  their own section here then (Gate 3 review).
+- **Xylem** (since M2, 2026-11-24): `GET …/state`, `POST …/text`, `…/draw`, `…/wheel`, `…/vts-throw` — see [xylem.md](xylem.md)
+  (draft, awaiting gemini's Gate 3 review). Without the module these paths answer 404 `not-found`.
 
 ## Excluded actions (the rule)
 `/api/v1` — platform and modules alike — never offers an account-level or destructive action. Today that means, with the

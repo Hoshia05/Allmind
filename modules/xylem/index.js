@@ -215,6 +215,8 @@ export function register(ctx) {
     return { results: rows.map((r) => r.result) };
   });
   ctx.route('POST', '/api/v1/m/xylem/vts-throw', () => {
+    // the owner's on/off switch for throws applies to the assistant too (the panel's test button ignores it on purpose)
+    if (!vtsThrow.s.enabled) throw v1Error(409, 'conflict', 'VTS 던지기가 꺼져 있어요 (Xylem → VTube Studio)');
     const r = vtsThrow.request({ source: 'assistant', force: true });
     if (!r.ok) throw v1Error(409, 'conflict', r.reason);
     return {};

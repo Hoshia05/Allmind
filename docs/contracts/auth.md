@@ -25,6 +25,8 @@ use `/api/v1`.
 - Other devices (e.g. a client developed on the main PC against the stream PC's LAN address): only with the token **and** only while
   the settings toggle 다른 기기에서 대시보드 열기 허용 (`lanAccess`) is on — the same switch that already controls the dashboard on the LAN.
 - The optional PIN for other devices does **not** apply to `/api/v1`; the token replaces it there.
+- Module commands (`/api/v1/m/<id>/…`, added with M2 2026-11-24) use the same codes: a module may answer `bad-request`, `not-allowed`,
+  `conflict`, `obs-unavailable` or `not-found` with its own status; anything else it throws becomes 400 `bad-request`.
 - Remote-access mode (added 2026-11-23, settings 다른 기기에서 열기: 끄기 / 같은 네트워크 + Tailscale / Tailscale만, see
   `docs/plans/remote-access.md`): another device must also be on a network the mode allows; if not, the answer is 403 `lan-off`,
   the same code as before. A request reaching Allmind through Tailscale Serve/Funnel is refused the same way. A client on the stream
