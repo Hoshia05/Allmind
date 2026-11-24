@@ -5,8 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { readAsset, loadState, saveState, DATA_DIR } from './config.js';
-import { cmpVersion } from './update.js';
+import { readAsset, loadState, saveState, DATA_DIR, cmpVersion } from './host.js';
 
 const KEEP = 3; // downloaded versions kept for rollback
 const SAFE = /^[a-z0-9][a-z0-9._-]*$/i; // pack files are flat, simple names

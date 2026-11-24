@@ -2,6 +2,7 @@
 // Serves the dashboard (open it from the main PC) and a small launcher /
 // settings window that only works on the stream PC itself.
 import http from 'node:http';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
@@ -29,18 +30,12 @@ import { ChzzkOpen, cleanTags } from './chzzkopen.js';
 import { loadState, saveState, freezeState, configPath as cfgPath } from './config.js';
 import * as backup from './backup.js';
 import { Updater } from './update.js';
-import { Dogfight } from './dogfight.js';
-import { XylemPack } from './xylem.js';
-import { Roulette } from './roulette.js';
-import { ViewerDraw } from './draw.js';
 import { Tts } from './tts.js';
-import { TextBoxes } from './textbox.js';
 import { TodoList } from './todo.js';
 import { ObsLogWatch } from './obslog.js';
 import { Deck } from './deck.js';
 import { Access, isSelf, cookieHeader, newDeckToken } from './access.js';
 import { VTS } from './vts.js';
-import { VTSThrow } from './vtsthrow.js';
 import { runPreflight } from './preflight.js';
 import { StreamReports } from './report.js';
 import * as win from './win.js';
@@ -197,15 +192,12 @@ function guard(req, url) {
 // the API (minus OAuth callbacks, the PIN page's own calls and what OBS overlays use) and the pages that use it.
 // Static files (scripts, styles, icons, overlay pages, the Stream Deck plugin download) hold nothing private.
 // /deck/* is covered by config.deck.token instead.
-const PIN_PAGES = new Set(['/', '/index.html', '/xylem', '/xylem/', '/xylem/index.html', '/mark', '/mark.html', '/launcher', '/launcher.html']);
+// modules add their own pages (pinPage) and overlay channels (pinFree) when they load
+const PIN_PAGES = new Set(['/', '/index.html', '/mark', '/mark.html', '/launcher', '/launcher.html']);
 const PIN_FREE_API = new Set([
   '/api/ping', '/api/access', '/api/access/pair', '/api/google/callback', '/api/chzzk-open/callback',
-  // overlays (OBS browser sources): their event channels and the two acknowledgements they send
-  '/api/roulette/events', '/api/roulette/board-events', '/api/text/events', '/api/dogfight/events', '/api/roulette/shown', '/api/dogfight/result',
-  '/api/draw/events', '/api/draw/shown', // 시청자 추첨 overlay (/draw): its event channel and "the staging is done"
 ]);
-// the draw overlay's speech files (/api/draw/tts/<16 hex>.wav): random ids that only the overlay is told about
-const PIN_FREE_PREFIX = ['/api/draw/tts/'];
+const PIN_FREE_PREFIX = [];
 // /api/v1 has its own API token instead of the PIN (docs/contracts/auth.md)
 const pinNeeded = (p) => (p.startsWith('/api/v1/') ? false : p.startsWith('/api/') ? !PIN_FREE_API.has(p) && !PIN_FREE_PREFIX.some((x) => p.startsWith(x)) : PIN_PAGES.has(p));
 const isLocal = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
@@ -280,8 +272,9 @@ async function main() {
     stateChanged();
   });
   let preflightLast = null;
-  let reports = null; // set once the Xylem parts exist (needs the roulette)
-  let draw = null;    // 시청자 추첨, same
+  let reports = null; // 방송 리포트 (src/report.js), set further down
+  // platform events for modules (ctx.events): 'stream' (OBS's stream output started/stopped)
+  const platformBus = new EventEmitter();
   const split = { busy: false, part: 1, last: null }; // 파트 나누기 (docs/plans/split.md)
   const youtube = new YouTubeGuard(google, config, { getTitle: () => prepFresh() || streamTitle(), getFullTitle: prepYt });
   // uploads wait while OBS streams or records, and 5 min after a stream ends (it may be restarted)
@@ -510,10 +503,10 @@ async function main() {
     if (active === obsStreaming) return;
     obsStreaming = active;
     api.emit('stream', { what: 'live', on: active });
+    platformBus.emit('stream', active);
     youtube.onStreaming(active);
     if (active) {
       split.part = 1; split.last = null;
-      draw?.streamStarted(); // "지난 당첨자 제외 (이번 방송)" counts from here
       reports?.start().catch((e) => console.warn('[report]', e.message));
       const t = new Date();
       chzzk.note(`— 방송 시작 ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')} —`);
@@ -558,38 +551,14 @@ async function main() {
   });
   // chat log for SkyEye: only live messages (not the history replayed on reconnect)
   chzzk.on('live-chat', (list) => { for (const m of list) markers.addChat(m); });
-  // 공중전 overlay: relays !commands to the OBS browser source, keeps the scoreboard
-  // Xylem: viewer-interaction overlays + their settings pages, hot-swappable mid-stream (docs/plans/xylem.md)
-  const xylem = new XylemPack(config, VERSION);
-  const xylemPage = xylem.channel(); // open /xylem pages: told to reload on a pack switch
-  const dogfight = new Dogfight(chzzk, xylem);
-  const roulette = new Roulette(chzzk, xylem, chzzkOpen);
+  // platform services modules share (ctx.services): Windows TTS, the VTube Studio client (on the main PC)
   const tts = new Tts();
-  draw = new ViewerDraw(chzzk, xylem, chzzkOpen, tts); // 시청자 추첨 (/draw overlay)
-  draw.on('tts-error', (msg) => sendAll('toast', { text: `추첨 음성: ${msg}`, bad: true, long: true }));
-  const textBoxes = new TextBoxes(xylem); // 텍스트: on-screen text boxes (/text?id=…)
-  // VTube Studio on the main PC (docs/plans/vts.md): 던지기 now, expression changes later
   const vts = new VTS(config);
-  const vtsThrow = new VTSThrow(vts, chzzk);
   vts.apply();
-  // 방송 리포트 (src/report.js): one summary per stream
-  reports = new StreamReports({ obs, chzzk, youtube, markers, roulette, drive, todo });
+  // 방송 리포트 (src/report.js): one summary per stream; modules add sections (Xylem: the roulette spins)
+  reports = new StreamReports({ obs, chzzk, youtube, markers, drive, todo });
   reports.on('change', () => stateChanged());
   reports.on('ready', () => sendAll('toast', { text: '📋 방송 리포트가 준비됐어요 — 위쪽 "방송 기록"에서 볼 수 있어요', long: true }));
-  // while a Xylem page is open, look for a newer pack every 3 min (one small GitHub request)
-  setInterval(() => { if (xylemPage.size) xylem.check().catch(() => {}); }, 3 * 60000).unref();
-  const xylemState = () => ({
-    allmind: VERSION,
-    pack: xylem.status(),
-    chat: chzzk.chatState,
-    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size, rouletteBoard: roulette.boardCh.size, text: textBoxes.ch.size, draw: draw.overlays },
-    draw: draw.status(),
-    text: textBoxes.status(),
-    roulette: roulette.status(),
-    board: dogfight.board(),
-    dogfight: dogfight.status(),
-    vts: { ...vts.status(), throw: vtsThrow.status() },
-  });
   // Stream Deck & co.: GET /deck/<action> (see src/deck.js)
   const deck = new Deck({ config, bgm, soundboard, markers, todo });
 
@@ -940,44 +909,10 @@ async function main() {
     'POST /api/drive/retry': (b) => drive.retry(b.id),
     'POST /api/drive/remove': (b) => drive.remove(b.id),
 
-    // ---------- Xylem (page /xylem) ----------
-    'POST /api/xylem/check': async () => ({ pack: await xylem.check() }),
-    'POST /api/xylem/apply': async () => ({ pack: await xylem.apply() }),
-    'POST /api/xylem/use': (b) => ({ pack: xylem.use(b.version || null) }),
     'POST /api/todo/add': (b) => todo.add(b),
     'POST /api/todo/update': (b) => todo.update(String(b.id || ''), b.patch || {}),
     'POST /api/todo/remove': (b) => todo.remove(String(b.id || '')),
     'POST /api/todo/check': (b) => todo.check(String(b.id || ''), !!b.done),
-    'POST /api/text/set': (b) => ({ box: textBoxes.set(String(b.id || ''), b.patch || {}) }),
-    'POST /api/text/forget': (b) => ({ box: textBoxes.forget(String(b.id || ''), String(b.text ?? '')) }),
-    'POST /api/text/add': (b) => ({ box: textBoxes.add(b.copyFrom ? String(b.copyFrom) : null) }),
-    'POST /api/text/remove': (b) => textBoxes.remove(String(b.id || '')),
-    'POST /api/text/preset-save': (b) => textBoxes.savePreset(b.name, String(b.id || '')),
-    'POST /api/text/preset-delete': (b) => textBoxes.deletePreset(b.name),
-    // 시청자 추첨 (src/draw.js)
-    'POST /api/draw/settings': (b) => ({ settings: draw.setSettings(b.settings) }),
-    'POST /api/draw/open': (b) => { draw.open(b.sec); return {}; },
-    'POST /api/draw/close': () => { draw.close(); return {}; },
-    'POST /api/draw/extend': (b) => { draw.extend(b.sec); return {}; },
-    'POST /api/draw/draw': () => { draw.draw(); return {}; },
-    'POST /api/draw/skip': () => { draw.skip(); return {}; },
-    'POST /api/draw/redraw': (b) => { draw.redraw(String(b.uid || '')); return {}; },
-    'POST /api/draw/end': () => { draw.end(); return {}; },
-    'POST /api/draw/reset': () => { draw.reset(); return {}; },
-    'POST /api/draw/remove': (b) => { draw.remove(String(b.uid || '')); return {}; },
-    'POST /api/draw/clear-past': () => { draw.clearPast(); return {}; },
-    'POST /api/draw/test-run': (b) => { draw.runTest(b.n); return {}; },
-    'POST /api/draw/test-fill': (b) => { draw.testFill(b.n); return {}; },
-    'POST /api/draw/test-chat': (b) => { draw.testChat(b.text); return {}; },
-    'POST /api/draw/tts-test': async (b) => ({ tts: await draw.ttsTest(b.text) }),
-    'GET /api/draw/voices': async () => ({ voices: await tts.voices(), real: tts.real }),
-    'POST /api/roulette/settings': (b) => ({ settings: roulette.setSettings(b.settings) }),
-    'POST /api/roulette/test': (b) => ({ spins: roulette.test(b.spins, b.rid ? String(b.rid) : null) }),
-    'POST /api/roulette/board-show': () => { roulette.showBoard(); return { boards: roulette.boardCh.size }; },
-    'POST /api/roulette/done': (b) => roulette.setDone(String(b.id), b.done),
-    'POST /api/roulette/skip': () => roulette.skipAll(),
-    'POST /api/roulette/clear-log': () => roulette.clearLog(),
-    'POST /api/dogfight/reset': () => dogfight.reset(),
     'POST /api/preflight': () => preflight(),
     'POST /api/youtube/adopt': () => youtube.adoptLive(),
     'POST /api/obs/relaunch': () => relaunchObs(),
@@ -991,7 +926,6 @@ async function main() {
       if (!chzzkOpen.status().loggedIn) throw new Error('채팅을 보내려면 방송 PC 설정 창에서 치지직 연동 로그인을 해 주세요');
       return chzzkOpen.sendChat(b.message);
     },
-    'POST /api/dogfight/mode': (b) => ({ mode: dogfight.setMode(b) }),
     // ---------- VTube Studio ----------
     'POST /api/vts/connect': (b) => {
       const v = { enabled: !!b.enabled, host: String(b.host ?? config.vts?.host ?? '').trim().slice(0, 100) };
@@ -1002,22 +936,9 @@ async function main() {
     },
     'POST /api/vts/reconnect': () => { vts.reconnect(); return { vts: vts.status() }; },
     'POST /api/vts/forget': () => { vts.forget(); return { vts: vts.status() }; },
-    'POST /api/vts/throw-settings': (b) => ({ settings: vtsThrow.setSettings(b.settings) }),
-    'POST /api/vts/test-throw': (b) => {
-      const n = Math.max(1, Math.min(10, Number(b.count) || 1));
-      let r;
-      for (let i = 0; i < n; i++) r = vtsThrow.request({ source: 'test', force: true, side: Number(b.side) || undefined });
-      if (!r.ok) throw new Error(r.reason);
-      return {};
-    },
-    'POST /api/vts/items': (b) => vtsThrow.addItem(b.name, b.data),
-    'POST /api/vts/items-remove': (b) => vtsThrow.removeItem(b.file),
-    'POST /api/vts/aim-start': () => vtsThrow.startAim(),
-    'POST /api/vts/aim-stop': () => vtsThrow.stopAim(),
     'GET /api/vts/expressions': async () => ({ expressions: await vts.expressions() }),
     'POST /api/vts/expression': async (b) => { await vts.setExpression(b.file, b.active); return { expressions: await vts.expressions() }; },
     'GET /api/vts/hotkeys': async () => ({ hotkeys: await vts.hotkeys() }),
-    'POST /api/roulette/wheel-spin': (b) => ({ spins: roulette.spinWheel(String(b.id || ''), b.spins) }),
   };
   const SECRET_MASK = '••••••••';
   const chzzkRedirect = () => `http://localhost:${PORT}/api/chzzk-open/callback`;
@@ -1353,14 +1274,16 @@ async function main() {
   const INLINE_ROUTES = new Set(['GET /api/access', 'POST /api/access/pair', 'GET /pin', 'GET /mark', 'GET /api/events', 'GET /api/frame',
     'GET /api/stream', 'GET /api/ping', 'POST /api/mark', 'GET /api/marks', 'GET /api/google/callback', 'GET /api/chzzk-open/callback',
     'GET /api/bgm/loop', 'GET /api/bgm/loop/peaks', 'GET /api/bgm/loop/preview', 'GET /api/chzzk/user', 'GET /api/chzzk/card',
-    // Xylem's, still in the platform until M2 moves them into modules/xylem/
-    'GET /api/xylem/state', 'GET /api/xylem/events', 'GET /api/roulette/events', 'GET /api/draw/events', 'GET /api/text/events',
-    'GET /api/roulette/board-events', 'POST /api/roulette/shown', 'GET /api/dogfight/events', 'GET /api/vts/item', 'POST /api/dogfight/result',
-    'POST /api/dogfight/cmd', 'POST /api/draw/shown']);
+  ]);
   moduleReg = createRegistry({
     config,
     dataDir: DATA_DIR,
+    version: VERSION,
+    state: { load: (name, fallback) => loadState(name, fallback), save: (name, value) => saveState(name, value) },
+    assets: { read: (rel) => readAsset(rel) },
+    reportSection: (key, def) => reports.addSection(key, def),
     events: {
+      stream: (fn) => platformBus.on('stream', fn), // fn(active): OBS's stream output started (true) / stopped (false)
       'live-chat': (fn) => chzzk.on('live-chat', fn), // live Chzzk chat (not the RECENT replay, not addExternal lines)
       chat: (fn) => chzzk.on('chat', fn), // everything the dashboard list shows
       donations: (fn) => chzzk.on('donations', fn),
@@ -1368,14 +1291,30 @@ async function main() {
     chatSend: (text) => chzzkOpen.sendChat(text),
     toast: (t) => sendAll('toast', typeof t === 'string' ? { text: t } : t),
     log: (...a) => console.log(...a),
-    services: { obs, vts, tts },
+    services: {
+      obs, vts, tts,
+      // the chat as a module may use it: live lines, the dashboard list, viewers seen, lines from elsewhere, a highlight
+      chat: {
+        on: (ev, fn) => { if (ev !== 'live-chat') throw new Error(`chat.on: only 'live-chat'`); chzzk.on(ev, fn); },
+        get chat() { return chzzk.chat; },
+        get users() { return chzzk.users; },
+        get chatState() { return chzzk.chatState; },
+        addExternal: (list) => chzzk.addExternal(list),
+        emit: (ev, m) => { if (ev === 'chat-update') chzzk.emit('chat-update', m); },
+      },
+      // sending a chat line as the streamer (Xylem's own notices and !룰렛 answers; never reachable from /api/v1)
+      chatSender: { configured: () => chzzkOpen.configured(), loggedIn: () => chzzkOpen.loggedIn(), sendChat: (t) => chzzkOpen.sendChat(t) },
+    },
     reserved: (k) => !!routes[k] || !!localRoutes[k] || INLINE_ROUTES.has(k) || k.slice(k.indexOf(' ') + 1).startsWith('/deck/'),
+    reservedUnder: (prefix) => [...Object.keys(routes), ...Object.keys(localRoutes), ...INLINE_ROUTES].some((k) => k.slice(k.indexOf(' ') + 1).startsWith(prefix)),
   });
   // the request handler below is attached right away and waits for this, so no early request is dropped
   const modulesReady = (async () => {
     const list = MODULE_LIST ?? (process.env.ALLMIND_NO_MODULES === '1' ? [] : await discover(process.env.ALLMIND_MODULES_DIR || path.join(ROOT, 'modules')));
     await moduleReg.load(list);
     for (const p of moduleReg.pinFreePaths()) PIN_FREE_API.add(p);
+    for (const p of moduleReg.pinFreePrefixes()) PIN_FREE_PREFIX.push(p);
+    for (const p of moduleReg.pinPagePaths()) PIN_PAGES.add(p);
   })().catch((e) => console.log(`[modules] loading failed: ${e.message}`));
   async function runModuleRoute(m, req, res, url) {
     if (m.raw) {
@@ -1400,6 +1339,7 @@ async function main() {
   // ---------- /api/v1 commands (docs/contracts/commands.md) ----------
   // Exactly these five, each wrapping what the dashboard already does. Account-level/destructive actions are never here
   // (stream/record start-stop, split, title/category, chat send, /api/chzzk/act, settings/launcher, updates).
+  const V1_CODES = new Set(['bad-request', 'not-allowed', 'conflict', 'obs-unavailable', 'not-found']);
   class V1Error extends Error { constructor(status, code, msg) { super(msg); this.status = status; this.code = code; } }
   const v1fail = (status, code, msg) => { throw new V1Error(status, code, msg); };
   const needObs = () => { if (!obs.connected) v1fail(502, 'obs-unavailable', 'OBS에 연결되어 있지 않아요'); };
@@ -1497,6 +1437,7 @@ async function main() {
       send(200, { ok: true, ...(r && typeof r === 'object' ? r : {}) });
     } catch (e) {
       if (e instanceof V1Error) return fail(e.status, e.code, e.message);
+      if (mod && V1_CODES.has(e?.code) && Number.isInteger(e?.status)) return fail(e.status, e.code, e.message); // docs/contracts/auth.md
       if (cmd && !obs.connected) return fail(502, 'obs-unavailable', 'OBS에 연결되어 있지 않아요');
       fail(400, 'bad-request', e.message);
     }
@@ -1596,39 +1537,6 @@ async function main() {
       return res.end(readAsset('public/mark.html'));
     }
 
-    // 공중전 overlay (OBS browser source: http://localhost:<port>/dogfight)
-    // Xylem pack files: the page, overlays (OBS browser sources) and panel scripts — from the active pack
-    if (req.method === 'GET' && (url.pathname === '/xylem' || url.pathname.startsWith('/xylem/') || url.pathname === '/dogfight' || url.pathname === '/roulette' || url.pathname === '/roulette-board' || url.pathname === '/text' || url.pathname === '/draw')) {
-      const name = url.pathname === '/xylem' || url.pathname === '/xylem/' ? 'index.html' : url.pathname.startsWith('/xylem/') ? decodeURIComponent(url.pathname.slice(7)) : `${url.pathname.slice(1)}.html`;
-      const body = xylem.file(name);
-      if (!body) return json(res, 404, { error: 'Not found' });
-      return sendStatic(req, res, body, MIME[path.extname(name)] || 'application/octet-stream');
-    }
-    if (key === 'GET /api/xylem/state') return json(res, 200, { ok: true, ...xylemState() }); // polled by the Xylem page; no dashboard broadcast
-    if (key === 'GET /api/xylem/events') return xylemPage.attach(req, res);
-    if (key === 'GET /api/roulette/events') return roulette.attach(req, res);
-    if (key === 'GET /api/draw/events') return draw.attach(req, res);
-    if (key === 'POST /api/draw/shown') { draw.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
-    if (req.method === 'GET' && url.pathname.startsWith('/api/draw/tts/')) {
-      const m = /^\/api\/draw\/tts\/([0-9a-f]{16})\.wav$/.exec(url.pathname);
-      const wav = m && tts.read(m[1]);
-      if (!wav) return json(res, 404, { ok: false });
-      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': wav.length, 'Cache-Control': 'no-store' });
-      return res.end(wav);
-    }
-    if (key === 'GET /api/text/events') return textBoxes.attach(req, res, url.searchParams.get('preview') === '1');
-    if (key === 'GET /api/roulette/board-events') return roulette.attachBoard(req, res);
-    if (key === 'POST /api/roulette/shown') { roulette.shown(String((await readBody(req)).id || '')); return json(res, 200, { ok: true }); }
-    if (key === 'GET /api/dogfight/events') return dogfight.attach(req, res);
-    if (key === 'GET /api/vts/item') {
-      const buf = vtsThrow.itemFile(url.searchParams.get('file'));
-      if (!buf) return json(res, 404, { ok: false });
-      const ext = path.extname(url.searchParams.get('file') || '').toLowerCase();
-      res.writeHead(200, { 'Content-Type': ext === '.gif' ? 'image/gif' : ext === '.png' ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-cache' });
-      return res.end(buf);
-    }
-    if (key === 'POST /api/dogfight/result') return json(res, 200, { ok: true, ...dogfight.result(await readBody(req)) });
-    if (key === 'POST /api/dogfight/cmd') { dogfight.inject(await readBody(req)); return json(res, 200, { ok: true }); }
 
     // Allmind Stream Deck plugin: live BGM/soundboard state + lists
     if (key === 'GET /deck/events') {

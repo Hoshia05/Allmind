@@ -12,7 +12,8 @@ const KEEP = 30;
 export class StreamReports extends EventEmitter {
   constructor(c) {
     super();
-    this.c = c; // { obs, chzzk, youtube, markers, roulette, drive }
+    this.c = c; // { obs, chzzk, youtube, markers, drive, todo }
+    this.sections = new Map(); // key → { build({startedAt, endedAt}), refresh?(saved) } — modules' parts (Xylem: roulette)
     this.list = loadState('reports', []);
     this.cur = loadState('report-current', null);
     this.seen = loadState('reports-seen', { id: null }).id;
@@ -144,17 +145,16 @@ export class StreamReports extends EventEmitter {
       const dt = b[k + 'Total'] - (a && b[k + 'Total'] >= a[k + 'Total'] ? a[k + 'Total'] : 0);
       return dt > 0 ? Math.round((10000 * Math.max(0, ds)) / dt) / 100 : null;
     };
-    const roulette = this.c.roulette.log.filter((x) => x.time >= r.startedAt && x.time <= r.endedAt && !x.test);
     const rep = {
       id: r.id, startedAt: r.startedAt, endedAt: r.endedAt, stale,
       title: r.titles.at(-1) || '', titles: r.titles.slice(-5), category: r.category,
       peak: r.peak, chats: r.chats, chatters: r.chatters.length, newChatters: r.newChatters,
       donations: r.donations, cheese: r.cheese, videos: r.videos, subs: r.subs, marks: r.marks,
-      roulette: { spins: roulette.length, todo: roulette.filter((x) => !x.done && !x.wheel).map((x) => ({ id: x.id, nick: x.nick, result: x.result })) },
       health: { dropPct: pct('net'), dropFrames: b && a ? Math.max(0, b.netSkip - a.netSkip) : b?.netSkip ?? null, renderPct: pct('ren'), encodePct: pct('enc') },
       yt: r.yt, problems: r.problems,
       plan: this.c.todo ? this.c.todo.summary(r.startedAt, r.endedAt) : null, // 할 일: done during it / still open
     };
+    for (const [key, def] of this.sections) { try { rep[key] = def.build({ startedAt: r.startedAt, endedAt: r.endedAt }); } catch (e) { console.warn(`[report] section ${key}: ${e.message}`); } }
     this.list.push(rep);
     if (!stale) this.recent = { r, rep, at: Date.now() };
     if (this.list.length > KEEP) this.list.splice(0, this.list.length - KEEP);
@@ -173,6 +173,9 @@ export class StreamReports extends EventEmitter {
     this.saveT = setTimeout(() => { this.saveT = null; if (this.cur) saveState('report-current', this.cur); }, 15000);
   }
 
+  // a module's part of each report (ctx.reportSection)
+  addSection(key, def) { this.sections.set(String(key), def); }
+
   markSeen(id) { this.seen = id; saveState('reports-seen', { id }); this.emit('change'); }
 
   // the upload rows of a report's recording (Drive queue items made after the stream started)
@@ -183,8 +186,9 @@ export class StreamReports extends EventEmitter {
   view(id) {
     const rep = id ? this.list.find((x) => x.id === id) : this.list.at(-1);
     if (!rep) return null;
-    const roulette = this.c.roulette.log.filter((x) => rep.roulette.todo.some((t) => t.id === x.id));
-    return { ...rep, roulette: { ...rep.roulette, todo: roulette.filter((x) => !x.done).map((x) => ({ id: x.id, nick: x.nick, result: x.result })) }, uploads: this.uploads(rep) };
+    const out = { ...rep, uploads: this.uploads(rep) };
+    for (const [key, def] of this.sections) if (rep[key] !== undefined && def.refresh) { try { out[key] = def.refresh(rep[key]); } catch {} }
+    return out;
   }
   summary() {
     const last = this.list.at(-1);

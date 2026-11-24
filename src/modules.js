@@ -42,18 +42,26 @@ export async function discover(dir) {
 }
 
 // platform = what the server hands to modules:
-//   config (whole config; a module sees only config[id]), dataDir (modules get DATA_DIR/<id>), events {name: subscribe(fn)},
-//   chatSend(text), toast(t), log(...), services {obs, vts, tts…}, reserved('METHOD /path') → true if the platform owns it.
+//   config (whole config; a module sees only config[id]), dataDir (the platform data folder, shared — M2: existing files stay put),
+//   events {name: subscribe(fn)}, chatSend(text), toast(t), log(...), services {obs, vts, tts, chat, chatSender…},
+//   state {load(name, fallback), save(name, value)} (the platform's JSON store, same file names), assets {read(rel)} (files shipped in
+//   the exe), version, reportSection(key, def), reserved('METHOD /path') → true if the platform owns it,
+//   reservedUnder('/prefix/') → true if a platform route lives under that prefix.
+// Route options: { pinFree } (no PIN, for OBS overlays), { pinPage } (a page that asks other devices for the PIN, like the dashboard),
+// { prefix } (path ends in '/', matches everything below it; exact routes win), { raw } (handler(req, res, url) writes the response).
+const BROAD_PREFIXES = new Set(['/', '/api/', '/api/v1/', '/api/v1/m/']);
 export function createRegistry(platform) {
   const loaded = []; // { manifest, routes: [key] }
   const failed = []; // { id, error }
-  const routes = new Map(); // 'GET /path' → { id, handler, raw, pinFree }
+  const routes = new Map(); // 'GET /path' → { id, handler, raw, pinFree, pinPage }
+  const prefixes = []; // { method, prefix, entry }, longest prefix first
   const snaps = new Map(); // key → { id, fn }
 
   function makeCtx(manifest, pending) {
     const id = manifest.id;
     const own = `/api/v1/m/${id}/`;
-    const addRoute = (method, p, handler, { pinFree = false } = {}, raw = false) => {
+    const addRoute = (method, p, handler, { pinFree = false, pinPage = false, prefix = false, raw: rawOpt = false } = {}, raw = false) => {
+      raw = raw || !!rawOpt;
       method = String(method || '').toUpperCase();
       if (!METHODS.has(method)) throw new Error(`${id}: method ${method} not allowed (GET or POST)`);
       if (typeof p !== 'string' || !p.startsWith('/') || p.includes('..')) throw new Error(`${id}: bad path ${p}`);
@@ -61,14 +69,33 @@ export function createRegistry(platform) {
       if (p.startsWith('/api/v1/') && !p.startsWith(own)) throw new Error(`${id}: /api/v1 routes must be under ${own} (got ${p})`);
       const key = `${method} ${p}`;
       if (platform.reserved?.(key)) throw new Error(`${id}: ${key} belongs to the platform`);
-      if (routes.has(key) || pending.routes.some((r) => r.key === key)) throw new Error(`${id}: ${key} is already taken`);
-      pending.routes.push({ key, entry: { id, handler, raw, pinFree: !!pinFree } });
+      if (prefix) {
+        if (!p.endsWith('/') || BROAD_PREFIXES.has(p) || p.startsWith('/deck/') || p.startsWith('/api/launcher/') || platform.reservedUnder?.(p)) {
+          throw new Error(`${id}: prefix route ${p} not allowed (must end in /, be specific and not cover platform routes)`);
+        }
+        if (prefixes.some((x) => x.key === key) || pending.routes.some((r) => r.prefix && r.key === key)) throw new Error(`${id}: ${key} is already taken`);
+        pending.routes.push({ key, prefix: true, method, p, entry: { id, handler, raw, pinFree: !!pinFree, pinPage: !!pinPage } });
+        return;
+      }
+      if (routes.has(key) || pending.routes.some((r) => !r.prefix && r.key === key)) throw new Error(`${id}: ${key} is already taken`);
+      pending.routes.push({ key, entry: { id, handler, raw, pinFree: !!pinFree, pinPage: !!pinPage } });
     };
     return Object.freeze({
       id,
       apiLevel: API_LEVEL,
       config: Object.freeze({ ...(platform.config?.[id] || {}) }),
-      dataDir: path.join(platform.dataDir || '.', id),
+      dataDir: platform.dataDir || '.',
+      version: platform.version || '',
+      state: Object.freeze({
+        load: (name, fallback) => platform.state?.load(String(name), fallback) ?? fallback,
+        save: (name, value) => platform.state?.save(String(name), value),
+      }),
+      assets: Object.freeze({ read: (rel) => (platform.assets?.read ? platform.assets.read(String(rel)) : null) }),
+      // the stream report (report.js) asks each section to build its part when a stream ends, and to refresh it when shown
+      reportSection(key, def) {
+        if (typeof def?.build !== 'function') throw new Error(`${id}: reportSection ${key} needs build()`);
+        pending.reports.push({ key, def });
+      },
       events: Object.freeze({
         on(name, fn) {
           const sub = platform.events?.[name];
@@ -100,9 +127,14 @@ export function createRegistry(platform) {
     if (Number(manifest.minApi || 1) > API_LEVEL) throw new Error(`needs API level ${manifest.minApi}, this Allmind has ${API_LEVEL}`);
     if (typeof mod?.register !== 'function') throw new Error('index.js has no register(ctx)');
     // everything a module registers is collected first and only kept if register() succeeds
-    const pending = { routes: [], snaps: [], subs: [] };
+    const pending = { routes: [], snaps: [], subs: [], reports: [] };
     await mod.register(makeCtx(manifest, pending));
-    for (const r of pending.routes) routes.set(r.key, r.entry);
+    for (const r of pending.routes) {
+      if (r.prefix) prefixes.push({ key: r.key, method: r.method, prefix: r.p, entry: r.entry });
+      else routes.set(r.key, r.entry);
+    }
+    prefixes.sort((a, b) => b.prefix.length - a.prefix.length);
+    for (const r of pending.reports) platform.reportSection?.(r.key, r.def);
     for (const s of pending.snaps) snaps.set(s.key, { id, fn: s.fn });
     for (const sub of pending.subs) sub();
     loaded.push({ manifest, routes: pending.routes.map((r) => r.key) });
@@ -123,10 +155,19 @@ export function createRegistry(platform) {
       }
     },
     route(method, p) {
-      return routes.get(`${method} ${p}`) || null;
+      const exact = routes.get(`${method} ${p}`);
+      if (exact) return exact;
+      const hit = prefixes.find((x) => x.method === method && p.startsWith(x.prefix));
+      return hit ? hit.entry : null;
     },
     pinFreePaths() {
       return [...new Set([...routes].filter(([, r]) => r.pinFree).map(([k]) => k.slice(k.indexOf(' ') + 1)))];
+    },
+    pinFreePrefixes() {
+      return [...new Set(prefixes.filter((x) => x.entry.pinFree).map((x) => x.prefix))];
+    },
+    pinPagePaths() {
+      return [...new Set([...routes].filter(([, r]) => r.pinPage).map(([k]) => k.slice(k.indexOf(' ') + 1)))];
     },
     // the modules' part of the dashboard snapshot; a module whose status throws is left out (logged once per key)
     snapshot() {

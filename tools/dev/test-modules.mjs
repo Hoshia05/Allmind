@@ -99,3 +99,62 @@ test('ctx refuses: platform paths, other modules\' /api/v1/m/ space, unknown eve
   assert.match(await tryReg('f', () => {}), /already/); // same id twice
   assert.match(await tryReg('Bad Id', () => {}), /id/);
 });
+
+// ---------- M2 additions: what Xylem needs from ctx ----------
+test('M2 ctx: state, assets, dataDir, version, stream event, report sections', async () => {
+  const { platform, bus } = fakePlatform();
+  const store = new Map([['roulette', { kept: true }]]);
+  const sections = new Map();
+  Object.assign(platform, {
+    version: '9.9.9',
+    state: { load: (n, fb) => (store.has(n) ? store.get(n) : fb), save: (n, v) => store.set(n, v) },
+    assets: { read: (rel) => (rel === 'public/xylem/manifest.json' ? Buffer.from('{"version":"1.0.0"}') : null) },
+    reportSection: (key, def) => sections.set(key, def),
+  });
+  platform.events.stream = (fn) => bus.on('stream', fn);
+  const reg = createRegistry(platform);
+  let seen = null;
+  let streams = [];
+  await reg.load([{ manifest: { id: 'x', name: 'x', version: '1', minApi: 1 }, mod: { register(ctx) {
+    seen = {
+      version: ctx.version,
+      dataDir: ctx.dataDir,
+      loaded: ctx.state.load('roulette', null),
+      missing: ctx.state.load('nope', 'fb'),
+      asset: ctx.assets.read('public/xylem/manifest.json')?.toString(),
+    };
+    ctx.state.save('dogfight', { a: 1 });
+    ctx.events.on('stream', (active) => streams.push(active));
+    ctx.reportSection('roulette', { build: () => ({ spins: 1 }), refresh: (s) => s });
+  } } }]);
+  assert.deepEqual(reg.failed, []);
+  assert.deepEqual(seen, { version: '9.9.9', dataDir: platform.dataDir, loaded: { kept: true }, missing: 'fb', asset: '{"version":"1.0.0"}' });
+  assert.deepEqual(store.get('dogfight'), { a: 1 }, 'saved under the same name as before the move');
+  bus.emit('stream', true);
+  assert.deepEqual(streams, [true]);
+  assert.deepEqual([...sections.keys()], ['roulette']);
+});
+
+test('M2 ctx: prefix routes, pinPage, pinFree prefixes; exact routes win over prefixes', async () => {
+  const { platform } = fakePlatform();
+  const reg = createRegistry(platform);
+  await reg.load([{ manifest: { id: 'x', name: 'x', version: '1', minApi: 1 }, mod: { register(ctx) {
+    ctx.route('GET', '/xylem/', () => 'prefix', { prefix: true, raw: true });
+    ctx.route('GET', '/xylem/index.html', () => 'exact', { pinPage: true, raw: true });
+    ctx.route('GET', '/xylem', () => 'page', { pinPage: true, raw: true });
+    ctx.route('GET', '/api/draw/tts/', () => 'wav', { prefix: true, raw: true, pinFree: true });
+  } } }]);
+  assert.deepEqual(reg.failed, []);
+  assert.equal(reg.route('GET', '/xylem/roulette.panel.js').handler(), 'prefix');
+  assert.equal(reg.route('GET', '/xylem/index.html').handler(), 'exact');
+  assert.equal(reg.route('GET', '/xylem').handler(), 'page');
+  assert.equal(reg.route('GET', '/xylemish'), null, 'a prefix ending in / never matches a sibling name');
+  assert.equal(reg.route('GET', '/xylem/x').raw, true);
+  assert.equal(reg.route('GET', '/api/draw/tts/0123456789abcdef.wav').handler(), 'wav');
+  assert.deepEqual(reg.pinFreePrefixes(), ['/api/draw/tts/']);
+  assert.deepEqual(reg.pinPagePaths().sort(), ['/xylem', '/xylem/index.html']);
+  // a prefix may not cover platform space
+  const reg2 = createRegistry(platform);
+  await reg2.load([{ manifest: { id: 'y', name: 'y', version: '1', minApi: 1 }, mod: { register: (ctx) => ctx.route('GET', '/api/', () => '', { prefix: true, raw: true }) } }]);
+  assert.match(reg2.failed[0].error, /prefix/);
+});

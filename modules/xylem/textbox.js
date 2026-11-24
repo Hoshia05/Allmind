@@ -2,7 +2,7 @@
 // Each box is one OBS browser source: http://localhost:<port>/text?id=<id> (1920×1080, transparent).
 // The text, every style property and the animations live here; overlays get the whole box on every change
 // over SSE, so typing / dragging a slider shows on stream at once. Saved to DATA_DIR/textbox.json.
-import { loadState, saveState } from './config.js';
+import { loadState, saveState } from './host.js';
 
 export const MAX_BOXES = 12;
 const RECENT = 12;

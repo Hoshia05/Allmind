@@ -4,7 +4,7 @@
 // keeps the pilot scoreboard (wins/kills) across streams in DATA_DIR/dogfight.json, plus the
 // game mode (개인전 / 팀전 with 2–4 owner-named teams) and the last team results.
 // Costs nothing while no overlay is connected.
-import { loadState, saveState } from './config.js';
+import { loadState, saveState } from './host.js';
 
 const MAX_PILOTS = 2000;
 export const TEAM_COLORS = ['#ff5a5a', '#4f9dff', '#ffd34d', '#5be37d'];

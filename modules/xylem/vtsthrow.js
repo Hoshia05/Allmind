@@ -5,10 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { loadState, saveState, readAsset, DATA_DIR } from './config.js';
+import { loadState, saveState, readAsset, DATA_DIR } from './host.js';
 
 const BUILTIN = ['cheese.png', 'heart.png', 'star.png'];
-const ITEMS_DIR = path.join(DATA_DIR, 'vts-items');
+const itemsDir = () => path.join(DATA_DIR, 'vts-items'); // DATA_DIR is set when the module registers
 const MAX_ITEMS = 30;
 export const DEFAULTS = {
   enabled: true,
@@ -115,14 +115,14 @@ export class VTSThrow extends EventEmitter {
   // ---------- items ----------
   items() {
     let own = [];
-    try { own = fs.readdirSync(ITEMS_DIR).filter((f) => /\.(png|jpe?g|gif)$/i.test(f)).sort(); } catch {}
-    if (own.length) return own.map((f) => ({ file: f, builtin: false, size: fs.statSync(path.join(ITEMS_DIR, f)).size }));
+    try { own = fs.readdirSync(itemsDir()).filter((f) => /\.(png|jpe?g|gif)$/i.test(f)).sort(); } catch {}
+    if (own.length) return own.map((f) => ({ file: f, builtin: false, size: fs.statSync(path.join(itemsDir(), f)).size }));
     return BUILTIN.map((f) => ({ file: f, builtin: true, size: readAsset(`public/vts-items/${f}`)?.length || 0 }));
   }
   itemData(name, builtin) {
     const key = `${builtin ? 'b' : 'u'}:${name}`;
     if (this.cache.has(key)) return this.cache.get(key);
-    const buf = builtin ? readAsset(`public/vts-items/${name}`) : fs.readFileSync(path.join(ITEMS_DIR, name));
+    const buf = builtin ? readAsset(`public/vts-items/${name}`) : fs.readFileSync(path.join(itemsDir(), name));
     if (!buf) throw new Error(`물건 파일이 없어요: ${name}`);
     // VTS remembers approved images by hash; the file name is only a label, but VTS insists on
     // 8–32 chars of letters, digits and hyphens ending .png or .jpg
@@ -138,25 +138,25 @@ export class VTSThrow extends EventEmitter {
     const info = imageInfo(buf);
     if (!info) throw new Error('PNG, JPG, GIF 이미지만 돼요');
     if (info.w < 64 || info.h < 64 || info.w > 2048 || info.h > 2048) throw new Error(`가로·세로 64~2048 픽셀이어야 해요 (이 이미지: ${info.w}×${info.h})`);
-    fs.mkdirSync(ITEMS_DIR, { recursive: true });
-    if (fs.readdirSync(ITEMS_DIR).length >= MAX_ITEMS) throw new Error(`물건은 ${MAX_ITEMS}개까지예요`);
+    fs.mkdirSync(itemsDir(), { recursive: true });
+    if (fs.readdirSync(itemsDir()).length >= MAX_ITEMS) throw new Error(`물건은 ${MAX_ITEMS}개까지예요`);
     const base = String(name || 'item').replace(/\.[^.]*$/, '').replace(/[^\p{L}\p{N}_ -]/gu, '').trim().slice(0, 40) || 'item';
     let file = `${base}.${info.type}`;
-    for (let i = 2; fs.existsSync(path.join(ITEMS_DIR, file)); i++) file = `${base} ${i}.${info.type}`;
-    fs.writeFileSync(path.join(ITEMS_DIR, file), buf);
+    for (let i = 2; fs.existsSync(path.join(itemsDir(), file)); i++) file = `${base} ${i}.${info.type}`;
+    fs.writeFileSync(path.join(itemsDir(), file), buf);
     this.emit('change');
     return { file };
   }
   removeItem(file) {
     const f = path.basename(String(file || ''));
-    try { fs.unlinkSync(path.join(ITEMS_DIR, f)); } catch { throw new Error('그 물건이 없어요'); }
+    try { fs.unlinkSync(path.join(itemsDir(), f)); } catch { throw new Error('그 물건이 없어요'); }
     this.cache.delete(`u:${f}`);
     this.emit('change');
   }
   // GET /api/vts/item?file=… (thumbnails on the Xylem page)
   itemFile(file) {
     const f = path.basename(String(file || ''));
-    const own = path.join(ITEMS_DIR, f);
+    const own = path.join(itemsDir(), f);
     if (fs.existsSync(own)) return fs.readFileSync(own);
     return BUILTIN.includes(f) ? readAsset(`public/vts-items/${f}`) : null;
   }

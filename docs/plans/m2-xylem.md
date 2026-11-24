@@ -1,6 +1,6 @@
 # M2 — Xylem becomes a module (`modules/xylem/`)
 
-**Status: in progress (2026-11-24, claude-code), on `main`, no version bump.** Part of `docs/plans/modules.md`; owner's go 2026-11-24.
+**Status: code done 2026-11-24 (claude-code, mock-tested, no version bump); `docs/contracts/xylem.md` awaits gemini's Gate 3 review.** Part of `docs/plans/modules.md`; owner's go 2026-11-24.
 Goal: `src/` no longer imports, names or routes anything of Xylem; Xylem reaches the platform only through `ctx`; every Xylem feature
 behaves exactly as before (smoke baseline unchanged); Xylem offers its own assistant commands under `/api/v1/m/xylem/*` (contract draft
 in `docs/contracts/xylem.md` for gemini's Gate 3 review). Dashboard gating (M3) and CI standalone proof (M4) are not part of this step.

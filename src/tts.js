@@ -103,6 +103,9 @@ export function speakable(text, maxLen = 60) {
 }
 
 export class Tts {
+  // for modules (ctx.services.tts): the same cleanup as speakable() below, without importing platform code
+  speakable(text, maxLen) { return speakable(text, maxLen); }
+
   constructor() {
     this.queue = []; // { text, voice, resolve, reject }
     this.busy = false;
@@ -150,10 +153,10 @@ export class Tts {
     const ms = wavMs(fs.readFileSync(file));
     this.files.set(id, { file, at: Date.now(), ms });
     this._sweepLater();
-    return { id, url: `/api/draw/tts/${id}.wav`, ms };
+    return { id, ms }; // the module that serves the file builds its URL
   }
 
-  // the bytes for GET /api/draw/tts/<id>.wav (only ids we made; random 16 hex)
+  // the bytes of a synthesised line, by id (only ids we made; random 16 hex) — served by whoever asked for it
   read(id) {
     const f = /^[0-9a-f]{16}$/.test(String(id)) ? this.files.get(String(id)) : null;
     if (!f) return null;

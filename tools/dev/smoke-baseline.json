@@ -1,6 +1,6 @@
 {
-  "recorded": "2026-11-22",
-  "version": "0.47.1",
+  "recorded": "2026-11-24",
+  "version": "0.48.0",
   "checks": {
     "platform/ping": {
       "status": 200,
@@ -166,7 +166,9 @@
         "version"
       ],
       "apiLevel": 1,
-      "modules": [],
+      "modules": [
+        "xylem"
+      ],
       "capabilitiesIsList": true,
       "capabilities": [
         "events",
@@ -515,6 +517,107 @@
     },
     "xylem/tts-voices": {
       "status": 200
+    },
+    "xylem/v1-commands": {
+      "module": {
+        "name": "Xylem",
+        "commands": [
+          "GET /api/v1/m/xylem/state",
+          "POST /api/v1/m/xylem/draw",
+          "POST /api/v1/m/xylem/text",
+          "POST /api/v1/m/xylem/vts-throw",
+          "POST /api/v1/m/xylem/wheel"
+        ]
+      },
+      "noToken": {
+        "status": 401,
+        "ok": false,
+        "code": "token-missing"
+      },
+      "state": {
+        "status": 200,
+        "ok": true,
+        "code": null,
+        "keys": [
+          "draw",
+          "ok",
+          "textBoxes",
+          "vts",
+          "wheels"
+        ],
+        "drawKeys": [
+          "count",
+          "phase"
+        ]
+      },
+      "text": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "textEvent": "box",
+      "textBox": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "textBadBox": {
+        "status": 400,
+        "ok": false,
+        "code": "bad-request"
+      },
+      "textTooLong": {
+        "status": 400,
+        "ok": false,
+        "code": "bad-request"
+      },
+      "draw": {
+        "open": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "close": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "closeAgain": {
+          "status": 409,
+          "ok": false,
+          "code": "conflict"
+        },
+        "drawEmpty": {
+          "status": 409,
+          "ok": false,
+          "code": "conflict"
+        },
+        "cancel": {
+          "status": 200,
+          "ok": true,
+          "code": null
+        },
+        "bad": {
+          "status": 400,
+          "ok": false,
+          "code": "bad-request"
+        }
+      },
+      "wheelUnknown": {
+        "status": 400,
+        "ok": false,
+        "code": "bad-request"
+      },
+      "throw": {
+        "status": 200,
+        "ok": true,
+        "code": null
+      },
+      "excluded": {
+        "/api/v1/m/xylem/roulette-test": 404,
+        "/api/v1/m/xylem/settings": 404,
+        "/api/v1/m/xylem/pack-apply": 404
+      }
     }
   }
 }

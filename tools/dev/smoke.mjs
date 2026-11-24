@@ -381,6 +381,43 @@ check('xylem', 'text', async () => {
 check('xylem', 'vts-throw', async () => result(await post('/api/vts/test-throw', { count: 1 })));
 check('xylem', 'tts-voices', async () => ({ status: (await get('/api/draw/voices')).status }));
 
+// M2: Xylem's own assistant commands under /api/v1/m/xylem/* (docs/contracts/xylem.md, Gate 3). Uses TOKEN from the v1 checks.
+check('xylem', 'v1-commands', async () => {
+  if (!TOKEN) await newToken();
+  const info = (await get('/api/v1/info', { headers: auth() })).json || {};
+  const mod = (info.modules || []).find((m) => m.id === 'xylem') || null;
+  const out = {
+    module: mod ? { name: mod.name, commands: [...mod.commands].sort() } : null,
+    noToken: v1(await post('/api/v1/m/xylem/text', { text: 'x' })),
+  };
+  const st = await get('/api/v1/m/xylem/state', { headers: auth() });
+  out.state = { ...v1(st), keys: Object.keys(st.json || {}).sort(), drawKeys: Object.keys(st.json?.draw || {}).sort() };
+  const boxId = st.json?.textBoxes?.[0]?.id;
+  const s = sse('/api/text/events');
+  try {
+    const tag = `assistant-${Date.now()}`;
+    out.text = v1(await v1post('/api/v1/m/xylem/text', { text: tag }));
+    out.textEvent = (await s.wait((e) => JSON.stringify(e.data).includes(tag))).event;
+    out.textBox = v1(await v1post('/api/v1/m/xylem/text', { box: boxId, text: '', show: true }));
+    out.textBadBox = v1(await v1post('/api/v1/m/xylem/text', { box: 'nope', text: 'x' }));
+    out.textTooLong = v1(await v1post('/api/v1/m/xylem/text', { text: 'x'.repeat(201) }));
+  } finally { s.close(); }
+  out.draw = {
+    open: v1(await v1post('/api/v1/m/xylem/draw', { action: 'open', sec: 0 })),
+    close: v1(await v1post('/api/v1/m/xylem/draw', { action: 'close' })),
+    closeAgain: v1(await v1post('/api/v1/m/xylem/draw', { action: 'close' })),
+    drawEmpty: v1(await v1post('/api/v1/m/xylem/draw', { action: 'draw' })),
+    cancel: v1(await v1post('/api/v1/m/xylem/draw', { action: 'cancel' })),
+    bad: v1(await v1post('/api/v1/m/xylem/draw', { action: 'explode' })),
+  };
+  out.wheelUnknown = v1(await v1post('/api/v1/m/xylem/wheel', { id: 'nope' }));
+  out.throw = v1(await v1post('/api/v1/m/xylem/vts-throw', {}));
+  // excluded through Xylem too: donation-roulette test spins, settings, pack apply
+  out.excluded = {};
+  for (const p of ['/api/v1/m/xylem/roulette-test', '/api/v1/m/xylem/settings', '/api/v1/m/xylem/pack-apply']) out.excluded[p] = (await v1post(p, {})).status;
+  return out;
+});
+
 // ---------- run ----------
 function ensureDirsBefore() {
   if (process.platform !== 'win32') return [];

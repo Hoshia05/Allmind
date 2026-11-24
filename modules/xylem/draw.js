@@ -13,8 +13,11 @@
 // "구독자만" is only a filter. Costs nothing while idle; the overlay's SSE exists only while an overlay is open.
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { loadState, saveState } from './config.js';
-import { speakable } from './tts.js';
+import { loadState, saveState } from './host.js';
+import { speakable } from './host.js';
+
+// the platform's TTS service gives an id; Xylem serves the file at /api/draw/tts/<id>.wav (index.js)
+const ttsUrl = (r) => ({ ...r, url: `/api/draw/tts/${r.id}.wav` });
 
 export const DEFAULTS = {
   style: 'sortie',        // 'sortie' (공중전 출격) | 'roulette'
@@ -351,14 +354,14 @@ export class ViewerDraw extends EventEmitter {
   _say(kind, nick, text) {
     if (!this.s.tts.on || !text || !this.ch.size) return; // nobody to hear it: don't spend a PowerShell spawn
     this.tts.synth(text, this.s.tts.voice)
-      .then((r) => this.ch.send('tts', { ...r, kind, nick, text, volume: this.s.tts.volume }))
+      .then((r) => this.ch.send('tts', { ...ttsUrl(r), kind, nick, text, volume: this.s.tts.volume }))
       .catch((e) => { console.log(`[draw] 음성 실패: ${e.message}`); this.emit('tts-error', e.message); });
   }
   // the panel's test button: the overlay plays it when one is open, otherwise the panel does
   async ttsTest(text) {
     const t = speakable(text || '안녕하세요, 호시아 방송에 오신 걸 환영해요!', this.s.tts.maxLen);
     if (!t) throw new Error('읽을 수 있는 글자가 없어요');
-    const r = await this.tts.synth(t, this.s.tts.voice);
+    const r = ttsUrl(await this.tts.synth(t, this.s.tts.voice));
     const overlay = this.ch.size > 0;
     if (overlay) this.ch.send('tts', { ...r, kind: 'test', nick: '테스트', text: t, volume: this.s.tts.volume });
     return { ...r, text: t, overlay, real: this.tts.real, volume: this.s.tts.volume };

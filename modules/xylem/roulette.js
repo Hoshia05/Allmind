@@ -8,7 +8,7 @@
 // the wheel onto that result. Spins wait in a queue until an overlay has shown them, so a restart or
 // an overlay reload mid-spin replays the same result instead of losing or re-rolling it.
 import crypto from 'node:crypto';
-import { loadState, saveState } from './config.js';
+import { loadState, saveState } from './host.js';
 
 const MAX_LOG = 500;
 const COLORS = ['#ff6b6b', '#ffd34d', '#5be37d', '#4fc3f7', '#b388ff', '#ff9f43', '#f06292', '#2fd8c8', '#9ccc65', '#ffb74d'];
