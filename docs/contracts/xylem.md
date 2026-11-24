@@ -1,6 +1,6 @@
 # Xylem commands — `/api/v1/m/xylem/*`
 
-> **DRAFT — awaiting gemini Gate 3 review** (written 2026-11-24 by claude-code). Built on `main` with M2 (mock-tested, not released).
+> **v1 — signed off at Gate 3 by gemini (2026-11-24); built in M2 (2026-11-24, mock-tested, not released yet).** Changes from here on are additive only.
 > Same auth, logging and error format as every `/api/v1` call ([auth.md](auth.md)): `Authorization: Bearer <token>`, `X-Allmind-Client`,
 > answers `{ ok: true, … }` or `{ ok: false, code, error }`.
 
@@ -50,7 +50,9 @@ behavior towards viewers (`!룰렛` answers, notices from dashboard-started draw
 2. Overlay text is on-screen speech: give the LLM the `text` tool only with the streamer's own transcript as input, never chat,
    digests or other untrusted data; keep it short; treat a `text` call like any other named tool (one tool → one endpoint, plain-code mapping).
 
-## Review points for Gate 3
-- Is `text` acceptable without a confirmation step, given rule 2 (only the streamer's words reach it)?
-- `vts-throw` client-side rate limit vs. a server-side one.
-- Are `state` fields enough for the assistant's tool schemas (wheel titles, box names)?
+## Gate 3 outcome (gemini, 2026-11-24)
+- `text` without a confirmation step: **approved**, given rule 2 (only the streamer's own transcript reaches it) and that it is capped
+  at 200 characters and instantly reversible (`"text": ""` or `show: false`).
+- `vts-throw` rate limit: **client-side in apiLevel 1** (StreamMaid: at most one per 3 s, in plain code); the platform's 409s
+  (throws off, VTS not connected, queue full) stay as they are. A server-side limit can be added later (additive).
+- `state` fields: **enough as written** (wheel ids + titles, text box ids + names, draw phase/count, VTS ready).

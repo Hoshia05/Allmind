@@ -11,7 +11,7 @@ clients use, and the files SkyEye reads. Anything not written here is internal a
 | [events.md](events.md) | `GET /api/v1/events` (SSE): `hello`, `chat`, `donation`, `stream`, `mark`, `part`, `deck-signal` | assistant |
 | [commands.md](commands.md) | `GET /api/v1/info`, the five platform commands, module commands, **the excluded-actions rule** | assistant |
 | [markers.md](markers.md) | `<video>.markers.json` (format `vodscout-markers` v2: ⭐ marks + chat log, parts) | SkyEye |
-| [xylem.md](xylem.md) | Xylem module commands `/api/v1/m/xylem/*` (state, overlay text, 시청자 추첨, free wheel, VTS throw) — **draft, Gate 3** | assistant |
+| [xylem.md](xylem.md) | Xylem module commands `/api/v1/m/xylem/*` (state, overlay text, 시청자 추첨, free wheel, VTS throw) — signed off at Gate 3 (2026-11-24) | assistant |
 
 ## Versioning
 - `GET /api/v1/info` → `apiLevel` (integer, now **1**). Within one level, changes are **additive only**: new events, new fields,
