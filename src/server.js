@@ -45,7 +45,7 @@ import { API_LEVEL, discover, createRegistry } from './modules.js';
 import { ApiV1, publicChat } from './api.js';
 import MODULE_LIST from './modules-list.js'; // null from source (discover modules/*/ at start); a static list in the exe
 
-const VERSION = '0.50.0';
+const VERSION = '0.50.1';
 // Flags only (in the exe, argv[1] can be the exe path itself).
 const args = new Set(process.argv.slice(1).filter((a) => a.startsWith('--')));
 const config = loadConfig();
