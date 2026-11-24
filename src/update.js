@@ -37,6 +37,8 @@ export class Updater {
     this.isExe = isExe;
     this.launch = launch;
     this.asset = null; // { url, size, digest }
+    this.etag = null;
+    this.cachedRelease = null;
     this.s = {
       current: version, latest: null, available: false, name: '', notes: '', size: 0,
       checkedAt: 0, checking: false, error: null,
@@ -58,33 +60,90 @@ export class Updater {
     every.unref();
   }
 
+  _cacheFile() {
+    return path.join(updatesDir(), 'latest-cache.json');
+  }
+
+  _loadCache() {
+    if (this.cachedRelease) return;
+    try {
+      const c = JSON.parse(fs.readFileSync(this._cacheFile(), 'utf8'));
+      if (c?.etag && c?.release?.tag_name) { this.etag = c.etag; this.cachedRelease = c.release; }
+    } catch {}
+  }
+
+  _saveCache(etag, release) {
+    if (!etag || !release) return;
+    this.etag = etag;
+    this.cachedRelease = release;
+    try {
+      fs.mkdirSync(updatesDir(), { recursive: true });
+      fs.writeFileSync(this._cacheFile(), JSON.stringify({ etag, release }));
+    } catch {}
+  }
+
+  _applyRelease(j) {
+    const tag = String(j.tag_name || '');
+    const asset = (j.assets || []).find((a) => ASSET_RE.exec(a.name)?.[1] === tag.replace(/^v/i, ''));
+    this.s.latest = tag.replace(/^v/i, '') || null;
+    this.s.name = String(j.name || tag);
+    this.s.notes = String(j.body || '').slice(0, 4000);
+    this.asset = asset ? { url: asset.browser_download_url, size: Number(asset.size) || 0, digest: String(asset.digest || '') } : null;
+    this.s.size = this.asset?.size || 0;
+    this.s.available = !!(this.asset && this.s.latest && cmpVersion(this.s.latest, this.version) > 0);
+    this.s.error = null;
+  }
+
+  async _checkWebFallback() {
+    const webBase = (this.cfg.webBase || 'https://github.com').replace(/\/+$/, '');
+    const res = await fetch(`${webBase}/${this.cfg.repo}/releases/latest`, {
+      headers: { 'User-Agent': `Allmind/${this.version}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) throw new Error(`GitHub 응답 ${res.status}`);
+    const m = /\/releases\/tag\/(v?(\d+\.\d+\.\d+))$/i.exec(res.url || '');
+    if (!m) return null;
+    const [, tag, ver] = m;
+    const url = `${webBase}/${this.cfg.repo}/releases/download/${tag}/Allmind-${ver}.exe`;
+    let size = 0;
+    try {
+      const head = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': `Allmind/${this.version}` }, signal: AbortSignal.timeout(10000) });
+      if (!head.ok) return null;
+      size = Number(head.headers.get('content-length')) || 0;
+    } catch { return null; }
+    return { tag_name: tag, name: tag, body: '', assets: [{ name: `Allmind-${ver}.exe`, browser_download_url: url, size }] };
+  }
+
   async check() {
     if (this.s.checking || this.s.phase === 'downloading' || this.s.phase === 'installing') return this.state();
     this.s.checking = true;
     try {
+      this._loadCache();
       const base = (this.cfg.apiBase || 'https://api.github.com').replace(/\/+$/, '');
+      const headers = { 'User-Agent': `Allmind/${this.version}`, Accept: 'application/vnd.github+json' };
+      if (this.etag && this.cachedRelease) headers['If-None-Match'] = this.etag;
       const res = await fetch(`${base}/repos/${this.cfg.repo}/releases/latest`, {
-        headers: { 'User-Agent': `Allmind/${this.version}`, Accept: 'application/vnd.github+json' },
+        headers,
         signal: AbortSignal.timeout(15000),
       });
-      if (res.status === 404) {
+      if (res.status === 304 && this.cachedRelease) {
+        this._applyRelease(this.cachedRelease);
+      } else if (res.status === 404) {
         // no release yet
         this.s.latest = null;
         this.s.available = false;
         this.s.error = null;
+      } else if (res.status === 403 && (!this.cfg.apiBase || this.cfg.webBase)) {
+        // GitHub API rate-limit (60 req/hr unauthenticated): fall back to github.com redirect
+        const fb = await this._checkWebFallback();
+        if (!fb) throw new Error('GitHub 응답 403');
+        this._applyRelease(fb);
       } else if (!res.ok) {
         throw new Error(`GitHub 응답 ${res.status}`);
       } else {
         const j = await res.json();
-        const tag = String(j.tag_name || '');
-        const asset = (j.assets || []).find((a) => ASSET_RE.exec(a.name)?.[1] === tag.replace(/^v/i, ''));
-        this.s.latest = tag.replace(/^v/i, '') || null;
-        this.s.name = String(j.name || tag);
-        this.s.notes = String(j.body || '').slice(0, 4000);
-        this.asset = asset ? { url: asset.browser_download_url, size: Number(asset.size) || 0, digest: String(asset.digest || '') } : null;
-        this.s.size = this.asset?.size || 0;
-        this.s.available = !!(this.asset && this.s.latest && cmpVersion(this.s.latest, this.version) > 0);
-        this.s.error = null;
+        this._saveCache(res.headers.get('etag'), j);
+        this._applyRelease(j);
       }
       this.s.checkedAt = Date.now();
       console.log(`[update] checked: latest ${this.s.latest || '-'}, current ${this.version}, ${this.s.available ? 'update available' : 'up to date'}`);
