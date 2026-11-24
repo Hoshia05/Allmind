@@ -198,7 +198,7 @@
   }
 
   function sync() {
-    if (wide.matches) { docked = true; render(); }
+    if (wide.matches && !document.body.classList.contains('phone-mode')) { docked = true; render(); }
     else if (docked) { docked = false; undock(); }
   }
 
@@ -378,8 +378,8 @@
     document.getElementById('devMenu').hidden = true;
   });
 
-  // re-place gaps when a panel is shown/hidden by the app (채팅 숨기기)
-  window.dockRefresh = () => { if (docked) render(); };
+  // re-place gaps when a panel is shown/hidden by the app (채팅 숨기기) or view mode changes
+  window.dockRefresh = () => { sync(); };
   // bring a panel's tab to the front (e.g. 할 일 from the stream-start reminder)
   window.dockShow = (id) => {
     if (!docked) return false;

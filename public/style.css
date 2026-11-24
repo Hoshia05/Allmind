@@ -512,82 +512,134 @@ button, .switch, .seg button, .tracks li, .don { touch-action: manipulation; -we
   .spark { display: none; }
 }
 
-/* ---------- phones (Fold cover screen, any small screen) ----------
-   picture on top, one panel under it, picked with the bottom tab bar */
-@media (max-width: 640px), (max-height: 500px) and (orientation: landscape) {
-  body { overflow: hidden; }
-  .topbar { padding: 6px 10px; gap: 8px; }
-  .brand { font-size: 0; gap: 0; }
-  .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .chips::-webkit-scrollbar { display: none; }
-  .chip { white-space: nowrap; }
-  .links, #chatToggle, .stat.title, .spark, .livebar .stat:nth-of-type(2) { display: none !important; }
-  .livebar { flex-wrap: nowrap; gap: 10px; padding: 6px 10px; min-height: 0; }
-  .livebar .stat { gap: 5px; }
-  .livebar #remoteBtn { margin-left: auto; }
-  .stat-num { font-size: 18px; }
-  .banners { padding: 0 8px; }
-  .banners:not(:empty) { padding-top: 8px; }
-  .layout, .layout.no-chat {
-    display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px; padding: 8px;
-  }
-  .panel { padding: 8px 10px; }
-  .panel-head { margin-bottom: 8px; }
-  .viewer-panel { flex: none; }
-  .viewer-panel .panel-head { flex-wrap: wrap; row-gap: 6px; }
-  .viewer-panel .panel-head .tools {
-    width: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none;
-  }
-  .viewer-panel .panel-head .tools::-webkit-scrollbar { display: none; }
-  .viewer-panel .tools > * { flex: none; }
-  /* most-used buttons first */
-  #rcStop, #rcSkip, #rcPause { order: -3; }
-  #skipBtn { order: -2; }
-  .tool-sep { display: none; }
-  .stage { flex: none; aspect-ratio: 16 / 9; width: 100%; min-height: 0; }
-  .chat-panel, .side { flex: 1; min-height: 0; height: auto; }
-  .side { gap: 8px; overflow: hidden; }
-  .side > .panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-  .music, .side.alert-sized .music { flex: 1 1 auto; }
-  #musicList .tracks { height: auto; max-height: none; flex: 1; }
-  .music { display: flex; flex-direction: column; }
-  #musicList:not([hidden]) { flex: 1; min-height: 0; }
-  .alert-panel { flex: 1 1 auto !important; }
-  .resizer { display: none !important; }
-  /* only the chosen panel is shown */
-  body.mp-chat .side, body.mp-music .chat-panel, body.mp-alert .chat-panel,
-  body.mp-music .alert-panel, body.mp-alert .music { display: none !important; }
-  body.mp-chat .layout.no-chat .chat-panel { display: flex; }
-  /* 할 일 has its own tab on phones (the 음악 tab is full already) */
-  body.mp-todo .chat-panel, body.mp-todo .music, body.mp-todo .sb-panel, body.mp-todo .alert-panel,
-  body.mp-chat .todo-panel, body.mp-music .todo-panel, body.mp-alert .todo-panel,
-  body.mp-chat .obs-panel, body.mp-music .obs-panel, body.mp-alert .obs-panel { display: none !important; }
-  body.mp-todo .obs-panel { flex: none; max-height: 50%; }
-  body.mp-todo .obs-fold { display: inline-flex; }
-  body.mp-todo .todo-panel { flex: 1 1 auto; }
-  body.mp-todo .todo-panel .todo-body { display: flex; }
-  body.mp-todo .todo-fold { display: none; }
-  body.mp-todo .todo-list { max-height: none; flex: 1 1 auto; }
-  .mnav button { font-size: 12.5px; white-space: nowrap; }
-  .mnav {
-    display: flex; flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel);
-    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-  }
-  .mnav button {
-    flex: 1; border: 0; background: transparent; color: var(--muted); padding: 13px 0 12px; font: inherit; font-size: 13.5px;
-    border-top: 2px solid transparent;
-  }
-  .mnav button.on { color: var(--text); border-top-color: var(--accent); }
-  .toasts { left: 12px; right: 12px; bottom: calc(64px + env(safe-area-inset-bottom)); }
-  .devmenu { top: auto; bottom: calc(60px + env(safe-area-inset-bottom)); }
+/* ---------- phone mode (Fold cover, Fold inner, iPad portrait, or forced in ⚙) ---------- */
+body.phone-mode { overflow: hidden; }
+body.phone-mode .topbar { padding: 4px 10px; gap: 8px; }
+body.phone-mode .brand { font-size: 0; gap: 0; }
+body.phone-mode .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+body.phone-mode .chips::-webkit-scrollbar { display: none; }
+body.phone-mode .chip { white-space: nowrap; }
+body.phone-mode .links,
+body.phone-mode #xylemBtn,
+body.phone-mode #chatToggle,
+body.phone-mode #checkBtn,
+body.phone-mode #reportBtn,
+body.phone-mode #prepBtn,
+body.phone-mode #remoteBtn,
+body.phone-mode .stat.title,
+body.phone-mode .spark,
+body.phone-mode .livebar .stat:nth-of-type(2) { display: none !important; }
+body.phone-mode .livebar { flex-wrap: nowrap; gap: 8px; padding: 6px 10px; min-height: 0; }
+body.phone-mode .livebar .stat { gap: 5px; }
+body.phone-mode .livebar #devBtn { margin-left: auto; min-width: 40px; min-height: 40px; }
+body.phone-mode .stat-num { font-size: 18px; }
+body.phone-mode .banners { padding: 0 8px; }
+body.phone-mode .banners:not(:empty) { padding-top: 8px; }
+body.phone-mode .layout,
+body.phone-mode .layout.no-chat {
+  display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 8px;
+  padding: 8px calc(8px + env(safe-area-inset-right)) 8px calc(8px + env(safe-area-inset-left));
 }
-/* phone turned sideways: picture on the left, panel on the right */
+body.phone-mode .panel { padding: 10px; }
+body.phone-mode .panel-head { margin-bottom: 8px; }
+body.phone-mode .resizer,
+body.phone-mode .dock-grip { display: none !important; }
+
+/* hide all panels by default in phone mode, then show only the active tab */
+body.phone-mode .home-panel,
+body.phone-mode .viewer-panel,
+body.phone-mode .chat-panel,
+body.phone-mode .side,
+body.phone-mode .more-panel { display: none !important; }
+
+body.phone-mode.mp-home .home-panel { display: flex !important; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
+body.phone-mode.mp-chat .chat-panel { display: flex !important; flex: 1; min-height: 0; }
+body.phone-mode.mp-music .side { display: flex !important; flex-direction: column; gap: 8px; flex: 1; min-height: 0; overflow-y: auto; }
+body.phone-mode.mp-music .side .alert-panel { display: none !important; }
+body.phone-mode.mp-music .side .music { flex: none; }
+body.phone-mode.mp-music .side .sb-panel { flex: 1 1 auto; min-height: 160px; }
+body.phone-mode.mp-music #musicList .tracks { height: auto; max-height: 42vh; }
+
+body.phone-mode.mp-screen .viewer-panel { display: flex !important; flex: none; }
+body.phone-mode.mp-screen .viewer-panel .panel-head { flex-wrap: wrap; row-gap: 6px; }
+body.phone-mode.mp-screen .viewer-panel .panel-head .tools {
+  width: 100%; margin-left: 0; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none;
+}
+body.phone-mode.mp-screen .viewer-panel .panel-head .tools::-webkit-scrollbar { display: none; }
+body.phone-mode.mp-screen .viewer-panel .tools > * { flex: none; }
+body.phone-mode.mp-screen #rcStop,
+body.phone-mode.mp-screen #rcSkip,
+body.phone-mode.mp-screen #rcPause { order: -3; }
+body.phone-mode.mp-screen #skipBtn { order: -2; }
+body.phone-mode.mp-screen .tool-sep { display: none; }
+body.phone-mode.mp-screen .stage { flex: none; aspect-ratio: 16 / 9; width: 100%; min-height: 0; max-height: 42vh; }
+body.phone-mode.mp-screen .side { display: flex !important; flex-direction: column; flex: 1; min-height: 0; }
+body.phone-mode.mp-screen .side > .panel:not(.alert-panel) { display: none !important; }
+body.phone-mode.mp-screen .alert-panel { display: flex !important; flex: 1 1 auto !important; min-height: 140px; }
+
+body.phone-mode.mp-more .more-panel { display: flex !important; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow-y: auto; }
+
+/* two-column phone mode (Fold inner, iPad portrait): 홈 on the left, 채팅 on the right */
+body.phone-mode.phone-wide.mp-home .layout,
+body.phone-mode.phone-wide.mp-home .layout.no-chat {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 44%); grid-template-rows: minmax(0, 1fr); gap: 10px;
+}
+body.phone-mode.phone-wide.mp-home .home-panel { grid-column: 1; grid-row: 1; }
+body.phone-mode.phone-wide.mp-home .chat-panel { display: flex !important; grid-column: 2; grid-row: 1; min-height: 0; }
+
+/* home tab widgets */
+.home-row { display: flex; gap: 8px; align-items: stretch; }
+.home-top-ctrl .mic-btn { flex: 1; min-height: 48px; justify-content: center; font-size: 14px; }
+.home-top-ctrl .markgrp { display: flex; }
+.home-top-ctrl .mark-btn,
+.home-top-ctrl .mark-more { min-height: 48px; }
+.home-scenes .scenes { display: flex !important; flex-wrap: wrap; gap: 6px; padding: 0; border: 0; background: transparent; }
+.home-scenes .scenes button { min-height: 44px; padding: 8px 14px; font-size: 13.5px; }
+.home-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.home-card-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; }
+.home-bgm { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.home-bgm-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.home-lbl { font-size: 11px; color: var(--muted); font-weight: 700; }
+.home-bgm-title { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home-bgm-btns { display: flex; align-items: center; gap: 6px; flex: none; }
+.home-bgm-btns .btn.round { width: 44px; height: 44px; min-height: 44px; font-size: 16px; }
+.home-rc > button { flex: 1; min-height: 44px; font-size: 13px; padding: 8px 6px; }
+.home-links > button { flex: 1; min-height: 44px; justify-content: center; }
+.home-obs-slot .obs-panel { border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 10px 12px; }
+.home-obs-slot .obs-fold { display: none; }
+.home-obs-slot .obs-body { display: flex !important; }
+.home-todo .todo-list { max-height: 220px; }
+.home-todo .td-item { min-height: 44px; align-items: center; }
+
+/* more tab widgets */
+.more-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.more-btn { min-height: 48px; justify-content: center; font-size: 13.5px; }
+.more-todo-slot .todo-panel { border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 10px 12px; }
+.more-todo-slot .todo-fold { display: none; }
+.more-todo-slot .todo-body { display: flex !important; }
+.more-todo-slot .todo-list { max-height: none; }
+
+/* bottom tab bar */
+body.phone-mode .mnav {
+  display: flex; flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel);
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+body.phone-mode .mnav button {
+  flex: 1; min-height: 48px; border: 0; background: transparent; color: var(--muted); padding: 10px 0; font: inherit; font-size: 13px;
+  white-space: nowrap; border-top: 2px solid transparent;
+}
+body.phone-mode .mnav button.on { color: var(--text); border-top-color: var(--accent); font-weight: 700; }
+body.phone-mode .toasts { left: 12px; right: 12px; bottom: calc(64px + env(safe-area-inset-bottom)); }
+body.phone-mode .devmenu { top: auto; bottom: calc(60px + env(safe-area-inset-bottom)); }
+
+/* phone turned sideways in phone-mode */
 @media (max-height: 500px) and (orientation: landscape) {
-  .topbar { display: none; }
-  .layout, .layout.no-chat { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 40%); grid-template-rows: minmax(0, 1fr); }
-  .viewer-panel { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-height: 0; }
-  .stage { aspect-ratio: auto; flex: 1; }
-  .chat-panel, .side { grid-column: 2; grid-row: 1; }
+  body.phone-mode .topbar { display: none; }
+  body.phone-mode.mp-screen .layout,
+  body.phone-mode.mp-screen .layout.no-chat { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 38%); grid-template-rows: minmax(0, 1fr); }
+  body.phone-mode.mp-screen .viewer-panel { grid-column: 1; grid-row: 1; }
+  body.phone-mode.mp-screen .stage { aspect-ratio: auto; max-height: none; flex: 1; }
+  body.phone-mode.mp-screen .side { grid-column: 2; grid-row: 1; }
 }
 .devmenu .hint { font-style: normal; color: var(--muted); font-size: 11.5px; }
 /* the tab buttons never squeeze; the tool row wraps under them instead */

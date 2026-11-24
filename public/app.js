@@ -228,6 +228,9 @@ function renderBgm() {
   const playing = !!b.media.playing;
   $('playBtn').textContent = playing ? '⏸' : '▶';
   $('playBtn').classList.toggle('loading', !!b.media.loading);
+  $('homeBgmTitle').textContent = cur ? cur.title : '—';
+  $('homePlayBtn').textContent = playing ? '⏸' : '▶';
+  $('homePlayBtn').classList.toggle('loading', !!b.media.loading);
   // Honest status line under the title
   let warn = '';
   if (b.sourceOk && playing && !b.sourceActive) warn = '⚠ BGM 소스가 지금 장면에 없어서 소리가 안 나요 — 모든 장면에 추가해 주세요';
@@ -457,10 +460,11 @@ function makeMirror({ img, empty, src, active, missing }) {
 }
 // is this panel on screen right now? (hidden column, phone tab bar, …)
 const shown = (el) => !!el && el.offsetParent !== null;
+const mirrorScreenAllowed = () => !document.body.classList.contains('phone-mode') || document.body.classList.contains('mp-screen');
 // Main panel: 방송 화면 (OBS program output) or 영도. Only the visible one is captured.
 let mainTab = pref.get('mainTab', 'program');
-const donationLoop = makeMirror({ img: 'frame', empty: 'stageEmpty', src: 'donation', active: () => mainTab === 'donation', missing: '영도 소스를 찾을 수 없음' });
-const programLoop = makeMirror({ img: 'programFrame', empty: 'programEmpty', src: 'program', active: () => mainTab === 'program', missing: 'OBS 방송 화면을 가져올 수 없음' });
+const donationLoop = makeMirror({ img: 'frame', empty: 'stageEmpty', src: 'donation', active: () => mirrorScreenAllowed() && mainTab === 'donation', missing: '영도 소스를 찾을 수 없음' });
+const programLoop = makeMirror({ img: 'programFrame', empty: 'programEmpty', src: 'program', active: () => mirrorScreenAllowed() && mainTab === 'program', missing: 'OBS 방송 화면을 가져올 수 없음' });
 donationLoop.kick = donationLoop.sync;
 document.addEventListener('visibilitychange', () => { donationLoop.sync(); programLoop.sync(); window.syncAlertMirror?.(); });
 
@@ -586,6 +590,13 @@ function renderRemote() {
   $('rcSkip').title = why || '치지직 리모컨의 넘기기 버튼을 눌러요';
   $('rcStop').title = why || (r.videoPlaying ? `재생 중: ${r.videoInfo || '영도'} — 눌러서 정지` : '지금 재생 중인 영도가 없어요');
   $('rcPause').title = why || '치지직 리모컨의 알림 정지/재개 버튼을 눌러요';
+  $('homeRcSkip').textContent = $('rcSkip').textContent;
+  $('homeRcSkip').classList.toggle('off', !ok);
+  $('homeRcSkip').title = $('rcSkip').title;
+  $('homeRcPause').textContent = $('rcPause').textContent;
+  $('homeRcPause').classList.toggle('off', !ok);
+  $('homeRcPause').classList.toggle('paused', $('rcPause').classList.contains('paused'));
+  $('homeRcPause').title = $('rcPause').title;
 }
 async function remotePress(path) {
   buzz();
@@ -1416,7 +1427,7 @@ $('donReadAll').addEventListener('click', () => api('chzzk/donations-read-all'))
 // Live mirror of the 도네 alert OBS source, under the music panel.
 const alertMirrorLoop = makeMirror({
   img: 'alertFrame', empty: 'alertMirrorEmpty', src: 'alert', missing: '도네 알림 소스를 찾을 수 없음',
-  active: () => !!S?.alertSource?.sourceOk && shown(document.querySelector('.alert-panel')),
+  active: () => mirrorScreenAllowed() && !!S?.alertSource?.sourceOk && shown(document.querySelector('.alert-panel')),
 });
 function renderAlertState() {
   const a = S?.alertSource;
@@ -1568,23 +1579,30 @@ $('links').addEventListener('click', (ev) => {
   if (!win) toast('팝업이 막혔어요 — 주소창 오른쪽에서 팝업을 허용해 주세요', true);
 });
 
-// ---------------- phones: bottom tab bar ----------------
-// Picks which panel fills the space under the picture. Hidden panels stop
-// their OBS mirrors, so nothing is captured for a panel you can't see.
+// ---------------- phones: bottom tab bar + phone mode ----------------
+// Picks which panel fills the screen. Hidden panels stop their OBS mirrors,
+// so in phone mode only the 화면 tab pulls preview frames.
 function syncMirrors() {
   donationLoop.sync(); programLoop.sync(); alertMirrorLoop.sync();
 }
+const PHONE_TABS = ['home', 'chat', 'music', 'screen', 'more'];
+function normalizePhoneTab(p) {
+  if (p === 'alert') return 'screen';
+  if (p === 'todo') return 'more';
+  return PHONE_TABS.includes(p) ? p : 'home';
+}
 function setMobilePanel(p) {
   if (p === 'xylem') return setXylem(true);
+  p = normalizePhoneTab(p);
   if (xylemOpen) setXylem(false);
   pref.set('mPanel', p);
-  for (const c of ['chat', 'music', 'alert', 'todo']) document.body.classList.toggle('mp-' + c, c === p);
+  for (const c of PHONE_TABS) document.body.classList.toggle('mp-' + c, c === p);
   for (const b of $('mnav').children) b.classList.toggle('on', b.dataset.mp === p);
   syncMirrors();
 }
 
 // ---------------- Xylem inside the dashboard ----------------
-// The 🎮 Xylem button (and the phone tab) swaps the dashboard panels for the Xylem page, so a phone or iPad
+// The 🎮 Xylem button (and the 더보기 button) swaps the dashboard panels for the Xylem page, so a phone or iPad
 // doesn't have to juggle two tabs. The page is loaded the first time and then only hidden — switching back
 // is instant and the panels keep their place. While Xylem shows, the dashboard's OBS pictures stop; while the
 // dashboard shows, the hidden Xylem page stops polling. Ctrl/Shift/middle-click still opens a separate window.
@@ -1600,8 +1618,8 @@ function setXylem(on) {
   document.body.classList.toggle('xy-open', xylemOpen);
   $('xylemBtn').textContent = xylemOpen ? '← 대시보드' : '🎮 Xylem';
   $('xylemBtn').classList.toggle('accent', xylemOpen);
-  const mp = pref.get('mPanel', 'chat');
-  for (const b of $('mnav').children) b.classList.toggle('on', xylemOpen ? b.dataset.mp === 'xylem' : b.dataset.mp === mp);
+  const mp = normalizePhoneTab(pref.get('mPanel', 'home'));
+  for (const b of $('mnav').children) b.classList.toggle('on', !xylemOpen && b.dataset.mp === mp);
   try { f.contentWindow?.postMessage({ allmind: 'xylem-visible', visible: xylemOpen }, location.origin); } catch {}
   syncMirrors();
   window.dockRefresh?.();
@@ -1622,8 +1640,8 @@ $('mnav').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-mp]');
   if (b) { buzz(); setMobilePanel(b.dataset.mp); }
 });
-setMobilePanel(pref.get('mPanel', 'chat') === 'xylem' ? 'chat' : pref.get('mPanel', 'chat'));
-// M3: the 🎮 Xylem button, the phone tab and the embedded view exist only while the snapshot lists the module
+setMobilePanel(pref.get('mPanel', 'home'));
+// M3: the 🎮 Xylem button, the 더보기 button and the embedded view exist only while the snapshot lists the module
 // (docs/plans/modules.md "Dashboard"). Standalone Allmind (no module) shows no Xylem trace; a saved "Xylem was open"
 // is restored only once a snapshot says the module is there.
 function syncModuleUi() {
@@ -1632,19 +1650,92 @@ function syncModuleUi() {
   const first = xylemLoaded === null;
   xylemLoaded = has;
   $('xylemBtn').hidden = !has;
-  $('mnav').querySelector('[data-mp="xylem"]').hidden = !has;
+  $('moreXylemBtn').hidden = !has;
   if (!has && xylemOpen) { const keep = pref.get('xylemOpen', false); setXylem(false); pref.set('xylemOpen', keep); }
   if (has && first && pref.get('xylemOpen', false)) setXylem(true);
 }
+
+// per-device view mode: 자동 (Fold cover/inner + iPad portrait = phone mode; iPad landscape / PC = desktop)
+const autoPhoneQuery = matchMedia('(max-width: 640px), (max-height: 500px) and (orientation: landscape), (orientation: portrait) and (min-width: 641px) and (max-width: 1380px)');
+let phoneHomes = null;
+let phoneMoved = false;
+function capturePhoneHomes() {
+  if (phoneHomes) return;
+  const ids = ['micBtn', 'markGrp', 'scenes', 'obsPanel', 'todoPanel'];
+  phoneHomes = Object.fromEntries(ids.map((id) => {
+    const el = $(id);
+    return [id, { el, parent: el.parentNode, next: el.nextElementSibling }];
+  }));
+}
+function applyViewMode({ move = true } = {}) {
+  const vm = pref.get('viewMode', 'auto');
+  for (const b of $('viewModeSeg').children) b.classList.toggle('on', b.dataset.vm === vm);
+  const on = vm === 'phone' || (vm === 'auto' && autoPhoneQuery.matches);
+  const wide = on && window.innerWidth > 640;
+  document.body.classList.toggle('phone-mode', on);
+  document.body.classList.toggle('phone-wide', wide);
+  if (move) {
+    if (on && !phoneMoved) {
+      window.dockRefresh?.();
+      capturePhoneHomes();
+      phoneMoved = true;
+      $('homePanel').hidden = false;
+      $('morePanel').hidden = false;
+      $('homeMicSlot').append($('micBtn'), $('markGrp'));
+      $('homeScenesSlot').append($('scenes'));
+      $('homeObsSlot').append($('obsPanel'));
+      $('moreTodoSlot').append($('todoPanel'));
+    } else if (!on && phoneMoved) {
+      phoneMoved = false;
+      for (const h of Object.values(phoneHomes).reverse()) {
+        const before = h.next && h.next.parentNode === h.parent ? h.next : null;
+        h.parent.insertBefore(h.el, before);
+      }
+      $('homePanel').hidden = true;
+      $('morePanel').hidden = true;
+      window.dockRefresh?.();
+    }
+  } else {
+    window.dockRefresh?.();
+  }
+  syncMirrors();
+}
+$('viewModeSeg').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-vm]');
+  if (!b) return;
+  buzz();
+  pref.set('viewMode', b.dataset.vm);
+  applyViewMode();
+});
+autoPhoneQuery.addEventListener('change', () => applyViewMode());
+applyViewMode({ move: false });
+window.addEventListener('DOMContentLoaded', () => applyViewMode({ move: true }));
+
+// home + more tab shortcuts (reusing existing controls)
+$('homePrevBtn').addEventListener('click', () => { buzz(); $('prevBtn').click(); });
+$('homePlayBtn').addEventListener('click', () => { buzz(); $('playBtn').click(); });
+$('homeNextBtn').addEventListener('click', () => { buzz(); $('nextBtn').click(); });
+$('homeRcSkip').addEventListener('click', () => $('rcSkip').click());
+$('homeSkipAd').addEventListener('click', () => { buzz(); $('skipBtn').click(); });
+$('homeRcPause').addEventListener('click', () => $('rcPause').click());
+$('homePrepBtn').addEventListener('click', () => { buzz(); $('prepBtn').click(); });
+$('homeCheckBtn').addEventListener('click', () => { buzz(); $('checkBtn').click(); });
+$('moreXylemBtn').addEventListener('click', () => { buzz(); setXylem(true); });
+$('moreReportBtn').addEventListener('click', () => { buzz(); $('reportBtn').click(); });
+$('moreRemoteBtn').addEventListener('click', () => { buzz(); openRemoteWindow(); });
+$('morePrepBtn').addEventListener('click', () => { buzz(); $('prepBtn').click(); });
+$('moreCheckBtn').addEventListener('click', () => { buzz(); $('checkBtn').click(); });
+$('moreDevBtn').addEventListener('click', (ev) => { ev.stopPropagation(); buzz(); $('devMenu').hidden = !$('devMenu').hidden; });
+
 // layout changes (rotate the iPad, fold/unfold the phone): some panels appear or disappear
 let layoutTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(layoutTimer);
-  layoutTimer = setTimeout(syncMirrors, 250);
+  layoutTimer = setTimeout(() => applyViewMode(), 250);
 });
 
 // ---------------- per-device settings (⚙) ----------------
-const isPhone = matchMedia('(max-width: 640px), (max-height: 500px) and (orientation: landscape)').matches;
+const isPhone = autoPhoneQuery.matches;
 if (pref.get('saver', null) === null) pref.set('saver', isPhone); // phones start in 데이터 절약
 $('optSaver').checked = pref.get('saver', false);
 $('optVibrate').checked = pref.get('vibrate', true);
@@ -1922,9 +2013,16 @@ function renderTopChecks() {
   b.hidden = !n;
   b.textContent = n;
   b.className = p?.bad ? 'bad' : '';
+  for (const id of ['homeCheckBadge', 'moreCheckBadge']) {
+    const el = $(id);
+    el.hidden = !n;
+    el.textContent = n;
+    el.className = b.className;
+  }
   $('checkBtn').title = p ? (n ? `방송 전 점검: 문제 ${p.bad}개, 확인할 것 ${p.warn}개` : '방송 전 점검: 모두 괜찮아요') : '방송 전 점검';
   const r = S?.reports;
   $('reportDot').hidden = !r?.unseen;
+  $('moreReportDot').hidden = !r?.unseen;
 }
 
 const CHECK_IC = { ok: '✅', warn: '⚠️', bad: '❌', info: 'ℹ️', off: '–' };
@@ -2068,6 +2166,11 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { $('che
       html += itemHtml(it);
     }
     $('todoList').innerHTML = html || `<li class="td-empty">${empty}</li>`;
+    const homeTodoOpen = tonight.filter((x) => !x.done).sort((a, b) => a.moved - b.moved);
+    $('homeTodoCount').textContent = homeTodoOpen.length ? `${homeTodoOpen.length}개 남음` : '';
+    $('homeTodoList').innerHTML = homeTodoOpen.length
+      ? homeTodoOpen.map((it) => `<li class="td-item" data-id="${esc(it.id)}"><button class="td-chk" data-do="chk" title="해냄"></button>${tagHtml(it.tag)}<span class="td-title">${esc(it.title)}</span></li>`).join('')
+      : '<li class="td-empty">오늘 할 일을 다 했거나 아직 없어요</li>';
   }
 
   window.todoState = (v) => {
@@ -2083,6 +2186,12 @@ document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { $('che
 
   function setTab(t) { tab = t; pref.set('todoTab', t); editing = null; armed = null; render(); }
   $('todoTabs').addEventListener('click', (ev) => { const b = ev.target.closest('[data-tt]'); if (b) { fold(false); setTab(b.dataset.tt); } });
+  $('homeTodoList').addEventListener('click', (ev) => {
+    const li = ev.target.closest('li[data-id]');
+    if (!li) return;
+    buzz();
+    api('todo/toggle', { id: li.dataset.id });
+  });
   $('todoFold').addEventListener('click', () => fold(!panel.classList.contains('folded')));
   panel.querySelector('.panel-head h2').addEventListener('click', () => fold(!panel.classList.contains('folded')));
 
@@ -2533,7 +2642,7 @@ setInterval(() => { if (loopEd && !$('loopWrap').hidden && !document.activeEleme
   }
   window.renderObs = render;
   window.obsLevels = (lv) => {
-    if (panel.classList.contains('folded') && !document.body.classList.contains('mp-todo') && !panel.closest('.layout.docked')) return;
+    if (panel.classList.contains('folded') && !(document.body.classList.contains('phone-mode') && document.body.classList.contains('mp-home')) && !panel.closest('.layout.docked')) return;
     for (const row of $('obsBody').querySelectorAll('.obs-au')) {
       const v = lv[row.dataset.a];
       if (v !== undefined) row.querySelector('.lvl i').style.width = dbToPct(v) + '%';

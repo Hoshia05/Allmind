@@ -46,6 +46,37 @@
   <div id="banners" class="banners"></div>
 
   <main class="layout" id="layout">
+    <!-- phone mode: 홈 tab (hosts existing mic/mark/scenes/OBS + compact BGM/리모컨/오늘 할 일) -->
+    <section class="panel home-panel" id="homePanel" hidden>
+      <div class="home-row home-top-ctrl" id="homeMicSlot"></div>
+      <div class="home-scenes" id="homeScenesSlot"></div>
+      <div class="home-card home-bgm" id="homeBgm">
+        <div class="home-bgm-info">
+          <span class="home-lbl">BGM</span>
+          <span class="home-bgm-title" id="homeBgmTitle">—</span>
+        </div>
+        <div class="home-bgm-btns">
+          <button class="btn round" id="homePrevBtn" title="이전 곡">⏮</button>
+          <button class="btn round accent" id="homePlayBtn" title="재생 / 일시정지">▶</button>
+          <button class="btn round" id="homeNextBtn" title="다음 곡">⏭</button>
+        </div>
+      </div>
+      <div class="home-row home-rc">
+        <button class="btn rc" id="homeRcSkip">넘기기</button>
+        <button class="btn accent" id="homeSkipAd">광고 스킵</button>
+        <button class="btn rc" id="homeRcPause">알림 정지</button>
+      </div>
+      <div class="home-obs-slot" id="homeObsSlot"></div>
+      <div class="home-card home-todo" id="homeTodo">
+        <div class="home-card-head"><span>오늘 할 일</span><span class="muted small" id="homeTodoCount"></span></div>
+        <ol class="todo-list" id="homeTodoList"></ol>
+      </div>
+      <div class="home-row home-links">
+        <button class="btn ghost top-badge" id="homePrepBtn">방송 준비</button>
+        <button class="btn ghost top-badge" id="homeCheckBtn">점검<b id="homeCheckBadge" hidden></b></button>
+      </div>
+    </section>
+
     <!-- 영도 viewer -->
     <section class="panel viewer-panel">
       <div class="panel-head">
@@ -271,24 +302,44 @@
         </div>
       </section>
     </aside>
+
+    <!-- phone mode: 더보기 tab (Xylem, 방송 기록, 리모컨, 설정 + full 할 일) -->
+    <section class="panel more-panel" id="morePanel" hidden>
+      <div class="more-grid">
+        <button class="btn more-btn" id="moreXylemBtn" hidden>🎮 Xylem</button>
+        <button class="btn more-btn top-badge" id="moreReportBtn">방송 기록<b id="moreReportDot" class="dot" hidden></b></button>
+        <button class="btn more-btn" id="moreRemoteBtn">치지직 리모컨</button>
+        <button class="btn more-btn" id="morePrepBtn">방송 준비</button>
+        <button class="btn more-btn top-badge" id="moreCheckBtn">방송 전 점검<b id="moreCheckBadge" hidden></b></button>
+        <button class="btn more-btn" id="moreDevBtn">⚙ 이 기기 설정</button>
+      </div>
+      <div class="more-todo-slot" id="moreTodoSlot"></div>
+    </section>
   </main>
 
   <!-- Xylem inside the dashboard (🎮 Xylem button / phone tab): loaded once, then only shown/hidden.
        M3: the button and the tab stay hidden unless the snapshot's module list has xylem (app.js syncModuleUi) -->
   <div class="xy-view" id="xyView" hidden><iframe id="xyFrame" title="Xylem"></iframe></div>
 
-  <!-- phones: pick which panel fills the space under the picture -->
+  <!-- phones: bottom tab bar -->
   <nav class="mnav" id="mnav">
-    <button data-mp="chat" class="on">채팅<span class="tab-count" id="mnavUnread"></span></button>
+    <button data-mp="home" class="on">홈</button>
+    <button data-mp="chat">채팅<span class="tab-count" id="mnavUnread"></span></button>
     <button data-mp="music">음악</button>
-    <button data-mp="alert">알림 화면</button>
-    <button data-mp="todo">할 일·OBS<span class="tab-count" id="mnavTodo"></span></button>
-    <button data-mp="xylem" hidden>🎮 Xylem</button>
+    <button data-mp="screen">화면</button>
+    <button data-mp="more">더보기<span class="tab-count" id="mnavTodo"></span></button>
   </nav>
 
   <!-- per-device settings (saved in this browser only) -->
   <div class="devmenu" id="devMenu" hidden>
     <div class="devmenu-head">이 기기 설정 <span class="muted small">· 이 브라우저에만 저장돼요</span></div>
+    <div class="devmenu-row"><span>화면</span>
+      <div class="seg small" id="viewModeSeg">
+        <button data-vm="auto">자동</button>
+        <button data-vm="phone">폰 모드</button>
+        <button data-vm="pc">PC 화면</button>
+      </div>
+    </div>
     <label class="switch"><input type="checkbox" id="optSaver"><span></span>데이터 절약 <em class="hint">화면을 최대 15fps로</em></label>
     <label class="switch"><input type="checkbox" id="optAwake"><span></span>화면 꺼짐 방지</label>
     <label class="switch" id="optVibrateWrap"><input type="checkbox" id="optVibrate"><span></span>버튼 진동</label>
