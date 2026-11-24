@@ -98,6 +98,7 @@ export class ViewerDraw extends EventEmitter {
     this.chatLines = [];       // winners' lines this round (newest last)
     this.timers = { entry: null, chat: null, draw: null, state: null };
     this.test = false;         // a 테스트 추첨 is running: fake viewers only, real chat is ignored, nothing is remembered
+    this.quietDraw = false;    // the current draw came from an assistant command: no winners notice in chat (docs/contracts/xylem.md)
     this.testTimers = [];
 
     this.ch = pack.channel(() => [
@@ -194,7 +195,8 @@ export class ViewerDraw extends EventEmitter {
 
   // ---------- entry window ----------
   // sec: undefined = the saved length, 0 = until 마감
-  open(sec) {
+  // quiet: started by an assistant command (/api/v1/m/xylem/draw) — no chat notice as the streamer, ever
+  open(sec, { quiet = false } = {}) {
     if (this.s.mode === 'recent' && !this.test) throw new Error('"최근 채팅" 방식은 참여를 열 필요가 없어요 — 바로 뽑으면 돼요');
     if (this.phase === 'drawing' || this.phase === 'winners') throw new Error('지금 추첨이 진행 중이에요 — 끝내기를 먼저 눌러 주세요');
     const len = sec === undefined || sec === null ? this.s.entrySec : Math.round(num(sec, 0, 3600, 0));
@@ -203,7 +205,7 @@ export class ViewerDraw extends EventEmitter {
     this.phase = 'entry';
     this.endsAt = len ? Date.now() + len * 1000 : 0;
     this._armEntry();
-    this._notice(`🎟 추첨 참여: 채팅에 ${this.s.keyword}${len ? ` (${len >= 60 ? `${Math.round(len / 60 * 10) / 10}분` : `${len}초`} 동안)` : ''}`);
+    if (!quiet) this._notice(`🎟 추첨 참여: 채팅에 ${this.s.keyword}${len ? ` (${len >= 60 ? `${Math.round(len / 60 * 10) / 10}분` : `${len}초`} 동안)` : ''}`);
     this._changed();
   }
   _armEntry() {
@@ -244,13 +246,14 @@ export class ViewerDraw extends EventEmitter {
   }
 
   // ---------- the draw ----------
-  draw() {
+  draw({ quiet = false } = {}) {
     if (this.phase === 'drawing' || this.phase === 'winners') throw new Error('지금 추첨이 진행 중이에요 — 끝내기를 먼저 눌러 주세요');
     if (this.phase === 'idle' && this.s.mode !== 'recent') throw new Error('먼저 "참여 열기"를 눌러 주세요');
     if (this.phase === 'entry') { clearTimeout(this.timers.entry); this.endsAt = 0; }
     const pool = this.poolNow();
     if (!pool.length) throw new Error('뽑을 참가자가 없어요 — 필터에 걸린 사람은 빠져요');
     const winners = pickN(pool, this.s.winners).map(({ uid, nick }) => ({ uid, nick }));
+    this.quietDraw = !!quiet;
     this.pool = pool;
     this.entrantsAtDraw = pool.length;
     this.winners = [];
@@ -271,6 +274,7 @@ export class ViewerDraw extends EventEmitter {
     if (this.phase !== 'winners') throw new Error('당첨자가 나온 뒤에만 다시 뽑을 수 있어요');
     const old = this.winners.find((w) => w.uid === String(uid));
     if (!old) throw new Error('그 당첨자를 찾을 수 없어요');
+    this.quietDraw = false; // 다시 뽑기 comes from the dashboard
     this.passed = (this.passed || new Set()).add(old.uid);
     const taken = new Set([...this.winners.map((w) => w.uid), ...this.passed]);
     const rest = this.pool.filter((p) => !taken.has(p.uid));
@@ -325,7 +329,7 @@ export class ViewerDraw extends EventEmitter {
     if (this.chatEndsAt) this.timers.chat = setTimeout(() => this.end(), this.s.chatSec * 1000);
     const names = fresh.map((w) => w.nick);
     if (this.s.tts.on && this.s.tts.announce) this._say('announce', names[0], `${names.join(', ')}님 당첨!`);
-    this._notice(`🎉 당첨: ${names.join(', ')}님 축하해요!`);
+    if (!this.quietDraw) this._notice(`🎉 당첨: ${names.join(', ')}님 축하해요!`);
     if (this.test) this._testWinnerLines(fresh);
     this._changed();
   }
@@ -345,6 +349,7 @@ export class ViewerDraw extends EventEmitter {
     this.entrants.clear(); this.rejected.clear();
     this.endsAt = 0; this.chatEndsAt = 0;
     this.cur = null; this.pool = []; this.winners = []; this.passed = null; this.entrantsAtDraw = 0;
+    this.quietDraw = false;
     if (was !== 'idle') this.ch.send('end', {});
     this._changed();
   }

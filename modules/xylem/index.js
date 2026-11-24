@@ -199,9 +199,9 @@ export function register(ctx) {
   });
   ctx.route('POST', '/api/v1/m/xylem/draw', (b) => {
     switch (b.action) {
-      case 'open': conflict(() => draw.open(b.sec)); break;
+      case 'open': conflict(() => draw.open(b.sec, { quiet: true })); break; // never a chat notice as the streamer
       case 'close': conflict(() => draw.close()); break;
-      case 'draw': conflict(() => draw.draw()); break;
+      case 'draw': conflict(() => draw.draw({ quiet: true })); break;
       case 'end': conflict(() => draw.end()); break;
       case 'cancel': draw.reset(); break;
       default: throw v1Error(400, 'bad-request', 'action은 open, close, draw, end, cancel 중 하나예요');
