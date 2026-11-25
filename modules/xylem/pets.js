@@ -92,14 +92,25 @@ export class ScreenPets {
     chzzk.on('live-chat', (list) => {
       if (!this.ch.size || !this.s.enabled) return;
       for (const m of list) {
-        if (m.hidden || m.kind !== 'chat') continue;
-        this._handleChat({
-          uid: String(m.uid || m.nick || ''),
-          nick: String(m.nick || '시청자').slice(0, 24),
-          role: m.role || '',
-          text: String(m.text || '').slice(0, 120),
-          sub: !!m.sub,
-        });
+        if (m.hidden) continue;
+        if (m.kind === 'chat') {
+          this._handleChat({
+            uid: String(m.uid || m.nick || ''),
+            nick: String(m.nick || '시청자').slice(0, 24),
+            role: m.role || '',
+            text: String(m.text || '').slice(0, 120),
+            sub: !!m.sub,
+          });
+        } else if (m.kind === 'donation' || m.kind === 'subscription') {
+          const uid = String(m.uid || '');
+          if (!uid) continue;
+          this.ch.send('celebrate', {
+            uid,
+            nick: String(m.nick || '시청자').slice(0, 24),
+            kind: m.kind,
+            sub: m.kind === 'subscription' || !!m.sub,
+          });
+        }
       }
     });
   }
@@ -179,6 +190,12 @@ export class ScreenPets {
 
   clear() {
     this.ch.send('clear', { at: Date.now() });
+  }
+
+  groupAction(action) {
+    const a = ['jump', 'gather', 'dance', 'scatter'].includes(action) ? action : 'jump';
+    this.ch.send('group', { action: a });
+    return { action: a };
   }
 
   testChat({ nick, text } = {}) {

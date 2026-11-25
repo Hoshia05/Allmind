@@ -44,6 +44,16 @@
   }
   .pet-name.streamer { background: rgba(190, 52, 85, 0.85); border-color: rgba(255, 190, 205, 0.45); }
   .pet-name.manager { background: rgba(45, 130, 95, 0.85); border-color: rgba(160, 255, 210, 0.4); }
+  .pet-name.sub { border-color: rgba(255, 215, 110, 0.65); box-shadow: 0 0 8px rgba(255, 215, 110, 0.25); }
+  .pet-sparkle {
+    position: absolute; left: 50%; top: 20%;
+    font-size: 20px; pointer-events: none;
+    animation: petSparkle 1.1s ease-out forwards;
+  }
+  @keyframes petSparkle {
+    0% { opacity: 1; transform: translate(-50%, 0) scale(0.6); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, -60px)) scale(1.25); }
+  }
   .pet-bubble {
     position: absolute; left: 50%; bottom: 100%; margin-bottom: 8px;
     transform: translateX(-50%) scale(0.92);
@@ -128,8 +138,10 @@
     body.append(img);
 
     const name = document.createElement('div');
-    name.className = 'pet-name' + (msg.role === 'streamer' ? ' streamer' : msg.role === 'manager' ? ' manager' : '');
-    name.textContent = msg.nick || '시청자';
+    name.className = 'pet-name'
+      + (msg.role === 'streamer' ? ' streamer' : msg.role === 'manager' ? ' manager' : '')
+      + (msg.sub ? ' sub' : '');
+    name.textContent = (msg.sub && !msg.role ? '★ ' : '') + (msg.nick || '시청자');
     name.hidden = !cfg.showNames;
 
     el.append(bubble, body, name);
@@ -211,6 +223,60 @@
     }
   }
 
+  function spawnSparkles(p) {
+    const glyphs = ['✨', '⭐', '💛', '✨'];
+    for (let i = 0; i < 6; i++) {
+      const sp = document.createElement('span');
+      sp.className = 'pet-sparkle';
+      sp.textContent = glyphs[i % glyphs.length];
+      sp.style.setProperty('--dx', `${Math.round(rnd(-56, 56))}px`);
+      sp.style.setProperty('--dy', `${Math.round(rnd(-85, -35))}px`);
+      p.el.append(sp);
+      setTimeout(() => sp.remove(), 1150);
+    }
+  }
+
+  function onCelebrate(msg) {
+    if (!cfg.enabled || !msg?.uid) return;
+    const now = performance.now();
+    let p = pets.get(msg.uid);
+    if (!p) {
+      evictIfFull();
+      p = createPet(msg);
+    } else {
+      p.lastChatAt = Date.now();
+      if (msg.sub) p.name.classList.add('sub');
+    }
+    runAction(p, 'dance', now);
+    p.vy = -260;
+    spawnSparkles(p);
+    if (cfg.showBubbles) {
+      p.bubble.textContent = msg.kind === 'subscription' ? '✨ 구독 감사해요!' : '✨ 후원 감사해요!';
+      p.bubble.classList.add('show');
+      p.bubbleUntil = now + cfg.bubbleSec * 1000;
+    }
+  }
+
+  function onGroup(action) {
+    if (!cfg.enabled) return;
+    const now = performance.now();
+    for (const p of pets.values()) {
+      if (action === 'jump') runAction(p, 'jump', now);
+      else if (action === 'dance') runAction(p, 'dance', now);
+      else if (action === 'gather') {
+        p.action = null;
+        p.targetX = clamp(W * 0.5 + rnd(-220, 220), 70, W - 70);
+        p.targetY = -rnd(35, 160);
+        p.state = 'drift';
+      } else if (action === 'scatter') {
+        p.action = null;
+        p.targetX = rnd(80, W - 80);
+        p.targetY = -rnd(24, 175);
+        p.state = 'drift';
+      }
+    }
+  }
+
   function onChat(msg) {
     if (!cfg.enabled) return;
     const uid = String(msg.uid || msg.nick || '');
@@ -222,7 +288,8 @@
       p = createPet(msg);
     } else {
       p.lastChatAt = Date.now();
-      p.name.textContent = msg.nick || p.nick;
+      p.name.textContent = (msg.sub && !msg.role ? '★ ' : '') + (msg.nick || p.nick);
+      p.name.classList.toggle('sub', !!msg.sub);
       if (p.action === 'sleep') p.action = null;
       // happy wisp flutter when chatting
       p.pulse = 1;
@@ -354,6 +421,8 @@
       if (p) { p.img.src = pickSpriteFor(c.uid); p.pulse = 1; }
     });
     es.addEventListener('chat', (e) => onChat(JSON.parse(e.data)));
+    es.addEventListener('celebrate', (e) => onCelebrate(JSON.parse(e.data)));
+    es.addEventListener('group', (e) => onGroup(JSON.parse(e.data)?.action));
     es.addEventListener('clear', () => { for (const p of [...pets.values()]) removePet(p); });
     es.addEventListener('reload', () => location.reload());
   } else {

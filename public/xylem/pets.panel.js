@@ -23,13 +23,19 @@ export function mount(el, x) {
       </section>
 
       <section class="card">
-        <h2>테스트 소환</h2>
+        <h2>테스트 소환 · 모두 함께</h2>
         <div class="row">
           <input class="in" id="pTestNick" value="테스트" placeholder="닉네임" style="width:120px">
           <input class="in" id="pTestText" value="안녕!" placeholder="채팅 내용" style="flex:1">
           <button class="btn accent sm" id="pTestSend">🧪 소환</button>
         </div>
-        <div class="hint" style="margin-top:8px">연결된 OBS 오버레이(또는 새 탭에서 연 <code>/pets</code>)에 가짜 채팅을 보내 펫과 말풍선을 바로 시험해 볼 수 있어요.</div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <button class="btn ghost sm" data-grp="jump">모두 점프</button>
+          <button class="btn ghost sm" data-grp="dance">모두 춤추기</button>
+          <button class="btn ghost sm" data-grp="gather">가운데 모이기</button>
+          <button class="btn ghost sm" data-grp="scatter">흩어지기</button>
+        </div>
+        <div class="hint" style="margin-top:8px">연결된 OBS 오버레이에 가짜 채팅을 보내거나 화면의 모든 펫을 한꺼번에 움직일 수 있어요.</div>
       </section>
     </div>
 
@@ -139,6 +145,12 @@ export function mount(el, x) {
     });
     if (r.ok) x.toast('테스트 채팅을 보냈어요');
   };
+
+  el.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('button[data-grp]');
+    if (!b) return;
+    await x.post('/api/pets/group', { action: b.dataset.grp });
+  });
 
   function renderSprites(list) {
     $('pSpriteCount').textContent = `${list.length}개`;

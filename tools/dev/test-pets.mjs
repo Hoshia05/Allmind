@@ -62,16 +62,26 @@ test('ScreenPets relays chat only when overlay connected and enabled, and manage
     chzzk.emit('live-chat', [{ kind: 'chat', uid: 'u1', nick: '뷰어', text: '안녕' }]);
     assert.equal(sent.length, 0);
 
-    // Overlay connected -> chat relayed, hidden/donations ignored
+    // Overlay connected -> chat relayed, hidden ignored, donation/sub celebrated
     channel.size = 1;
     chzzk.emit('live-chat', [
       { kind: 'chat', uid: 'u1', nick: '뷰어', text: '안녕' },
       { kind: 'chat', uid: 'u2', nick: '숨김', text: 'x', hidden: true },
       { kind: 'donation', uid: 'u3', nick: '후원', amount: 1000 },
+      { kind: 'subscription', uid: 'u4', nick: '구독자', sub: { months: 3, tier: 1 } },
     ]);
-    assert.equal(sent.length, 1);
+    assert.equal(sent.length, 3);
     assert.equal(sent[0].ev, 'chat');
     assert.equal(sent[0].data.nick, '뷰어');
+    assert.equal(sent[1].ev, 'celebrate');
+    assert.equal(sent[1].data.kind, 'donation');
+    assert.equal(sent[2].ev, 'celebrate');
+    assert.equal(sent[2].data.kind, 'subscription');
+
+    // Group action
+    pets.groupAction('gather');
+    assert.equal(sent.at(-1).ev, 'group');
+    assert.equal(sent.at(-1).data.action, 'gather');
 
     // Add + remove custom sprite
     const png = Buffer.alloc(32);
