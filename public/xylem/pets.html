@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>화면 펫</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1920px; height: 1080px; overflow: hidden; background: transparent;
+    font-family: 'Noto Sans KR', 'Pretendard', 'Malgun Gothic', sans-serif;
+    user-select: none;
+  }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; }
+  .pet {
+    position: absolute; left: 0; top: 0;
+    width: 96px; height: 96px;
+    will-change: transform, opacity;
+    pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .pet.out { opacity: 0; }
+  .pet-body {
+    width: 96px; height: 96px;
+    display: flex; align-items: center; justify-content: center;
+    transform-origin: 50% 50%;
+    will-change: transform;
+  }
+  .pet-body img {
+    max-width: 96px; max-height: 96px;
+    width: auto; height: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(255, 224, 150, 0.45)) drop-shadow(0 4px 8px rgba(0,0,0,0.35));
+  }
+  .pet-name {
+    position: absolute; left: 50%; top: 100%; margin-top: 2px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 13px; font-weight: 700; line-height: 1.2;
+    color: #fff;
+    padding: 2px 7px; border-radius: 999px;
+    background: rgba(15, 18, 28, 0.72);
+    border: 1px solid rgba(255,255,255,0.16);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.85);
+  }
+  .pet-name.streamer { background: rgba(190, 52, 85, 0.85); border-color: rgba(255, 190, 205, 0.45); }
+  .pet-name.manager { background: rgba(45, 130, 95, 0.85); border-color: rgba(160, 255, 210, 0.4); }
+  .pet-bubble {
+    position: absolute; left: 50%; bottom: 100%; margin-bottom: 8px;
+    transform: translateX(-50%) scale(0.92);
+    width: max-content; max-width: 240px; min-width: 36px;
+    padding: 7px 12px; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    color: #181a24;
+    font-size: 15px; font-weight: 600; line-height: 1.35;
+    word-break: keep-all; overflow-wrap: anywhere; text-align: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.32);
+    opacity: 0;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+  .pet-bubble.show {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  .pet-bubble::after {
+    content: ''; position: absolute; left: 50%; top: 100%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: rgba(255, 255, 255, 0.96);
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const W = 1920, H = 1080, PET_SIZE = 96;
+  const qs = new URLSearchParams(location.search);
+  const DEMO = qs.has('demo');
+
+  let cfg = {
+    enabled: true, maxPets: 20, idleMinutes: 5, scale: 1, speed: 1,
+    floorY: 16, showNames: true, showBubbles: true, bubbleSec: 5, disabledSprites: [],
+  };
+  let spriteList = [{ file: 'pet-wisp.png', url: '/api/pets/sprite?file=pet-wisp.png' }];
+  const pets = new Map(); // uid → pet object
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  function activeSprites() {
+    const off = new Set(cfg.disabledSprites || []);
+    const active = spriteList.filter((s) => !off.has(s.file));
+    return active.length ? active : spriteList;
+  }
+
+  function hashUid(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return Math.abs(h);
+  }
+
+  function pickSpriteFor(uid) {
+    const list = activeSprites();
+    if (!list.length) return '/api/pets/sprite?file=pet-wisp.png';
+    return list[hashUid(String(uid || '')) % list.length].url;
+  }
+
+  function createPet(msg) {
+    const uid = String(msg.uid || msg.nick || Math.random());
+    const el = document.createElement('div');
+    el.className = 'pet';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'pet-bubble';
+
+    const body = document.createElement('div');
+    body.className = 'pet-body';
+    const img = document.createElement('img');
+    img.src = pickSpriteFor(uid);
+    img.alt = '';
+    body.append(img);
+
+    const name = document.createElement('div');
+    name.className = 'pet-name' + (msg.role === 'streamer' ? ' streamer' : msg.role === 'manager' ? ' manager' : '');
+    name.textContent = msg.nick || '시청자';
+    name.hidden = !cfg.showNames;
+
+    el.append(bubble, body, name);
+    stage.append(el);
+
+    const fromLeft = Math.random() < 0.5;
+    const x = fromLeft ? rnd(60, 420) : rnd(W - 420, W - 60);
+    const hoverY = -rnd(28, 150);
+    const p = {
+      uid,
+      nick: msg.nick || '시청자',
+      el, body, img, bubble, name,
+      x,
+      y: hoverY - 50,   // floats gently into hover band on spawn
+      vx: 0,
+      vy: 0,
+      dir: fromLeft ? 1 : -1,
+      state: 'hover',   // 'hover' | 'drift'
+      targetX: clamp(x + rnd(-320, 320), 70, W - 70),
+      targetY: hoverY,
+      stateUntil: performance.now() + rnd(900, 2200),
+      floatPhase: Math.random() * Math.PI * 2,
+      pulse: 0,         // >0 when excited by a chat message
+      lastChatAt: Date.now(),
+      bubbleUntil: 0,
+      removing: false,
+    };
+    el.style.opacity = '0';
+    requestAnimationFrame(() => { if (!p.removing) el.style.opacity = ''; });
+    pets.set(uid, p);
+    return p;
+  }
+
+  function removePet(p) {
+    if (!p || p.removing) return;
+    p.removing = true;
+    p.el.classList.add('out');
+    pets.delete(p.uid);
+    setTimeout(() => p.el.remove(), 460);
+  }
+
+  function evictIfFull() {
+    while (pets.size >= cfg.maxPets) {
+      let oldest = null;
+      for (const p of pets.values()) {
+        if (!oldest || p.lastChatAt < oldest.lastChatAt) oldest = p;
+      }
+      if (oldest) removePet(oldest);
+      else break;
+    }
+  }
+
+  function onChat(msg) {
+    if (!cfg.enabled) return;
+    const uid = String(msg.uid || msg.nick || '');
+    if (!uid) return;
+    let p = pets.get(uid);
+    if (!p) {
+      evictIfFull();
+      p = createPet(msg);
+    } else {
+      p.lastChatAt = Date.now();
+      p.name.textContent = msg.nick || p.nick;
+      // happy wisp flutter when chatting
+      p.pulse = 1;
+      p.vy = -120;
+    }
+    if (cfg.showBubbles && msg.text) {
+      p.bubble.textContent = msg.text;
+      p.bubble.classList.add('show');
+      p.bubbleUntil = performance.now() + cfg.bubbleSec * 1000;
+    }
+  }
+
+  function applySettings(next) {
+    cfg = { ...cfg, ...next };
+    if (!cfg.enabled) {
+      for (const p of [...pets.values()]) removePet(p);
+      return;
+    }
+    while (pets.size > cfg.maxPets) {
+      let oldest = null;
+      for (const p of pets.values()) if (!oldest || p.lastChatAt < oldest.lastChatAt) oldest = p;
+      if (oldest) removePet(oldest); else break;
+    }
+    for (const p of pets.values()) {
+      p.name.hidden = !cfg.showNames;
+      if (!cfg.showBubbles) p.bubble.classList.remove('show');
+    }
+  }
+
+  function applySprites(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    spriteList = list;
+    for (const p of pets.values()) {
+      p.img.src = pickSpriteFor(p.uid);
+    }
+  }
+
+  // ---------- 60fps hovering wisp physics + roaming loop ----------
+  let lastT = performance.now();
+  function tick(now) {
+    const dt = Math.min(0.05, Math.max(0.001, (now - lastT) / 1000));
+    lastT = now;
+    const wallNow = Date.now();
+    const idleMs = cfg.idleMinutes * 60000;
+    const floorBase = H - cfg.floorY - PET_SIZE * cfg.scale;
+
+    for (const p of [...pets.values()]) {
+      if (wallNow - p.lastChatAt > idleMs) { removePet(p); continue; }
+      if (p.bubbleUntil && now > p.bubbleUntil) {
+        p.bubble.classList.remove('show');
+        p.bubbleUntil = 0;
+      }
+
+      if (p.state === 'drift') {
+        const dx = p.targetX - p.x;
+        const dy = p.targetY - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 10) {
+          p.state = 'hover';
+          p.stateUntil = now + rnd(1200, 3800);
+        } else {
+          if (Math.abs(dx) > 4) p.dir = dx > 0 ? 1 : -1;
+          const spd = 82 * cfg.speed;
+          const ease = Math.min(1, dist / 60);
+          const tvx = (dx / dist) * spd * (0.45 + 0.55 * ease);
+          const tvy = (dy / dist) * spd * (0.45 + 0.55 * ease);
+          p.vx += (tvx - p.vx) * Math.min(1, dt * 4);
+          p.vy += (tvy - p.vy) * Math.min(1, dt * 4);
+        }
+      } else {
+        // gentle hover in place
+        p.vx += (0 - p.vx) * Math.min(1, dt * 3);
+        p.vy += ((p.targetY - p.y) * 1.8 - p.vy) * Math.min(1, dt * 3);
+        if (now > p.stateUntil) {
+          p.targetX = clamp(p.x + rnd(-460, 460), 70, W - 70);
+          p.targetY = -rnd(24, 175);
+          p.state = 'drift';
+        }
+      }
+
+      p.x = clamp(p.x + p.vx * dt, 50, W - 50);
+      p.y = clamp(p.y + p.vy * dt, -240, -12);
+      p.floatPhase += dt * (2.6 + 0.5 * cfg.speed);
+      p.pulse = Math.max(0, p.pulse - dt * 2.2);
+
+      const bobY = Math.sin(p.floatPhase) * 9 - p.pulse * 12;
+      const tilt = clamp(p.vx * 0.08, -10, 10) + Math.sin(p.floatPhase * 0.7) * 3;
+      const scalePulse = 1 + Math.sin(p.pulse * Math.PI) * 0.14;
+      const sx = p.dir * scalePulse;
+      const sy = scalePulse;
+
+      p.el.style.transform = `translate3d(${(p.x - PET_SIZE / 2).toFixed(1)}px, ${(floorBase + p.y).toFixed(1)}px, 0) scale(${cfg.scale})`;
+      p.body.style.transform = `translate3d(0, ${bobY.toFixed(1)}px, 0) rotate(${tilt.toFixed(1)}deg) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  // ---------- SSE connection ----------
+  if (!DEMO) {
+    const es = new EventSource('/api/pets/events');
+    es.addEventListener('settings', (e) => applySettings(JSON.parse(e.data)));
+    es.addEventListener('sprites', (e) => applySprites(JSON.parse(e.data)));
+    es.addEventListener('chat', (e) => onChat(JSON.parse(e.data)));
+    es.addEventListener('clear', () => { for (const p of [...pets.values()]) removePet(p); });
+    es.addEventListener('reload', () => location.reload());
+  } else {
+    const demoUsers = [
+      { uid: 'd1', nick: '호시아', role: 'streamer', text: '다들 안녕~!' },
+      { uid: 'd2', nick: '별빛', role: 'manager', text: '오늘 방송 재밌다 ㅋㅋ' },
+      { uid: 'd3', nick: '치즈냥', role: '', text: '귀엽다!' },
+      { uid: 'd4', nick: '구름', role: '', text: '오버레이 테스트 중~' },
+      { uid: 'd5', nick: '밤하늘', role: '', text: '반가워요!' },
+    ];
+    demoUsers.forEach((u, i) => setTimeout(() => onChat(u), 200 + i * 350));
+    setInterval(() => {
+      const u = demoUsers[Math.floor(Math.random() * demoUsers.length)];
+      const lines = ['ㅋㅋㅋ', '대박', '귀여워요!', '화이팅~', '좋은 하루!'];
+      onChat({ ...u, text: lines[Math.floor(Math.random() * lines.length)] });
+    }, 3500);
+  }
+})();
+</script>
+</body>
+</html>

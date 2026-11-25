@@ -11,9 +11,10 @@ import { Roulette } from './roulette.js';
 import { ViewerDraw } from './draw.js';
 import { TextBoxes } from './textbox.js';
 import { VTSThrow } from './vtsthrow.js';
+import { ScreenPets } from './pets.js';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json; charset=utf-8' };
-const OVERLAY_PAGES = ['/dogfight', '/roulette', '/roulette-board', '/text', '/draw'];
+const OVERLAY_PAGES = ['/dogfight', '/roulette', '/roulette-board', '/text', '/draw', '/pets'];
 const TEXT_MAX = 200; // assistant overlay text
 
 // pack files with "no-cache" + a content ETag (same behavior as the platform's static files)
@@ -49,6 +50,7 @@ export function register(ctx) {
   draw.on('tts-error', (msg) => ctx.toast({ text: `추첨 음성: ${msg}`, bad: true, long: true }));
   const textBoxes = new TextBoxes(xylem); // 텍스트: on-screen text boxes (/text?id=…)
   const vtsThrow = new VTSThrow(vts, chat);
+  const pets = new ScreenPets(chat, xylem); // 화면 펫: viewer-summoned roaming pets (/pets overlay)
   ctx.events.on('stream', (active) => { if (active) draw.streamStarted(); }); // "지난 당첨자 제외 (이번 방송)" counts from here
   // while a Xylem page is open, look for a newer pack every 3 min (one small GitHub request)
   setInterval(() => { if (xylemPage.size) xylem.check().catch(() => {}); }, 3 * 60000).unref();
@@ -57,12 +59,13 @@ export function register(ctx) {
     allmind: ctx.version,
     pack: xylem.status(),
     chat: chat.chatState,
-    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size, rouletteBoard: roulette.boardCh.size, text: textBoxes.ch.size, draw: draw.overlays },
+    overlays: { dogfight: dogfight.overlays, roulette: roulette.ch.size, rouletteBoard: roulette.boardCh.size, text: textBoxes.ch.size, draw: draw.overlays, pets: pets.overlays },
     draw: draw.status(),
     text: textBoxes.status(),
     roulette: roulette.status(),
     board: dogfight.board(),
     dogfight: dogfight.status(),
+    pets: pets.status(),
     vts: { ...vts.status(), throw: vtsThrow.status() },
   });
 
@@ -104,6 +107,7 @@ export function register(ctx) {
   ctx.sse('/api/draw/events', (req, res) => draw.attach(req, res), { pinFree: true });
   ctx.sse('/api/text/events', (req, res, url) => textBoxes.attach(req, res, url.searchParams.get('preview') === '1'), { pinFree: true });
   ctx.sse('/api/dogfight/events', (req, res) => dogfight.attach(req, res), { pinFree: true });
+  ctx.sse('/api/pets/events', (req, res) => pets.attach(req, res), { pinFree: true });
   ctx.route('POST', '/api/draw/shown', async (req, res) => { draw.shown(String((await readBody(req)).id || '')); sendJson(res, 200, { ok: true }); }, { raw: true, pinFree: true });
   ctx.route('POST', '/api/roulette/shown', async (req, res) => { roulette.shown(String((await readBody(req)).id || '')); sendJson(res, 200, { ok: true }); }, { raw: true, pinFree: true });
   ctx.route('POST', '/api/dogfight/result', async (req, res) => sendJson(res, 200, { ok: true, ...dogfight.result(await readBody(req)) }), { raw: true, pinFree: true });
@@ -123,6 +127,13 @@ export function register(ctx) {
     res.writeHead(200, { 'Content-Type': ext === '.gif' ? 'image/gif' : ext === '.png' ? 'image/png' : 'image/jpeg', 'Cache-Control': 'no-cache' });
     res.end(buf);
   }, { raw: true });
+  ctx.route('GET', '/api/pets/sprite', (req, res, url) => {
+    const f = pets.spriteFile(url.searchParams.get('file'));
+    if (!f) return sendJson(res, 404, { ok: false });
+    const mime = { '.svg': 'image/svg+xml', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' }[f.ext] || 'image/jpeg';
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache' });
+    res.end(f.buf);
+  }, { raw: true, pinFree: true });
 
   // ---------- the Xylem page's and dashboard's actions (answered as { ok: true, ... }, errors → 400) ----------
   const routes = {
@@ -174,6 +185,12 @@ export function register(ctx) {
     'POST /api/vts/items-remove': (b) => vtsThrow.removeItem(b.file),
     'POST /api/vts/aim-start': () => vtsThrow.startAim(),
     'POST /api/vts/aim-stop': () => vtsThrow.stopAim(),
+    // 화면 펫 (pets.js)
+    'POST /api/pets/settings': (b) => ({ settings: pets.setSettings(b.settings) }),
+    'POST /api/pets/clear': () => { pets.clear(); return {}; },
+    'POST /api/pets/test-chat': (b) => { pets.testChat(b); return {}; },
+    'POST /api/pets/sprites': (b) => pets.addSprite(b.name, b.data),
+    'POST /api/pets/sprites-remove': (b) => pets.removeSprite(b.file),
   };
   for (const [key, fn] of Object.entries(routes)) {
     const [method, p] = key.split(' ');
