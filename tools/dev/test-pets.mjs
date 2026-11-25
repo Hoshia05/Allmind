@@ -82,6 +82,27 @@ test('ScreenPets relays chat only when overlay connected and enabled, and manage
     assert.equal(added.file, 'fan.png');
     assert.ok(pets.sprites().some((s) => s.file === 'fan.png' && !s.builtin));
     assert.ok(pets.spriteFile('fan.png'));
+
+    // Action commands + avatar selection
+    sent.length = 0;
+    chzzk.emit('live-chat', [
+      { kind: 'chat', uid: 'u1', nick: '뷰어', text: '!점프' },
+      { kind: 'chat', uid: 'u1', nick: '뷰어', text: '!캐릭터 fan' },
+    ]);
+    assert.equal(sent[0].ev, 'chat');
+    assert.equal(sent[0].data.action, 'jump');
+    assert.equal(sent[0].data.text, '');
+    const choiceEv = sent.find((x) => x.ev === 'choice');
+    assert.deepEqual(choiceEv?.data, { uid: 'u1', file: 'fan.png' });
+    assert.equal(pets.choices.u1, 'fan.png');
+
+    // Disabling commands passes text as normal chat without action
+    pets.setSettings({ commandsEnabled: false });
+    sent.length = 0;
+    chzzk.emit('live-chat', [{ kind: 'chat', uid: 'u1', nick: '뷰어', text: '!춤' }]);
+    assert.equal(sent[0].data.action, undefined);
+    assert.equal(sent[0].data.text, '!춤');
+
     pets.removeSprite('fan.png');
     assert.ok(!pets.sprites().some((s) => s.file === 'fan.png'));
   } finally {

@@ -42,9 +42,10 @@ export function mount(el, x) {
         <label class="field">이동 속도 <span class="muted small" id="pSpeedV"></span><input id="pSpeed" type="range" min="0.4" max="2.5" step="0.05"></label>
         <label class="field">바닥 여백 (px)<input class="in" id="pFloor" type="number" min="0" max="300"></label>
         <label class="field">말풍선 유지 시간 (초)<input class="in" id="pBubbleSec" type="number" min="2" max="15"></label>
-        <div class="field">표시
+        <div class="field">표시·명령어
           <label class="check"><input type="checkbox" id="pNames"> 닉네임 표시</label>
           <label class="check"><input type="checkbox" id="pBubbles"> 채팅 말풍선 표시</label>
+          <label class="check"><input type="checkbox" id="pCmds"> 채팅 명령어 켜기 <span class="muted small">(!점프 · !대시 · !춤 · !자장 · !캐릭터)</span></label>
         </div>
       </div>
       <div class="row" style="margin-top:12px">
@@ -77,6 +78,7 @@ export function mount(el, x) {
   function readForm() {
     return {
       enabled: $('pOn').checked,
+      commandsEnabled: $('pCmds').checked,
       maxPets: Number($('pMax').value) || 20,
       idleMinutes: Number($('pIdle').value) || 5,
       scale: Number($('pScale').value) || 1,
@@ -93,6 +95,7 @@ export function mount(el, x) {
     saved = s;
     disabledSet = new Set(s.disabledSprites || []);
     $('pOn').checked = !!s.enabled;
+    $('pCmds').checked = s.commandsEnabled !== false;
     $('pMax').value = s.maxPets;
     $('pIdle').value = s.idleMinutes;
     $('pScale').value = s.scale;
@@ -106,7 +109,7 @@ export function mount(el, x) {
     setDirty(false);
   }
 
-  for (const id of ['pMax', 'pIdle', 'pScale', 'pSpeed', 'pFloor', 'pBubbleSec', 'pNames', 'pBubbles']) {
+  for (const id of ['pMax', 'pIdle', 'pScale', 'pSpeed', 'pFloor', 'pBubbleSec', 'pNames', 'pBubbles', 'pCmds']) {
     $(id).addEventListener('input', () => {
       $('pScaleV').textContent = `${Math.round(Number($('pScale').value) * 100)}%`;
       $('pSpeedV').textContent = `${Math.round(Number($('pSpeed').value) * 100)}%`;
