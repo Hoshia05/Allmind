@@ -44,6 +44,16 @@
   }
   .pet-name.streamer { background: rgba(190, 52, 85, 0.85); border-color: rgba(255, 190, 205, 0.45); }
   .pet-name.manager { background: rgba(45, 130, 95, 0.85); border-color: rgba(160, 255, 210, 0.4); }
+  .pet-name.sub { border-color: rgba(255, 215, 110, 0.65); box-shadow: 0 0 8px rgba(255, 215, 110, 0.25); }
+  .pet-sparkle {
+    position: absolute; left: 50%; top: 20%;
+    font-size: 20px; pointer-events: none;
+    animation: petSparkle 1.1s ease-out forwards;
+  }
+  @keyframes petSparkle {
+    0% { opacity: 1; transform: translate(-50%, 0) scale(0.6); }
+    100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 0px)), var(--dy, -60px)) scale(1.25); }
+  }
   .pet-bubble {
     position: absolute; left: 50%; bottom: 100%; margin-bottom: 8px;
     transform: translateX(-50%) scale(0.92);
@@ -79,10 +89,11 @@
   const DEMO = qs.has('demo');
 
   let cfg = {
-    enabled: true, maxPets: 20, idleMinutes: 5, scale: 1, speed: 1,
-    floorY: 16, showNames: true, showBubbles: true, bubbleSec: 5, disabledSprites: [],
+    enabled: true, commandsEnabled: true, maxPets: 20, idleMinutes: 5, scale: 1, speed: 1,
+    floorY: 16, showNames: true, showBubbles: true, bubbleSec: 5, disabledSprites: [], platforms: [],
   };
   let spriteList = [{ file: 'pet-wisp.png', url: '/api/pets/sprite?file=pet-wisp.png' }];
+  let choices = {}; // uid → filename
   const pets = new Map(); // uid → pet object
 
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -103,6 +114,11 @@
   function pickSpriteFor(uid) {
     const list = activeSprites();
     if (!list.length) return '/api/pets/sprite?file=pet-wisp.png';
+    const chosen = choices[String(uid || '')];
+    if (chosen) {
+      const hit = list.find((s) => s.file === chosen);
+      if (hit) return hit.url;
+    }
     return list[hashUid(String(uid || '')) % list.length].url;
   }
 
@@ -122,8 +138,10 @@
     body.append(img);
 
     const name = document.createElement('div');
-    name.className = 'pet-name' + (msg.role === 'streamer' ? ' streamer' : msg.role === 'manager' ? ' manager' : '');
-    name.textContent = msg.nick || '시청자';
+    name.className = 'pet-name'
+      + (msg.role === 'streamer' ? ' streamer' : msg.role === 'manager' ? ' manager' : '')
+      + (msg.sub ? ' sub' : '');
+    name.textContent = (msg.sub && !msg.role ? '★ ' : '') + (msg.nick || '시청자');
     name.hidden = !cfg.showNames;
 
     el.append(bubble, body, name);
@@ -147,6 +165,10 @@
       stateUntil: performance.now() + rnd(900, 2200),
       floatPhase: Math.random() * Math.PI * 2,
       pulse: 0,         // >0 when excited by a chat message
+      action: null,     // 'dance' | 'dash' | 'sleep' | null
+      actionUntil: 0,
+      interact: null,   // { kind: 'hug'|'poke', targetUid, until, done }
+      greetCooldownUntil: 0,
       lastChatAt: Date.now(),
       bubbleUntil: 0,
       removing: false,
@@ -176,25 +198,129 @@
     }
   }
 
+  function runAction(p, action, now) {
+    if (action === 'jump') {
+      p.action = null;
+      p.vy = -440;
+      p.pulse = 1;
+    } else if (action === 'dash') {
+      p.action = 'dash';
+      p.actionUntil = now + 1100;
+      p.dir = Math.random() < 0.5 ? (p.x < W * 0.5 ? 1 : -1) : p.dir;
+      if (p.x < 180) p.dir = 1;
+      if (p.x > W - 180) p.dir = -1;
+      p.vx = p.dir * 480 * cfg.speed;
+      p.pulse = 0.7;
+    } else if (action === 'dance') {
+      p.action = 'dance';
+      p.actionUntil = now + 3200;
+      p.pulse = 0.8;
+    } else if (action === 'sleep') {
+      p.action = 'sleep';
+      p.actionUntil = now + 6500;
+      p.targetY = -20;
+      p.bubble.textContent = 'Zzz…';
+      p.bubble.classList.add('show');
+      p.bubbleUntil = now + 4500;
+    }
+  }
+
+  function spawnSparkles(p, glyphs = ['✨', '⭐', '💛', '✨'], count = 6) {
+    for (let i = 0; i < count; i++) {
+      const sp = document.createElement('span');
+      sp.className = 'pet-sparkle';
+      sp.textContent = glyphs[i % glyphs.length];
+      sp.style.setProperty('--dx', `${Math.round(rnd(-56, 56))}px`);
+      sp.style.setProperty('--dy', `${Math.round(rnd(-85, -35))}px`);
+      p.el.append(sp);
+      setTimeout(() => sp.remove(), 1150);
+    }
+  }
+
+  function findPetByNick(query, excludeUid) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return null;
+    let partial = null;
+    for (const p of pets.values()) {
+      if (p.uid === excludeUid) continue;
+      const n = String(p.nick || '').toLowerCase();
+      if (n === q) return p;
+      if (!partial && n.includes(q)) partial = p;
+    }
+    return partial;
+  }
+
+  function onCelebrate(msg) {
+    if (!cfg.enabled || !msg?.uid) return;
+    const now = performance.now();
+    let p = pets.get(msg.uid);
+    if (!p) {
+      evictIfFull();
+      p = createPet(msg);
+    } else {
+      p.lastChatAt = Date.now();
+      if (msg.sub) p.name.classList.add('sub');
+    }
+    runAction(p, 'dance', now);
+    p.vy = -260;
+    spawnSparkles(p);
+    if (cfg.showBubbles) {
+      p.bubble.textContent = msg.kind === 'subscription' ? '✨ 구독 감사해요!' : '✨ 후원 감사해요!';
+      p.bubble.classList.add('show');
+      p.bubbleUntil = now + cfg.bubbleSec * 1000;
+    }
+  }
+
+  function onGroup(action) {
+    if (!cfg.enabled) return;
+    const now = performance.now();
+    for (const p of pets.values()) {
+      if (action === 'jump') runAction(p, 'jump', now);
+      else if (action === 'dance') runAction(p, 'dance', now);
+      else if (action === 'gather') {
+        p.action = null;
+        p.targetX = clamp(W * 0.5 + rnd(-220, 220), 70, W - 70);
+        p.targetY = -rnd(35, 160);
+        p.state = 'drift';
+      } else if (action === 'scatter') {
+        p.action = null;
+        p.targetX = rnd(80, W - 80);
+        p.targetY = -rnd(24, 175);
+        p.state = 'drift';
+      }
+    }
+  }
+
   function onChat(msg) {
     if (!cfg.enabled) return;
     const uid = String(msg.uid || msg.nick || '');
     if (!uid) return;
+    const now = performance.now();
     let p = pets.get(uid);
     if (!p) {
       evictIfFull();
       p = createPet(msg);
     } else {
       p.lastChatAt = Date.now();
-      p.name.textContent = msg.nick || p.nick;
+      p.name.textContent = (msg.sub && !msg.role ? '★ ' : '') + (msg.nick || p.nick);
+      p.name.classList.toggle('sub', !!msg.sub);
+      if (p.action === 'sleep') p.action = null;
       // happy wisp flutter when chatting
       p.pulse = 1;
       p.vy = -120;
     }
+    if (msg.action) runAction(p, msg.action, now);
+    if (msg.interact) {
+      const target = findPetByNick(msg.interact.target, p.uid);
+      if (target) {
+        p.action = null;
+        p.interact = { kind: msg.interact.kind, targetUid: target.uid, until: now + 4000, done: false };
+      }
+    }
     if (cfg.showBubbles && msg.text) {
       p.bubble.textContent = msg.text;
       p.bubble.classList.add('show');
-      p.bubbleUntil = performance.now() + cfg.bubbleSec * 1000;
+      p.bubbleUntil = now + cfg.bubbleSec * 1000;
     }
   }
 
@@ -239,7 +365,51 @@
         p.bubbleUntil = 0;
       }
 
-      if (p.state === 'drift') {
+      if (p.action && now > p.actionUntil) p.action = null;
+      if (p.interact && now > p.interact.until) p.interact = null;
+
+      if (p.interact && !p.interact.done) {
+        const target = pets.get(p.interact.targetUid);
+        if (!target) {
+          p.interact = null;
+        } else {
+          const side = p.x <= target.x ? -1 : 1;
+          const gx = target.x + side * 54;
+          const gy = target.y;
+          const dx = gx - p.x;
+          const dy = gy - p.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 18) {
+            p.interact.done = true;
+            p.interact.until = now + 900;
+            p.dir = p.x <= target.x ? 1 : -1;
+            target.dir = -p.dir;
+            if (p.interact.kind === 'hug') {
+              p.pulse = 1; target.pulse = 1;
+              spawnSparkles(p, ['💛', '💕', '✨'], 4);
+              spawnSparkles(target, ['💛', '💕', '✨'], 3);
+            } else {
+              p.pulse = 0.8;
+              target.vx += (target.x >= p.x ? 1 : -1) * 260;
+              target.vy = -170;
+              target.pulse = 1;
+              spawnSparkles(target, ['💫', '❗'], 3);
+            }
+          } else {
+            if (Math.abs(dx) > 4) p.dir = dx > 0 ? 1 : -1;
+            const spd = 240 * cfg.speed;
+            p.vx += ((dx / dist) * spd - p.vx) * Math.min(1, dt * 6);
+            p.vy += ((dy / dist) * spd - p.vy) * Math.min(1, dt * 6);
+          }
+        }
+      } else if (p.action === 'dash') {
+        p.vx = p.dir * 480 * cfg.speed;
+        p.vy += ((p.targetY - p.y) * 2.5 - p.vy) * Math.min(1, dt * 4);
+        if (p.x <= 60 || p.x >= W - 60) { p.dir *= -1; p.vx = p.dir * 480 * cfg.speed; }
+      } else if (p.action === 'sleep') {
+        p.vx += (0 - p.vx) * Math.min(1, dt * 4);
+        p.vy += ((-18 - p.y) * 2.2 - p.vy) * Math.min(1, dt * 3);
+      } else if (p.state === 'drift') {
         const dx = p.targetX - p.x;
         const dy = p.targetY - p.y;
         const dist = Math.hypot(dx, dy);
@@ -260,22 +430,56 @@
         p.vx += (0 - p.vx) * Math.min(1, dt * 3);
         p.vy += ((p.targetY - p.y) * 1.8 - p.vy) * Math.min(1, dt * 3);
         if (now > p.stateUntil) {
-          p.targetX = clamp(p.x + rnd(-460, 460), 70, W - 70);
-          p.targetY = -rnd(24, 175);
+          const plats = Array.isArray(cfg.platforms) ? cfg.platforms : [];
+          if (plats.length && Math.random() < 0.38) {
+            const pl = plats[Math.floor(Math.random() * plats.length)];
+            p.targetX = clamp(pl.x + rnd(20, Math.max(24, pl.width - 20)), 70, W - 70);
+            p.targetY = clamp((pl.y - floorBase) - rnd(16, 54), -980, -16);
+          } else {
+            p.targetX = clamp(p.x + rnd(-460, 460), 70, W - 70);
+            p.targetY = -rnd(24, 175);
+          }
           p.state = 'drift';
         }
       }
 
       p.x = clamp(p.x + p.vx * dt, 50, W - 50);
-      p.y = clamp(p.y + p.vy * dt, -240, -12);
+      p.y = clamp(p.y + p.vy * dt, -1000, -12);
       p.floatPhase += dt * (2.6 + 0.5 * cfg.speed);
       p.pulse = Math.max(0, p.pulse - dt * 2.2);
 
-      const bobY = Math.sin(p.floatPhase) * 9 - p.pulse * 12;
-      const tilt = clamp(p.vx * 0.08, -10, 10) + Math.sin(p.floatPhase * 0.7) * 3;
-      const scalePulse = 1 + Math.sin(p.pulse * Math.PI) * 0.14;
-      const sx = p.dir * scalePulse;
-      const sy = scalePulse;
+      // occasional friendly greeting when drifting past another wisp
+      if (!p.action && !p.interact && p.state === 'drift' && now > p.greetCooldownUntil && Math.random() < 0.015) {
+        for (const other of pets.values()) {
+          if (other === p || other.action || other.interact || now < other.greetCooldownUntil) continue;
+          if (Math.hypot(other.x - p.x, other.y - p.y) < 75) {
+            p.greetCooldownUntil = now + 22000;
+            other.greetCooldownUntil = now + 22000;
+            p.state = 'hover'; p.stateUntil = now + 1100;
+            other.state = 'hover'; other.stateUntil = now + 1100;
+            p.dir = p.x <= other.x ? 1 : -1;
+            other.dir = -p.dir;
+            p.pulse = 0.6; other.pulse = 0.6;
+            spawnSparkles(p, ['🎵', '✨'], 2);
+            break;
+          }
+        }
+      }
+
+      let bobY = Math.sin(p.floatPhase) * 9 - p.pulse * 12;
+      let tilt = clamp(p.vx * 0.08, -12, 12) + Math.sin(p.floatPhase * 0.7) * 3;
+      let scalePulse = 1 + Math.sin(p.pulse * Math.PI) * 0.14;
+      let sx = p.dir * scalePulse;
+      let sy = scalePulse;
+      if (p.action === 'dance') {
+        bobY -= Math.abs(Math.sin(now * 0.014)) * 16;
+        tilt = Math.sin(now * 0.016) * 16;
+      } else if (p.action === 'sleep') {
+        bobY = Math.sin(p.floatPhase * 0.5) * 3;
+        tilt = -6;
+        sx = p.dir * 0.94;
+        sy = 0.88;
+      }
 
       p.el.style.transform = `translate3d(${(p.x - PET_SIZE / 2).toFixed(1)}px, ${(floorBase + p.y).toFixed(1)}px, 0) scale(${cfg.scale})`;
       p.body.style.transform = `translate3d(0, ${bobY.toFixed(1)}px, 0) rotate(${tilt.toFixed(1)}deg) scale(${sx.toFixed(3)}, ${sy.toFixed(3)})`;
@@ -289,7 +493,17 @@
     const es = new EventSource('/api/pets/events');
     es.addEventListener('settings', (e) => applySettings(JSON.parse(e.data)));
     es.addEventListener('sprites', (e) => applySprites(JSON.parse(e.data)));
+    es.addEventListener('choices', (e) => { choices = JSON.parse(e.data) || {}; applySprites(spriteList); });
+    es.addEventListener('choice', (e) => {
+      const c = JSON.parse(e.data);
+      if (!c?.uid || !c?.file) return;
+      choices[c.uid] = c.file;
+      const p = pets.get(c.uid);
+      if (p) { p.img.src = pickSpriteFor(c.uid); p.pulse = 1; }
+    });
     es.addEventListener('chat', (e) => onChat(JSON.parse(e.data)));
+    es.addEventListener('celebrate', (e) => onCelebrate(JSON.parse(e.data)));
+    es.addEventListener('group', (e) => onGroup(JSON.parse(e.data)?.action));
     es.addEventListener('clear', () => { for (const p of [...pets.values()]) removePet(p); });
     es.addEventListener('reload', () => location.reload());
   } else {

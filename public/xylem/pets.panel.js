@@ -23,13 +23,19 @@ export function mount(el, x) {
       </section>
 
       <section class="card">
-        <h2>테스트 소환</h2>
+        <h2>테스트 소환 · 모두 함께</h2>
         <div class="row">
           <input class="in" id="pTestNick" value="테스트" placeholder="닉네임" style="width:120px">
           <input class="in" id="pTestText" value="안녕!" placeholder="채팅 내용" style="flex:1">
           <button class="btn accent sm" id="pTestSend">🧪 소환</button>
         </div>
-        <div class="hint" style="margin-top:8px">연결된 OBS 오버레이(또는 새 탭에서 연 <code>/pets</code>)에 가짜 채팅을 보내 펫과 말풍선을 바로 시험해 볼 수 있어요.</div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <button class="btn ghost sm" data-grp="jump">모두 점프</button>
+          <button class="btn ghost sm" data-grp="dance">모두 춤추기</button>
+          <button class="btn ghost sm" data-grp="gather">가운데 모이기</button>
+          <button class="btn ghost sm" data-grp="scatter">흩어지기</button>
+        </div>
+        <div class="hint" style="margin-top:8px">연결된 OBS 오버레이에 가짜 채팅을 보내거나 화면의 모든 펫을 한꺼번에 움직일 수 있어요.</div>
       </section>
     </div>
 
@@ -42,14 +48,25 @@ export function mount(el, x) {
         <label class="field">이동 속도 <span class="muted small" id="pSpeedV"></span><input id="pSpeed" type="range" min="0.4" max="2.5" step="0.05"></label>
         <label class="field">바닥 여백 (px)<input class="in" id="pFloor" type="number" min="0" max="300"></label>
         <label class="field">말풍선 유지 시간 (초)<input class="in" id="pBubbleSec" type="number" min="2" max="15"></label>
-        <div class="field">표시
+        <div class="field">표시·명령어
           <label class="check"><input type="checkbox" id="pNames"> 닉네임 표시</label>
           <label class="check"><input type="checkbox" id="pBubbles"> 채팅 말풍선 표시</label>
+          <label class="check"><input type="checkbox" id="pCmds"> 채팅 명령어 켜기 <span class="muted small">(!점프 · !대시 · !춤 · !자장 · !안아 · !툭 · !캐릭터)</span></label>
         </div>
       </div>
       <div class="row" style="margin-top:12px">
         <button class="btn accent" id="pSave">저장</button>
         <span class="hint" id="pDirty"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>올라갈 자리 (발판) <span class="muted small">1920×1080 기준</span></h2>
+      <div class="hint" style="margin-bottom:8px">웹캠 프레임 위나 채팅창 위 등, 펫들이 가끔 날아가서 둥실 떠 있을 위치를 정할 수 있어요 (최대 8개).</div>
+      <div id="pPlats" style="display:grid;gap:8px"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn sm" id="pPlatAdd">＋ 자리 추가</button>
+        <button class="btn accent sm" id="pPlatSave">저장</button>
       </div>
     </section>
 
@@ -66,6 +83,7 @@ export function mount(el, x) {
   let saved = null;
   let dirty = false;
   let disabledSet = new Set();
+  let plats = [];
 
   const setDirty = (d) => {
     dirty = d;
@@ -74,9 +92,48 @@ export function mount(el, x) {
 
   $('pCopy').onclick = () => x.copy(url);
 
+  function readPlats() {
+    return [...el.querySelectorAll('.p-plat-row')].map((row, i) => ({
+      name: row.querySelector('.pl-name').value.trim() || `자리 ${i + 1}`,
+      x: Number(row.querySelector('.pl-x').value) || 0,
+      y: Number(row.querySelector('.pl-y').value) || 760,
+      width: Number(row.querySelector('.pl-w').value) || 320,
+    }));
+  }
+
+  function renderPlats() {
+    $('pPlats').innerHTML = plats.length ? plats.map((pl, i) => `
+      <div class="row p-plat-row" style="flex-wrap:wrap;gap:6px">
+        <input class="in pl-name" value="${esc(pl.name)}" placeholder="이름 (예: 웹캠 위)" style="width:130px">
+        <label class="small muted">X <input class="in pl-x" type="number" min="0" max="1880" value="${pl.x}" style="width:82px"></label>
+        <label class="small muted">Y <input class="in pl-y" type="number" min="40" max="1040" value="${pl.y}" style="width:82px"></label>
+        <label class="small muted">너비 <input class="in pl-w" type="number" min="40" max="1920" value="${pl.width}" style="width:82px"></label>
+        <button class="btn ghost sm" data-del-plat="${i}">삭제</button>
+      </div>`).join('') : '<div class="muted small">등록된 자리가 없어요 (화면 아래에서만 떠다녀요).</div>';
+  }
+
+  $('pPlatAdd').onclick = () => {
+    plats = readPlats();
+    if (plats.length >= 8) { x.toast('자리는 8개까지 추가할 수 있어요', true); return; }
+    plats.push({ name: `자리 ${plats.length + 1}`, x: 1400, y: 740, width: 360 });
+    renderPlats();
+    setDirty(true);
+  };
+  $('pPlats').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-del-plat]');
+    if (!b) return;
+    plats = readPlats();
+    plats.splice(Number(b.dataset.delPlat), 1);
+    renderPlats();
+    setDirty(true);
+  });
+  $('pPlats').addEventListener('input', () => setDirty(true));
+  $('pPlatSave').onclick = () => $('pSave').click();
+
   function readForm() {
     return {
       enabled: $('pOn').checked,
+      commandsEnabled: $('pCmds').checked,
       maxPets: Number($('pMax').value) || 20,
       idleMinutes: Number($('pIdle').value) || 5,
       scale: Number($('pScale').value) || 1,
@@ -86,13 +143,17 @@ export function mount(el, x) {
       showNames: $('pNames').checked,
       showBubbles: $('pBubbles').checked,
       disabledSprites: [...disabledSet],
+      platforms: readPlats(),
     };
   }
 
   function fillForm(s) {
     saved = s;
     disabledSet = new Set(s.disabledSprites || []);
+    plats = (s.platforms || []).map((p) => ({ ...p }));
+    renderPlats();
     $('pOn').checked = !!s.enabled;
+    $('pCmds').checked = s.commandsEnabled !== false;
     $('pMax').value = s.maxPets;
     $('pIdle').value = s.idleMinutes;
     $('pScale').value = s.scale;
@@ -106,7 +167,7 @@ export function mount(el, x) {
     setDirty(false);
   }
 
-  for (const id of ['pMax', 'pIdle', 'pScale', 'pSpeed', 'pFloor', 'pBubbleSec', 'pNames', 'pBubbles']) {
+  for (const id of ['pMax', 'pIdle', 'pScale', 'pSpeed', 'pFloor', 'pBubbleSec', 'pNames', 'pBubbles', 'pCmds']) {
     $(id).addEventListener('input', () => {
       $('pScaleV').textContent = `${Math.round(Number($('pScale').value) * 100)}%`;
       $('pSpeedV').textContent = `${Math.round(Number($('pSpeed').value) * 100)}%`;
@@ -136,6 +197,12 @@ export function mount(el, x) {
     });
     if (r.ok) x.toast('테스트 채팅을 보냈어요');
   };
+
+  el.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('button[data-grp]');
+    if (!b) return;
+    await x.post('/api/pets/group', { action: b.dataset.grp });
+  });
 
   function renderSprites(list) {
     $('pSpriteCount').textContent = `${list.length}개`;

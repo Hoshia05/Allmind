@@ -11,6 +11,7 @@ const MAX_SPRITES = 30;
 
 export const DEFAULTS = {
   enabled: true,
+  commandsEnabled: true,
   maxPets: 20,
   idleMinutes: 5,
   scale: 1,
@@ -20,6 +21,14 @@ export const DEFAULTS = {
   showBubbles: true,
   bubbleSec: 5,
   disabledSprites: [],
+  platforms: [],
+};
+
+const ACTION_CMDS = {
+  '!점프': 'jump', '!jump': 'jump',
+  '!대시': 'dash', '!dash': 'dash',
+  '!춤': 'dance', '!dance': 'dance',
+  '!자장': 'sleep', '!졸려': 'sleep', '!sleep': 'sleep',
 };
 
 const num = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
@@ -29,8 +38,17 @@ export function cleanSettings(input, old = DEFAULTS) {
   const disabled = Array.isArray(s.disabledSprites)
     ? [...new Set(s.disabledSprites.map((x) => path.basename(String(x || ''))).filter(Boolean))].slice(0, 50)
     : DEFAULTS.disabledSprites.slice();
+  const platforms = (Array.isArray(s.platforms) ? s.platforms : [])
+    .slice(0, 8)
+    .map((p, i) => ({
+      name: String(p?.name || `자리 ${i + 1}`).trim().slice(0, 24) || `자리 ${i + 1}`,
+      x: Math.round(num(p?.x, 0, 1880, 100)),
+      y: Math.round(num(p?.y, 40, 1040, 760)),
+      width: Math.round(num(p?.width, 40, 1920, 320)),
+    }));
   return {
     enabled: !!s.enabled,
+    commandsEnabled: s.commandsEnabled !== false,
     maxPets: Math.round(num(s.maxPets, 1, 60, 20)),
     idleMinutes: Math.round(num(s.idleMinutes, 1, 60, 5)),
     scale: Math.round(num(s.scale, 0.4, 2.5, 1) * 100) / 100,
@@ -40,6 +58,7 @@ export function cleanSettings(input, old = DEFAULTS) {
     showBubbles: !!s.showBubbles,
     bubbleSec: Math.round(num(s.bubbleSec, 2, 15, 5)),
     disabledSprites: disabled,
+    platforms,
   };
 }
 
@@ -73,23 +92,99 @@ export function imageInfo(buf) {
 export class ScreenPets {
   constructor(chzzk, pack) {
     this.pack = pack;
-    let st = loadState('pets', null);
-    try { st = cleanSettings(st || DEFAULTS); } catch { st = cleanSettings(DEFAULTS); }
+    const raw = loadState('pets', null);
+    let st;
+    try { st = cleanSettings(raw || DEFAULTS); } catch { st = cleanSettings(DEFAULTS); }
     this.s = st;
-    this.ch = pack.channel(() => [['settings', this.s], ['sprites', this.sprites()]]);
+    this.choices = raw?.choices && typeof raw.choices === 'object' ? { ...raw.choices } : {};
+    this.ch = pack.channel(() => [['settings', this.s], ['sprites', this.sprites()], ['choices', this.choices]]);
 
     chzzk.on('live-chat', (list) => {
       if (!this.ch.size || !this.s.enabled) return;
       for (const m of list) {
-        if (m.hidden || m.kind !== 'chat') continue;
-        this.ch.send('chat', {
-          uid: String(m.uid || m.nick || ''),
-          nick: String(m.nick || '시청자').slice(0, 24),
-          role: m.role || '',
-          text: String(m.text || '').slice(0, 120),
-          sub: !!m.sub,
-        });
+        if (m.hidden) continue;
+        if (m.kind === 'chat') {
+          this._handleChat({
+            uid: String(m.uid || m.nick || ''),
+            nick: String(m.nick || '시청자').slice(0, 24),
+            role: m.role || '',
+            text: String(m.text || '').slice(0, 120),
+            sub: !!m.sub,
+          });
+        } else if (m.kind === 'donation' || m.kind === 'subscription') {
+          const uid = String(m.uid || '');
+          if (!uid) continue;
+          this.ch.send('celebrate', {
+            uid,
+            nick: String(m.nick || '시청자').slice(0, 24),
+            kind: m.kind,
+            sub: m.kind === 'subscription' || !!m.sub,
+          });
+        }
       }
+    });
+  }
+
+  _saveAll() {
+    saveState('pets', { ...this.s, choices: this.choices });
+  }
+
+  _activeSprites() {
+    const off = new Set(this.s.disabledSprites || []);
+    const all = this.sprites();
+    const active = all.filter((s) => !off.has(s.file));
+    return active.length ? active : all;
+  }
+
+  _pickSpriteByQuery(q) {
+    const list = this._activeSprites();
+    if (!list.length) return null;
+    const raw = String(q || '').trim().toLowerCase();
+    if (!raw) return null;
+    const idx = Number(raw);
+    if (Number.isInteger(idx) && idx >= 1 && idx <= list.length) return list[idx - 1].file;
+    return list.find((s) => s.file.replace(/\.[^.]+$/, '').toLowerCase() === raw)?.file
+      || list.find((s) => s.file.toLowerCase().includes(raw))?.file
+      || null;
+  }
+
+  _handleChat({ uid, nick, role, text, sub }) {
+    const trimmed = String(text || '').trim();
+    let action = null;
+    let interact = null;
+    let hideBubble = false;
+
+    if (this.s.commandsEnabled && trimmed.startsWith('!')) {
+      const [cmd, ...rest] = trimmed.split(/\s+/);
+      const low = cmd.toLowerCase();
+      if (ACTION_CMDS[low]) {
+        action = ACTION_CMDS[low];
+        hideBubble = rest.length === 0;
+      } else if ((low === '!안아' || low === '!hug' || low === '!툭' || low === '!poke') && rest.length) {
+        interact = {
+          kind: (low === '!안아' || low === '!hug') ? 'hug' : 'poke',
+          target: rest.join(' ').replace(/^@/, '').slice(0, 24),
+        };
+        hideBubble = true;
+      } else if ((low === '!캐릭터' || low === '!아바타') && rest.length) {
+        const picked = this._pickSpriteByQuery(rest.join(' '));
+        if (picked && uid) {
+          this.choices[uid] = picked;
+          // cap stored choices to prevent unbounded growth
+          const keys = Object.keys(this.choices);
+          if (keys.length > 2000) delete this.choices[keys[0]];
+          this._saveAll();
+          this.ch.send('choice', { uid, file: picked });
+        }
+        hideBubble = true;
+      }
+    }
+
+    this.ch.send('chat', {
+      uid, nick, role, sub,
+      text: hideBubble ? '' : text,
+      ...(action ? { action } : {}),
+      ...(interact ? { interact } : {}),
     });
   }
 
@@ -106,7 +201,7 @@ export class ScreenPets {
 
   setSettings(input) {
     this.s = cleanSettings(input, this.s);
-    saveState('pets', this.s);
+    this._saveAll();
     this.ch.send('settings', this.s);
     return this.s;
   }
@@ -115,10 +210,16 @@ export class ScreenPets {
     this.ch.send('clear', { at: Date.now() });
   }
 
+  groupAction(action) {
+    const a = ['jump', 'gather', 'dance', 'scatter'].includes(action) ? action : 'jump';
+    this.ch.send('group', { action: a });
+    return { action: a };
+  }
+
   testChat({ nick, text } = {}) {
     const n = String(nick || '테스트').trim().slice(0, 24) || '테스트';
     const t = String(text || '안녕!').trim().slice(0, 120) || '안녕!';
-    this.ch.send('chat', { uid: `test:${n}`, nick: n, role: '', text: t, sub: false });
+    this._handleChat({ uid: `test:${n}`, nick: n, role: '', text: t, sub: false });
   }
 
   sprites() {
@@ -167,7 +268,7 @@ export class ScreenPets {
     try { fs.unlinkSync(path.join(spritesDir(), f)); } catch { throw new Error('그 캐릭터가 없어요'); }
     if (this.s.disabledSprites.includes(f)) {
       this.s.disabledSprites = this.s.disabledSprites.filter((x) => x !== f);
-      saveState('pets', this.s);
+      this._saveAll();
       this.ch.send('settings', this.s);
     }
     this.ch.send('sprites', this.sprites());

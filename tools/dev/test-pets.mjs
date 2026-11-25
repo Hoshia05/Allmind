@@ -33,7 +33,10 @@ function makeEnv() {
 }
 
 test('cleanSettings clamps values and preserves defaults', () => {
-  const s = cleanSettings({ maxPets: 999, idleMinutes: 0, scale: 10, speed: 0.1, floorY: -5, bubbleSec: 99, enabled: false, showNames: false });
+  const s = cleanSettings({
+    maxPets: 999, idleMinutes: 0, scale: 10, speed: 0.1, floorY: -5, bubbleSec: 99, enabled: false, showNames: false,
+    platforms: [{ name: '웹캠', x: -10, y: 2000, width: 10 }],
+  });
   assert.equal(s.enabled, false);
   assert.equal(s.maxPets, 60);
   assert.equal(s.idleMinutes, 1);
@@ -42,6 +45,7 @@ test('cleanSettings clamps values and preserves defaults', () => {
   assert.equal(s.floorY, 0);
   assert.equal(s.bubbleSec, 15);
   assert.equal(s.showNames, false);
+  assert.deepEqual(s.platforms, [{ name: '웹캠', x: 0, y: 1040, width: 40 }]);
   assert.deepEqual(cleanSettings(), DEFAULTS);
 });
 
@@ -62,16 +66,26 @@ test('ScreenPets relays chat only when overlay connected and enabled, and manage
     chzzk.emit('live-chat', [{ kind: 'chat', uid: 'u1', nick: '뷰어', text: '안녕' }]);
     assert.equal(sent.length, 0);
 
-    // Overlay connected -> chat relayed, hidden/donations ignored
+    // Overlay connected -> chat relayed, hidden ignored, donation/sub celebrated
     channel.size = 1;
     chzzk.emit('live-chat', [
       { kind: 'chat', uid: 'u1', nick: '뷰어', text: '안녕' },
       { kind: 'chat', uid: 'u2', nick: '숨김', text: 'x', hidden: true },
       { kind: 'donation', uid: 'u3', nick: '후원', amount: 1000 },
+      { kind: 'subscription', uid: 'u4', nick: '구독자', sub: { months: 3, tier: 1 } },
     ]);
-    assert.equal(sent.length, 1);
+    assert.equal(sent.length, 3);
     assert.equal(sent[0].ev, 'chat');
     assert.equal(sent[0].data.nick, '뷰어');
+    assert.equal(sent[1].ev, 'celebrate');
+    assert.equal(sent[1].data.kind, 'donation');
+    assert.equal(sent[2].ev, 'celebrate');
+    assert.equal(sent[2].data.kind, 'subscription');
+
+    // Group action
+    pets.groupAction('gather');
+    assert.equal(sent.at(-1).ev, 'group');
+    assert.equal(sent.at(-1).data.action, 'gather');
 
     // Add + remove custom sprite
     const png = Buffer.alloc(32);
@@ -82,6 +96,30 @@ test('ScreenPets relays chat only when overlay connected and enabled, and manage
     assert.equal(added.file, 'fan.png');
     assert.ok(pets.sprites().some((s) => s.file === 'fan.png' && !s.builtin));
     assert.ok(pets.spriteFile('fan.png'));
+
+    // Action commands + viewer-to-viewer interactions + avatar selection
+    sent.length = 0;
+    chzzk.emit('live-chat', [
+      { kind: 'chat', uid: 'u1', nick: '뷰어', text: '!점프' },
+      { kind: 'chat', uid: 'u1', nick: '뷰어', text: '!안아 @구독자' },
+      { kind: 'chat', uid: 'u1', nick: '뷰어', text: '!캐릭터 fan' },
+    ]);
+    assert.equal(sent[0].ev, 'chat');
+    assert.equal(sent[0].data.action, 'jump');
+    assert.equal(sent[0].data.text, '');
+    assert.deepEqual(sent[1].data.interact, { kind: 'hug', target: '구독자' });
+    assert.equal(sent[1].data.text, '');
+    const choiceEv = sent.find((x) => x.ev === 'choice');
+    assert.deepEqual(choiceEv?.data, { uid: 'u1', file: 'fan.png' });
+    assert.equal(pets.choices.u1, 'fan.png');
+
+    // Disabling commands passes text as normal chat without action
+    pets.setSettings({ commandsEnabled: false });
+    sent.length = 0;
+    chzzk.emit('live-chat', [{ kind: 'chat', uid: 'u1', nick: '뷰어', text: '!춤' }]);
+    assert.equal(sent[0].data.action, undefined);
+    assert.equal(sent[0].data.text, '!춤');
+
     pets.removeSprite('fan.png');
     assert.ok(!pets.sprites().some((s) => s.file === 'fan.png'));
   } finally {

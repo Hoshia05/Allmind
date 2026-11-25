@@ -188,6 +188,7 @@ export function register(ctx) {
     // 화면 펫 (pets.js)
     'POST /api/pets/settings': (b) => ({ settings: pets.setSettings(b.settings) }),
     'POST /api/pets/clear': () => { pets.clear(); return {}; },
+    'POST /api/pets/group': (b) => pets.groupAction(b.action),
     'POST /api/pets/test-chat': (b) => { pets.testChat(b); return {}; },
     'POST /api/pets/sprites': (b) => pets.addSprite(b.name, b.data),
     'POST /api/pets/sprites-remove': (b) => pets.removeSprite(b.file),
