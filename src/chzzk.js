@@ -4,6 +4,10 @@
 // The dashboard chat list is shared with YouTube chat (ytchat.js → addExternal).
 import { EventEmitter } from 'node:events';
 import { loadState, saveState } from './config.js';
+import { ALL_SCOPES } from './chzzkofficial.js';
+
+// "YYYY-MM-DD HH:mm:ss" in Korean time, the shape Chzzk's openDate has always had (the dashboard's uptime clock parses it)
+const kst = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 19).replace('T', ' ');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const CMD = { PING: 0, PONG: 10000, CONNECT: 100, CONNECTED: 10100, RECENT: 5101, RECENT_RESULT: 15101, CHAT: 93101, SPECIAL: 93102, BLIND: 94008 };
@@ -56,9 +60,125 @@ export class Chzzk extends EventEmitter {
     this.unknownCmds = new Set();
     this.badMsgLogged = false;
 
+    // Official Open API reader (src/chzzkofficial.js), attached by server.js. See `mode`.
+    this.official = null;
+    this.obsLive = null; // () => ({ live, startedAt }) : the official API has no live call for the own channel, so OBS's stream state stands in
+    this.settingFn = null; // () => Promise<{ title, category }> : 방송 설정 (official, cached by server.js)
+
     this._poll();
     setInterval(() => this._poll(), Math.max(5, this.cfg.pollSeconds) * 1000);
     setInterval(() => this._ping(), 20000);
+  }
+
+  // ---------------- reader mode ----------------
+  // official          : Session API with Stan's Open API login (the default whenever it works)
+  // unofficial-optin  : Stan switched on "비공식 연결 (미션 후원 포함)" (the official Session has no MISSION donations)
+  // unofficial-fallback: no usable Open API login (other users of the public repo): chat only, without a login
+  // Exactly one reader runs at a time, so a chat line can never arrive twice.
+  get mode() {
+    if (this.cfg.unofficialReader === true) return 'unofficial-optin';
+    const o = this.official;
+    if (o && o.usable() && (!o.channelId || !this.channelId || o.channelId === this.channelId)) return 'official';
+    return 'unofficial-fallback';
+  }
+
+  readerStatus() {
+    const mode = this.mode;
+    const o = this.official;
+    const label = mode === 'official' ? '공식 API' : mode === 'unofficial-optin' ? '비공식 연결 (미션 후원 포함)' : '비공식 연결 (치지직 로그인 없이)';
+    return {
+      mode,
+      label,
+      liveStats: this.cfg.liveStatsPoll === true,
+      session: o ? o.status() : null,
+      missing: o ? [...o.missing] : [],
+      requiredScopes: ALL_SCOPES,
+      channelMismatch: !!(o && o.channelId && this.channelId && o.channelId !== this.channelId),
+    };
+  }
+
+  attachOfficial(session) {
+    this.official = session;
+    session.on('messages', (list) => this._onOfficial(list));
+    session.on('change', () => { this._syncOfficial(); this.emit('change'); });
+  }
+
+  _syncOfficial() {
+    if (this.mode !== 'official') return;
+    if (this.ws) this._disconnectChat(); // never two readers
+    const st = this.official.status();
+    this.chatState = st.state === 'connected' ? 'connected' : st.state === 'connecting' ? 'connecting' : st.state === 'idle' ? 'idle' : 'error';
+    this.chatError = st.state === 'error' || st.state === 'revoked' ? (st.error || '치지직 공식 연결이 끊겼어요') : null;
+  }
+
+  _onOfficial(list) {
+    if (this.mode !== 'official') return; // the unofficial reader is the one in charge right now
+    const out = list.map((m) => ({ ...m, id: ++this.seq }));
+    for (const m of out) if (m.chatChannelId) this.chatChannelId = m.chatChannelId;
+    this.chatState = 'connected';
+    this.chatError = null;
+    this.lastMsgAt = Date.now();
+    if (!this.chatCount && out.length) console.log('[chat] first live message received (official API)');
+    this.chatCount += out.length;
+    this._add(out);
+    if (out.length) this.emit('live-chat', out); // live lines only, like the unofficial reader
+    this.emit('change');
+  }
+
+  // Official mode has no call for the own channel's live state (docs/plans/chzzk-official.md): on-air and uptime come from OBS's
+  // stream output, title/category from 방송 설정; viewers, peak and the 19+ flag only with the opt-in unofficial poll (liveStatsPoll).
+  async _pollOfficial() {
+    if (this.ws) this._disconnectChat();
+    const o = (this.obsLive && this.obsLive()) || { live: false, startedAt: null };
+    let setting = null;
+    try { setting = this.settingFn ? await this.settingFn() : null; } catch { /* keep the last title/category */ }
+    let live = o.live;
+    let openDate = o.live && o.startedAt ? kst(o.startedAt) : null;
+    let viewers = null;
+    let total = null;
+    let adult = null;
+    if (this.cfg.liveStatsPoll === true && this.channelId) {
+      try {
+        const c = await this._get(`${this.cfg.apiBase}/service/v3/channels/${this.channelId}/live-detail`);
+        if (c) {
+          live = c.status === 'OPEN';
+          openDate = c.openDate || openDate;
+          viewers = live ? (c.concurrentUserCount ?? 0) : null;
+          total = c.accumulateCount ?? null;
+          adult = typeof c.adult === 'boolean' ? c.adult : null;
+        }
+      } catch (e) { if (!this.statsErrLogged) { this.statsErrLogged = true; console.log(`[chzzk] opt-in live stats failed: ${e.message}`); } }
+    }
+    if (live && openDate && openDate !== this.donationSession) {
+      if (this.donationSession) {
+        this.donations = [];
+        this.readKeys.clear();
+        this.emit('donations-reset');
+      }
+      this.donationSession = openDate;
+      this._saveDonations();
+    }
+    if (live && viewers != null) {
+      if (this.peak.openDate !== openDate) this.peak = { openDate, count: 0 };
+      this.peak.count = Math.max(this.peak.count, viewers);
+      this.history.push({ t: Date.now(), n: viewers });
+      if (this.history.length > 240) this.history.shift();
+    }
+    this.live = {
+      isLive: !!live,
+      title: setting?.title || this.live?.title || '',
+      viewers, // null = the official API has no such number (shown as "–")
+      total,
+      openDate,
+      category: setting?.category?.categoryValue || this.live?.category || '',
+      channelName: this.official?.open?.auth?.channelName || this.live?.channelName || '',
+      peak: live && viewers != null ? this.peak.count : null,
+      adult,
+      source: this.cfg.liveStatsPoll === true ? 'obs+stats' : 'obs',
+    };
+    this.liveError = null;
+    this._syncOfficial();
+    this.emit('change');
   }
 
   // ---------------- channel ----------------
@@ -90,6 +210,7 @@ export class Chzzk extends EventEmitter {
       this.emit('change');
       return;
     }
+    if (this.mode === 'official') return this._pollOfficial();
     try {
       const url = `${this.cfg.apiBase}/service/v3/channels/${this.channelId}/live-detail`;
       const c = await this._get(url);
@@ -230,6 +351,7 @@ export class Chzzk extends EventEmitter {
 
   // 채팅 다시 연결 (the chat dot): drop the socket and connect to the current chat room again
   reconnect(why = 'requested from the dashboard') {
+    if (this.mode === 'official') { this.official.reconnect(); return { ok: true }; }
     const cid = this.chatChannelId;
     console.log(`[chat] reconnect ${why}`);
     this._disconnectChat();
@@ -485,6 +607,7 @@ export class Chzzk extends EventEmitter {
       error: this.liveError,
       history: this.history.slice(-60).map((h) => h.n),
       chat: { state: this.chatState, error: this.chatError },
+      reader: this.readerStatus(),
     };
   }
 }

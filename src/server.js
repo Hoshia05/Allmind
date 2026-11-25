@@ -14,6 +14,7 @@ import { OBSClient } from './obs.js';
 import { BGM } from './bgm.js';
 import { DonationViewer, Interact, ProgramViewer, QUALITY } from './donation.js';
 import { Chzzk, parseChannelId } from './chzzk.js';
+import { ChzzkSession } from './chzzkofficial.js';
 import { FrameFeed } from './feed.js';
 import { ChzzkRemote } from './remote.js';
 import { Studio } from './studio.js';
@@ -243,7 +244,8 @@ async function main() {
   const obsPanel = new ObsPanel(obs);
   const soundboard = new Soundboard(obs, config);
   const chzzk = new Chzzk(config);
-  // 19+ broadcasts: Chzzk hides the chat room from anonymous requests — chzzk.js asks again as the logged-in streamer
+  // 19+ broadcasts: the unofficial reader (fallback / opt-in only) asks again as the logged-in streamer through the dock.
+  // The official Session reader never uses it.
   chzzk.dockGet = (url) => remote.request(url);
 
   // ---------- stream title (방송 준비), YouTube archive, Drive upload (docs/plans/google-archive.md) ----------
@@ -261,9 +263,24 @@ async function main() {
   todo.on('change', (v) => sendAll('todo', v));
   const google = new Google(config);
   const chzzkOpen = new ChzzkOpen(config);
-  // nickname popup: Chzzk's profile card + 관리 actions, through the logged-in 리모컨 dock
-  const viewerCard = new ViewerCard({ chzzk, remote, chzzkOpen });
+  // Chat, 후원, 구독 through CHZZK's official Open API Session whenever an Open API login works (docs/plans/chzzk-official.md);
+  // chzzk.js falls back to the unofficial, login-less reader only without one (or when Stan switched on 비공식 연결 for 미션 후원).
+  const chzzkSession = new ChzzkSession({ open: chzzkOpen });
+  chzzk.attachOfficial(chzzkSession);
+  // nickname popup: official profile + 관리 actions (임시 제한, 활동 제한, 숨기기, 공지); no 리모컨 dock involved
+  const viewerCard = new ViewerCard({ chzzk, chzzkOpen, session: chzzkSession });
   let obsStreaming = false;
+  let obsStreamStartedAt = 0;
+  // The official API has no call for the own channel's live state: on-air and uptime come from OBS, title/category from 방송 설정
+  chzzk.obsLive = () => ({ live: obsStreaming, startedAt: obsStreamStartedAt || null });
+  let settingCache = { at: 0, v: null };
+  chzzk.settingFn = async () => {
+    if (!chzzkOpen.loggedIn()) return null;
+    if (Date.now() - settingCache.at > 60000) settingCache = { at: Date.now(), v: await chzzkOpen.getSetting() };
+    return settingCache.v;
+  };
+  chzzkOpen.on('change', () => chzzkSession.noteLogin());
+  chzzkSession.start();
   let obsDebug = null; // OBS started with Allmind's remote-debugging option? (see checkObsDebug)
   let streamEndedAt = 0;      // a stream often restarts within minutes (studio 2026-10-30: 3 starts in 8 min)
   let streamReconnect = null; // { since } while OBS's stream output is reconnecting
@@ -503,6 +520,8 @@ async function main() {
   const setStreaming = (active) => {
     if (active === obsStreaming) return;
     obsStreaming = active;
+    obsStreamStartedAt = active ? Date.now() : 0;
+    chzzk._poll().catch?.(() => {}); // on-air / uptime follow OBS right away in official mode
     api.emit('stream', { what: 'live', on: active });
     platformBus.emit('stream', active);
     youtube.onStreaming(active);
@@ -541,7 +560,10 @@ async function main() {
     if (/STARTED$/.test(s)) { setStreaming(true); bgm.streamStarted(); }
     else if (/STOPPED$/.test(s)) setStreaming(false);
   });
-  obs.on('connected', () => obs.call('GetStreamStatus').then((st) => setStreaming(!!st.outputActive), () => {}));
+  obs.on('connected', () => obs.call('GetStreamStatus').then((st) => {
+    setStreaming(!!st.outputActive);
+    if (st.outputActive && Number(st.outputDuration) > 0) obsStreamStartedAt = Date.now() - Number(st.outputDuration); // a restart mid-stream keeps the real start
+  }, () => {}));
   setTimeout(() => youtube.ensureReady('start').catch(() => {}), 20000);
   soundboard.on('change', stateChanged);
   markers.on('saved', ({ count, chat, file }) => {
@@ -947,7 +969,7 @@ async function main() {
   function linksView() {
     return {
       google: { clientId: config.google?.clientId || '', clientSecret: config.google?.clientSecret ? SECRET_MASK : '', redirect: `http://127.0.0.1:${PORT}/api/google/callback`, ...google.status() },
-      chzzk: { clientId: config.chzzkOpen?.clientId || '', clientSecret: config.chzzkOpen?.clientSecret ? SECRET_MASK : '', redirect: chzzkRedirect(), ...chzzkOpen.status() },
+      chzzk: { clientId: config.chzzkOpen?.clientId || '', clientSecret: config.chzzkOpen?.clientSecret ? SECRET_MASK : '', redirect: chzzkRedirect(), ...chzzkOpen.status(), reader: chzzk.readerStatus() },
       youtube: { enabled: config.youtube?.enabled !== false, titleTemplate: config.youtube?.titleTemplate || '{date} - {title}', privacy: youtube.privacy(), chat: config.youtube?.chat !== false, ...youtube.status() },
       drive: { folder: config.drive?.folder || '', enabled: config.drive?.enabled !== false, nameTemplate: config.drive?.nameTemplate || '{date} - {title}', maxMbps: config.drive?.maxMbps || 0, ...drive.status() },
     };
@@ -1077,6 +1099,8 @@ async function main() {
           folder: config.bgm.folder,
           sbFolder: config.soundboard?.folder || '',
           channel: chzzk.channelId || '',
+          unofficialReader: config.chzzk?.unofficialReader === true,
+          liveStats: config.chzzk?.liveStatsPoll === true,
           port: PORT,
         },
       };
@@ -1098,7 +1122,7 @@ async function main() {
         sources: { donation: s.donation, alert: s.alert || '', mic: s.mic || '', bgm: s.bgmSource },
         bgm: { folder: s.folder || '' },
         soundboard: { folder: s.sbFolder || '' },
-        chzzk: { channelId: parseChannelId(s.channel) || '' },
+        chzzk: { channelId: parseChannelId(s.channel) || '', unofficialReader: !!s.unofficialReader, liveStatsPoll: !!s.liveStats },
         // 다른 기기에서 열기 off = listen on this PC only (a borrowed PC on a shared studio network)
         server: (() => { const m = s.lanAccess === false ? 'off' : s.lanAccess === true && MODE === 'off' ? 'lan' : MODE; return { port: Number(s.port) || 8080, host: hostFor(m), remoteAccess: m }; })(),
       });

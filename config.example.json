@@ -63,7 +63,9 @@
     "chatHistory": 300,
     "apiBase": "https://api.chzzk.naver.com",
     "gameApiBase": "https://comm-api.game.naver.com",
-    "chatServer": ""
+    "chatServer": "",
+    "unofficialReader": false,
+    "liveStatsPoll": false
   },
 
   "bgm": {

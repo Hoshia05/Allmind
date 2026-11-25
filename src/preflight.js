@@ -7,6 +7,21 @@ import { vtsFixHint } from './module-ui.js';
 // status: ok | warn | bad | info (just so you know) | off (feature not used)
 const item = (id, group, label, status, detail, fix) => ({ id, group, label, status, detail: detail || '', fix: fix || '' });
 
+/** The 점검 line for the chat/후원/구독 reader: { status, text, hint }. */
+export function readerPreflight(rd) {
+  const need = (rd.requiredScopes || []).join(', ');
+  const sess = rd.session || {};
+  if (rd.mode === 'official') {
+    const miss = rd.missing || [];
+    if (rd.channelMismatch) return { status: 'warn', text: '공식 API · 로그인한 계정과 설정의 채널이 달라요', hint: '설정 창 → 치지직 채널 주소 또는 치지직 연동 로그인을 확인해 주세요' };
+    if (miss.length) return { status: 'warn', text: `공식 API · 권한이 부족해요: ${miss.join(', ')}`, hint: 'CHZZK Developers의 내 앱에서 위 권한을 켜고, 설정 창에서 치지직 로그인을 다시 해 주세요' };
+    if (sess.state === 'error' || sess.state === 'revoked') return { status: 'warn', text: `공식 API · ${sess.error || '연결이 끊겼어요'}`, hint: sess.state === 'revoked' ? '설정 창에서 치지직 로그인을 다시 해 주세요' : '' };
+    return { status: 'ok', text: '공식 API', hint: '' };
+  }
+  if (rd.mode === 'unofficial-optin') return { status: 'info', text: '비공식 연결 (미션 후원 포함) — 설정에서 켜 둔 상태예요', hint: '' };
+  return { status: 'warn', text: '비공식 (로그인 필요) — 치지직 로그인 없이 읽는 중이에요', hint: `공식 API로 읽으려면 설정 창 → 치지직 연동에서 로그인하세요. 켤 권한: ${need}` };
+}
+
 export async function runPreflight(c) {
   const out = [];
   const { obs, config } = c;
@@ -68,12 +83,17 @@ export async function runPreflight(c) {
   const cz = c.chzzk.status();
   if (!cz.channelId) out.push(item('channel', '치지직', '치지직 채널', 'bad', '채널이 설정되지 않았어요', '설정 창 → 치지직 채널'));
   else if (cz.error) out.push(item('channel', '치지직', '치지직', 'warn', cz.error));
-  else out.push(item('channel', '치지직', '치지직', 'ok', cz.live?.isLive ? `방송 중 · 시청자 ${cz.live.viewers}` : `${cz.live?.channelName || '채널'} · 오프라인`));
+  else out.push(item('channel', '치지직', '치지직', 'ok', cz.live?.isLive ? `방송 중${cz.live.viewers != null ? ` · 시청자 ${cz.live.viewers}` : ''}` : `${cz.live?.channelName || '채널'} · 오프라인`));
   // 19세 setting: easy to forget after a 19+ stream, and it hides the chat from Allmind's anonymous requests
   if (cz.channelId && cz.live && cz.live.adult != null) {
     out.push(cz.live.adult
       ? item('adult', '치지직', '19세 방송', 'warn', cz.live.isLive ? '지금 19세 방송이에요' : '지난 방송이 19세였어요 — 끄지 않으면 다음 방송도 19세로 시작할 수 있어요', '19세 방송이 아니면 치지직 스튜디오 → 방송 설정에서 연령 제한 끄기')
       : item('adult', '치지직', '19세 방송', 'ok', '꺼짐'));
+  }
+  // which reader carries chat / 후원 / 구독: the official Open API Session, or the unofficial one (docs/plans/chzzk-official.md)
+  if (cz.channelId && cz.reader) {
+    const r = readerPreflight(cz.reader);
+    out.push(item('reader', '치지직', '치지직 읽기 방식', r.status, r.text, r.hint));
   }
   const co = c.chzzkOpen.status();
   if (co.configured) out.push(item('chzzkopen', '치지직', '치지직 연동 (방송 준비 · 채팅 보내기)', co.loggedIn ? (co.expiresSoon ? 'warn' : 'ok') : 'warn', co.loggedIn ? (co.expiresSoon ? '로그인이 곧 만료돼요' : co.account || '로그인됨') : co.error || '로그인 필요', co.loggedIn && !co.expiresSoon ? '' : '설정 창 → 치지직 연동 → 다시 로그인'));

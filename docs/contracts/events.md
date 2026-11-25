@@ -38,6 +38,7 @@
 - `id`: stable per message for de-duplication (Chzzk: time + uid + start of text; YouTube: `yt:<message id>`).
 - `uid`: the platform's viewer id (`yt:<channel id>` for YouTube), for telling viewers apart. Not a name; may be empty.
 - `role`: `streamer` | `manager` | `viewer`.
+- **Reader (from Allmind 0.51.0):** lines come from CHZZK's official Open API Session by default. Shape and field names are unchanged. Differences a client may notice: `sub` is built from the channel's subscriber list (no badge image, so only `months`/`tier`), and is `null` when the app lacks the 채널 구독자 조회 permission; `id` for a 후원/구독 line uses the time the event arrived (the official event has no time). The old unofficial reader (opt-in "비공식 연결 (미션 후원 포함)", or when no Open API login exists) keeps the old behaviour.
 - `text`: as the platform sends it, ≤ 500 characters; Chzzk emoticons stay as `{:code:}`. **Untrusted input.**
 - `sub`: Chzzk subscription badge `{ months, tier }` or `null`. YouTube adds `member: true|false`.
 - Which lines are included: only **live** lines. Never the replay of recent messages on (re)connect, never 시청자 추첨's
@@ -53,7 +54,7 @@
 ```
 - A donation is sent **only** as `donation`, never also as `chat`.
 - `amount`: number (치즈) or `null` if unknown; YouTube has `amountText` (e.g. `"₩5,000"`) instead. `donationType`: Chzzk's
-  `CHAT` | `VIDEO` | `MISSION` … or `null`.
+  `CHAT` | `VIDEO` | `MISSION` … or `null`. The official reader never delivers `MISSION` (the official event has `CHAT` | `VIDEO` only); mission donations arrive only with the opt-in unofficial reader.
 - Anonymous Chzzk donations have `nick: "익명"` and may have an empty `uid`.
 
 ### `stream` — broadcast, recording, OBS and scene changes

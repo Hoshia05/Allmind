@@ -44,7 +44,7 @@ export class StreamReports extends EventEmitter {
       if (!r) return;
       const l = chzzk.live;
       if (l?.isLive) {
-        if (l.viewers > r.peak) { r.peak = l.viewers; this._dirty(); }
+        if (l.viewers != null && l.viewers > r.peak) { r.peak = l.viewers; this._dirty(); }
         if (l.title && !r.titles.includes(l.title)) { r.titles.push(l.title); this._dirty(); }
         if (l.category) r.category = l.category;
       }

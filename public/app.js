@@ -1003,7 +1003,7 @@ function renderLive() {
   $('livePill').classList.toggle('on', on || sending);
   $('livePill').classList.toggle('busy', !!(op.stream.busy || op.record.busy));
   $('livePill').title = '방송 · 녹화 켜기/끄기' + (sending && !on ? '\nOBS는 송출 중이지만 치지직에는 아직 방송이 안 보여요' : '');
-  $('viewers').textContent = on ? live.viewers.toLocaleString('ko-KR') : '–';
+  $('viewers').textContent = on && live.viewers != null ? live.viewers.toLocaleString('ko-KR') : '–';
   $('peak').textContent = on && live.peak != null ? live.peak.toLocaleString('ko-KR') : '–';
   $('liveTitle').textContent = live?.title || (S.chzzk.channelId ? '' : '채널을 연결하면 방송 정보가 보여요');
   $('category').textContent = live?.category || '';
@@ -1163,7 +1163,7 @@ function renderUserCard() {
     + (p?.badges || u.badges || []).map((b) => `<img class="badge" src="${esc(b)}" alt="">`).join('');
   const roleTag = role ? `<span class="role ${role}">${role === 'streamer' ? '스트리머' : '매니저'}</span>` : '';
   const avatar = p?.image ? `<img class="uc-avatar" src="${esc(p.image)}" alt="">` : `<span class="uc-avatar none">${esc([...nick][0] || '?')}</span>`;
-  const follow = p ? (p.followDate ? `${p.followDate} 부터 팔로우` : '팔로우하지 않음') : st.cLoading ? '…' : '';
+  const follow = p ? (p.followDate ? `${p.followDate} 부터 팔로우` : p.followers ? `팔로워 ${p.followers.toLocaleString('ko-KR')}명` : '') : st.cLoading ? '…' : '';
   const num = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('ko-KR'));
   // Chzzk's counts when the dock could ask for them; else what Allmind saw since it started
   const stats = n
@@ -1184,17 +1184,16 @@ function renderUserCard() {
   const act = (key, icon, label, { need = can, danger = false, confirm = '', title = '' } = {}) => {
     const armed = st.arm === key;
     const off = !need;
-    return `<button class="uc-act${danger ? ' danger' : ''}${armed ? ' armed' : ''}" data-act="${key}"${off ? ' disabled' : ''}${confirm ? ` data-confirm="1"` : ''} title="${esc(off ? (title || 'OBS의 치지직 리모컨 독(네이버 로그인)이 연결되어 있어야 해요') : title)}">${ucIcon(icon)}<span>${armed ? esc(confirm) : esc(label)}</span></button>`;
+    return `<button class="uc-act${danger ? ' danger' : ''}${armed ? ' armed' : ''}" data-act="${key}"${off ? ' disabled' : ''}${confirm ? ` data-confirm="1"` : ''} title="${esc(off ? (title || '치지직 연동 로그인이 필요해요 (설정 창 → 치지직 연동)') : title)}">${ucIcon(icon)}<span>${armed ? esc(confirm) : esc(label)}</span></button>`;
   };
   const acts = isStreamer ? '' : [
-    act('notice', 'pin', '메시지 상단 고정', { need: can && !!st.msgId, title: st.msgId ? '' : '채팅 목록에서 메시지의 닉네임을 눌렀을 때만 돼요' }),
-    isMgr ? act('unmanager', 'shield', '채팅 운영자 해제', { confirm: '한 번 더 누르면 운영자에서 해제해요' })
-      : act('manager', 'shield', '채팅 운영자 임명', { confirm: '한 번 더 누르면 채팅 운영자로 임명해요' }),
+    act('notice', 'pin', '공지로 올리기 (100자까지)', { need: can && !!st.msgId, title: st.msgId ? '' : '채팅 목록에서 메시지의 닉네임을 눌렀을 때만 돼요' }),
+    `<a class="uc-act" href="https://studio.chzzk.naver.com/${esc(S?.chzzk?.channelId || '')}" target="_blank" rel="noopener" title="${isMgr ? '채팅 운영자 해제' : '채팅 운영자 임명'}는 치지직 공식 API에 없어서 스튜디오에서 해요">${ucIcon('shield')}<span>채팅 운영자: 치지직 스튜디오에서 열기</span></a>`,
     act('temp', 'clock', '임시 제한', { confirm: '한 번 더 누르면 임시 제한해요' }),
     n?.restricted ? act('unrestrict', 'user', '활동 제한 해제', { confirm: '한 번 더 누르면 활동 제한을 풀어요' })
       : act('restrict', 'user', '활동 제한', { confirm: '한 번 더 누르면 활동 제한해요 (채널에서 채팅 금지)' }),
-    act('blind', 'trash', '메시지 삭제', { need: !!st.msgId && (can || !!S?.chzzkOpen?.loggedIn), danger: true, confirm: '한 번 더 누르면 이 메시지를 삭제해요',
-      title: st.msgId ? '치지직 연동 로그인 또는 리모컨 독이 필요해요' : '채팅 목록에서 메시지의 닉네임을 눌렀을 때만 돼요' }),
+    act('blind', 'trash', '메시지 숨기기', { need: !!st.msgId && can, danger: true, confirm: '한 번 더 누르면 이 메시지를 숨겨요 (치지직에서는 삭제가 아니라 숨기기예요)',
+      title: st.msgId ? '치지직 연동 로그인이 필요해요' : '채팅 목록에서 메시지의 닉네임을 눌렀을 때만 돼요' }),
   ].join('');
   const err = st.c?.errors?.length ? `<div class="uc-err" title="${esc(st.c.errors.join('\n'))}">치지직 정보 일부를 못 가져왔어요</div>` : '';
   card.innerHTML = `

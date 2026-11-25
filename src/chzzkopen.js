@@ -95,9 +95,11 @@ export class ChzzkOpen extends EventEmitter {
       throw new Error(/INVALID_CLIENT/i.test(e.message) ? `치지직 로그인 실패: ${e.message} — ${this.clientHint()}` : `치지직 로그인 실패: ${e.message}`);
     }
     this.error = null;
+    this.auth.loginAt = Date.now();
     try {
       const me = await this.api('GET', '/open/v1/users/me');
       this.auth.channelName = me.channelName || '';
+      this.auth.channelId = me.channelId || '';
       saveState('chzzk-auth', this.auth);
     } catch {}
     console.log(`[chzzk-open] logged in${this.auth.channelName ? ` as ${this.auth.channelName}` : ''}`);
@@ -147,7 +149,7 @@ export class ChzzkOpen extends EventEmitter {
       const res = await fetchRetry(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
       if (res.status === 401 && user && attempt === 0) continue;
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.message || `치지직 API 오류 ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(j.message || `치지직 API 오류 ${res.status}`), { status: res.status, apiMessage: j.message || '' });
       return j.content ?? {};
     }
     throw new Error('치지직 인증 실패');

@@ -42,7 +42,7 @@ function renderLive() {
   else if (c.error) { setDot('dChzzk', 'bad'); $('vChzzk').textContent = c.error; }
   else {
     setDot('dChzzk', c.chat.state === 'connected' ? 'ok' : 'warn');
-    $('vChzzk').textContent = c.live?.isLive ? `방송 중 · 시청자 ${c.live.viewers}` : '오프라인 (방송 시작 시 연결)';
+    $('vChzzk').textContent = c.live?.isLive ? `방송 중${c.live.viewers != null ? ` · 시청자 ${c.live.viewers}` : ''}` : '오프라인 (방송 시작 시 연결)';
   }
   const it = live.interact;
   if (it.connected) { setDot('dClick', 'ok'); $('vClick').textContent = '켜짐 (영도 연결됨)'; }
@@ -378,6 +378,12 @@ function renderLinks(r) {
   const c = r.chzzk;
   setDot('dChzzkOpen', c.loggedIn ? (c.expiresSoon ? 'warn' : 'ok') : c.error ? 'bad' : '');
   $('vChzzkOpen').textContent = c.loggedIn ? `로그인됨${c.account ? ` · ${c.account}` : ''}${c.expiresSoon ? ' · 곧 만료' : ''}` : c.error || (c.configured ? '로그인 필요' : '설정 필요 (아래 안내)');
+  const rdr = c.reader;
+  if (rdr && $('vChzzkReader')) {
+    setDot('dChzzkReader', rdr.mode === 'official' ? (rdr.missing?.length ? 'warn' : 'ok') : 'warn');
+    $('vChzzkReader').textContent = rdr.mode === 'official' ? (rdr.missing?.length ? `공식 API · 권한 부족: ${rdr.missing.join(', ')}` : '공식 API') : rdr.mode === 'unofficial-optin' ? '비공식 연결 (미션 후원 포함)' : '비공식 (로그인 필요)';
+    $('vChzzkScopes').textContent = (rdr.requiredScopes || []).join(' · ');
+  }
   $('chzzkLogout').hidden = !c.loggedIn;
   $('chzzkLogin').textContent = c.loggedIn ? '다시 로그인' : '치지직 로그인';
 
