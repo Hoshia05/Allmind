@@ -258,12 +258,15 @@ export class ChzzkSession extends EventEmitter {
       if (this.active === rec) { this.log('[chzzk-session] connection closed'); rec.onEnd?.(); }
     });
     sio.on('event', (name, data) => this._event(rec, name, data));
+    let keyTimer = null;
     const keyed = new Promise((resolve, reject) => {
-      rec.gotKey = resolve;
-      rec.failKey = reject;
-      sio.on('close', () => reject(new Error('연결이 끊어졌어요')));
-      const t = setTimeout(() => reject(new Error('세션 연결 응답이 없어요')), 10000);
-      t.unref?.();
+      // whichever comes first (key, close, timeout) also clears the 10 s timer
+      const settle = (fn) => (v) => { clearTimeout(keyTimer); fn(v); };
+      rec.gotKey = settle(resolve);
+      rec.failKey = settle(reject);
+      sio.on('close', () => rec.failKey(new Error('연결이 끊어졌어요')));
+      keyTimer = setTimeout(() => reject(new Error('세션 연결 응답이 없어요')), 10000);
+      keyTimer.unref?.();
     });
     this.pending = rec;
     sio.connect();
@@ -330,7 +333,11 @@ export class ChzzkSession extends EventEmitter {
     clearTimeout(this.rollTimer);
     const exp = this.open.auth?.expiresAt || 0;
     const wait = Math.max(this.minRollWaitMs, exp - Date.now() - this.rollMarginMs);
-    this.rollTimer = this._timer(() => this.roll().catch((e) => this.log(`[chzzk-session] roll-over failed: ${e.message}`)), wait);
+    this.rollTimer = this._timer(() => this.roll().catch((e) => {
+      this.log(`[chzzk-session] roll-over failed: ${e.message} (trying again)`);
+      // try again (at least minRollWaitMs later); if the token runs out first, the session closes and the loop reconnects
+      if (this.running && this.active) this._scheduleRoll();
+    }), wait);
   }
 
   /** Before the access token expires: refresh it, open the NEXT session, switch events to it, then close the old one. */

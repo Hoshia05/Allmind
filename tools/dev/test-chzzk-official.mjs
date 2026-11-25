@@ -387,3 +387,52 @@ test('점검 line text for the three readers', () => {
   assert.equal(readerPreflight({ mode: 'official', missing: [], channelMismatch: true, session: {}, requiredScopes: ALL_SCOPES }).status, 'warn');
   assert.equal(readerPreflight({ mode: 'official', missing: [], session: { state: 'revoked', error: '권한 회수' }, requiredScopes: ALL_SCOPES }).status, 'warn');
 });
+
+// --- 0.52.1: gemini's two review nits (unit level, no mock server) ---
+import { EventEmitter as TestEmitter } from 'node:events';
+
+class FakeSio extends TestEmitter {
+  constructor(url) { super(); this.url = url; }
+  connect() { setImmediate(() => this.emit('event', 'SYSTEM', { type: 'connected', data: { sessionKey: 'k1' } })); }
+  close() { this.emit('close'); }
+}
+
+test('roll-over: a failed roll-over is retried instead of waiting for the token to run out', async (t) => {
+  let authCalls = 0;
+  const open = {
+    auth: { expiresAt: Date.now() }, // already due: the wait is minRollWaitMs
+    loggedIn: () => true,
+    accessToken: async () => 'tok',
+    api: async (method, p) => {
+      if (p === '/open/v1/sessions/auth') { authCalls += 1; throw Object.assign(new Error('server error'), { status: 500 }); }
+      return {};
+    },
+  };
+  const s = new ChzzkSession({ open, log: () => {}, SioImpl: FakeSio, minRollWaitMs: 40 });
+  t.after(() => s.stop());
+  s.running = true;
+  s.active = { sio: { close() {} }, events: new Set(['chat']), onEnd: null };
+  s._scheduleRoll();
+  await until(() => authCalls >= 2, 'a second roll-over attempt after the first failed', 2000);
+});
+
+test('session open: the 10 s "no answer" timer is cleared once the session key arrives', async (t) => {
+  const realSet = globalThis.setTimeout;
+  const realClear = globalThis.clearTimeout;
+  const keyTimers = new Set();
+  const cleared = new Set();
+  globalThis.setTimeout = (fn, ms, ...a) => { const h = realSet(fn, ms, ...a); if (ms === 10000) keyTimers.add(h); return h; };
+  globalThis.clearTimeout = (h) => { cleared.add(h); return realClear(h); };
+  t.after(() => { globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; });
+  const open = {
+    auth: { expiresAt: Date.now() + 86400000 },
+    loggedIn: () => true,
+    accessToken: async () => 'tok',
+    api: async (method, p) => (p === '/open/v1/sessions/auth' ? { url: 'wss://example.invalid/sio' } : {}),
+  };
+  const s = new ChzzkSession({ open, log: () => {}, SioImpl: FakeSio });
+  const rec = await s._open();
+  rec.sio.close();
+  assert.equal(keyTimers.size, 1, 'one 10 s timer was started');
+  for (const h of keyTimers) assert.ok(cleared.has(h), 'the 10 s timer was cleared after the key arrived');
+});

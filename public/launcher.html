@@ -284,14 +284,14 @@
     </details>
 
     <details class="mod" id="m-chzzkopen" data-group="links" data-name="치지직 연동" data-icon="📝">
-      <summary><span class="m-ico">📝</span><span class="m-t"><b>치지직 연동 (방송 준비)</b><small>제목·카테고리·태그 바꾸기, 대시보드에서 채팅 보내기</small></span><span class="pill" data-pill></span></summary>
+      <summary><span class="m-ico">📝</span><span class="m-t"><b>치지직 연동 (방송 준비)</b><small>채팅·후원·구독 읽기 (공식 API), 제목·카테고리·태그, 채팅 보내기, 관리 동작</small></span><span class="pill" data-pill></span></summary>
       <div class="m-body">
-        <p class="why">방송 제목·카테고리·태그를 <i>바꾸는</i> 건 치지직 공식 API로만 할 수 있어서, <b>CHZZK Developers</b>에 내 앱을 등록하고 로그인해야 해요. 채팅·후원을 <i>읽는</i> 데는 필요 없어요 (그건 <a href="#m-channel" data-goto>치지직 채널</a>만으로 돼요).</p>
+        <p class="why"><b>CHZZK Developers</b>에 내 앱을 등록하고 로그인하면 채팅·후원·구독을 치지직 <b>공식 API</b>로 읽고, 방송 제목·카테고리·태그 바꾸기, 채팅 보내기, 닉네임 카드의 관리 동작도 이걸로 해요. 로그인하지 않으면 채팅·후원은 <a href="#m-channel" data-goto>치지직 채널</a>의 <b>비공식 연결</b>로 읽어요 (관리 동작과 방송 준비는 빠져요).</p>
         <div class="uses">쓰는 곳 <i>대시보드 방송 준비 (치지직 제목·카테고리·태그)</i><i>대시보드 채팅 보내기</i></div>
         <ul class="status m-status"><li><span class="sdot" id="dChzzkOpen"></span><span class="lbl">치지직 연동</span><span class="val" id="vChzzkOpen">…</span></li><li><span class="sdot" id="dChzzkReader"></span><span class="lbl">채팅·후원 읽기</span><span class="val" id="vChzzkReader">…</span></li></ul>
         <p class="why">공식 API로 읽으려면 CHZZK Developers의 내 앱에서 아래 권한을 <b>모두</b> 켜고(없는 건 건너뛰어도 되지만 그 기능만 빠져요), 이 창에서 <b>다시 로그인</b>하세요: <b id="vChzzkScopes">…</b>. 채팅·후원·구독 읽기, 구독자 뱃지, 임시/활동 제한, 메시지 숨기기, 공지, 방송 준비, 채팅 보내기에 쓰여요.</p>
         <ol class="steps">
-          <li data-step="chzzk.configured"><a href="https://developers.chzzk.naver.com/" target="_blank" rel="noopener">CHZZK Developers</a>에 방송하는 네이버 계정으로 로그인해 애플리케이션을 등록해요. <b>로그인 리디렉션 URL</b>에는 아래 주소를, 권한은 <b>방송 설정 조회</b>·<b>방송 설정 변경</b>·<b>유저 정보 조회</b>·<b>채팅 메시지 쓰기</b>를 골라요. (이미 등록했다면 <b>채팅 메시지 쓰기</b>를 추가하고 아래에서 다시 로그인하세요.)</li>
+          <li data-step="chzzk.configured"><a href="https://developers.chzzk.naver.com/" target="_blank" rel="noopener">CHZZK Developers</a>에 방송하는 네이버 계정으로 로그인해 애플리케이션을 등록해요. <b>로그인 리디렉션 URL</b>에는 아래 주소를, 권한은 위에 적힌 것을 <b>모두</b> 골라요. (이미 등록했다면 빠진 권한을 추가하고 아래에서 <b>다시 로그인</b>하세요.)</li>
           <li data-step="chzzk.configured">받은 <b>Client ID</b>와 <b>Client Secret</b>을 아래에 붙여 넣어요.</li>
           <li data-step="chzzk.loggedIn"><b>치지직 로그인</b>. 30일 동안 안 쓰면 로그인이 만료되지만, 방송할 때마다 쓰면 계속 이어져요.</li>
         </ol>
