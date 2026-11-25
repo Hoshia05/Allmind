@@ -33,7 +33,10 @@ function makeEnv() {
 }
 
 test('cleanSettings clamps values and preserves defaults', () => {
-  const s = cleanSettings({ maxPets: 999, idleMinutes: 0, scale: 10, speed: 0.1, floorY: -5, bubbleSec: 99, enabled: false, showNames: false });
+  const s = cleanSettings({
+    maxPets: 999, idleMinutes: 0, scale: 10, speed: 0.1, floorY: -5, bubbleSec: 99, enabled: false, showNames: false,
+    platforms: [{ name: '웹캠', x: -10, y: 2000, width: 10 }],
+  });
   assert.equal(s.enabled, false);
   assert.equal(s.maxPets, 60);
   assert.equal(s.idleMinutes, 1);
@@ -42,6 +45,7 @@ test('cleanSettings clamps values and preserves defaults', () => {
   assert.equal(s.floorY, 0);
   assert.equal(s.bubbleSec, 15);
   assert.equal(s.showNames, false);
+  assert.deepEqual(s.platforms, [{ name: '웹캠', x: 0, y: 1040, width: 40 }]);
   assert.deepEqual(cleanSettings(), DEFAULTS);
 });
 

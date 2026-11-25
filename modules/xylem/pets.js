@@ -21,6 +21,7 @@ export const DEFAULTS = {
   showBubbles: true,
   bubbleSec: 5,
   disabledSprites: [],
+  platforms: [],
 };
 
 const ACTION_CMDS = {
@@ -37,6 +38,14 @@ export function cleanSettings(input, old = DEFAULTS) {
   const disabled = Array.isArray(s.disabledSprites)
     ? [...new Set(s.disabledSprites.map((x) => path.basename(String(x || ''))).filter(Boolean))].slice(0, 50)
     : DEFAULTS.disabledSprites.slice();
+  const platforms = (Array.isArray(s.platforms) ? s.platforms : [])
+    .slice(0, 8)
+    .map((p, i) => ({
+      name: String(p?.name || `자리 ${i + 1}`).trim().slice(0, 24) || `자리 ${i + 1}`,
+      x: Math.round(num(p?.x, 0, 1880, 100)),
+      y: Math.round(num(p?.y, 40, 1040, 760)),
+      width: Math.round(num(p?.width, 40, 1920, 320)),
+    }));
   return {
     enabled: !!s.enabled,
     commandsEnabled: s.commandsEnabled !== false,
@@ -49,6 +58,7 @@ export function cleanSettings(input, old = DEFAULTS) {
     showBubbles: !!s.showBubbles,
     bubbleSec: Math.round(num(s.bubbleSec, 2, 15, 5)),
     disabledSprites: disabled,
+    platforms,
   };
 }
 

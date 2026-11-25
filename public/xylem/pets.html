@@ -90,7 +90,7 @@
 
   let cfg = {
     enabled: true, commandsEnabled: true, maxPets: 20, idleMinutes: 5, scale: 1, speed: 1,
-    floorY: 16, showNames: true, showBubbles: true, bubbleSec: 5, disabledSprites: [],
+    floorY: 16, showNames: true, showBubbles: true, bubbleSec: 5, disabledSprites: [], platforms: [],
   };
   let spriteList = [{ file: 'pet-wisp.png', url: '/api/pets/sprite?file=pet-wisp.png' }];
   let choices = {}; // uid → filename
@@ -430,14 +430,21 @@
         p.vx += (0 - p.vx) * Math.min(1, dt * 3);
         p.vy += ((p.targetY - p.y) * 1.8 - p.vy) * Math.min(1, dt * 3);
         if (now > p.stateUntil) {
-          p.targetX = clamp(p.x + rnd(-460, 460), 70, W - 70);
-          p.targetY = -rnd(24, 175);
+          const plats = Array.isArray(cfg.platforms) ? cfg.platforms : [];
+          if (plats.length && Math.random() < 0.38) {
+            const pl = plats[Math.floor(Math.random() * plats.length)];
+            p.targetX = clamp(pl.x + rnd(20, Math.max(24, pl.width - 20)), 70, W - 70);
+            p.targetY = clamp((pl.y - floorBase) - rnd(16, 54), -980, -16);
+          } else {
+            p.targetX = clamp(p.x + rnd(-460, 460), 70, W - 70);
+            p.targetY = -rnd(24, 175);
+          }
           p.state = 'drift';
         }
       }
 
       p.x = clamp(p.x + p.vx * dt, 50, W - 50);
-      p.y = clamp(p.y + p.vy * dt, -360, -12);
+      p.y = clamp(p.y + p.vy * dt, -1000, -12);
       p.floatPhase += dt * (2.6 + 0.5 * cfg.speed);
       p.pulse = Math.max(0, p.pulse - dt * 2.2);
 
