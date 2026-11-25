@@ -167,6 +167,8 @@
       pulse: 0,         // >0 when excited by a chat message
       action: null,     // 'dance' | 'dash' | 'sleep' | null
       actionUntil: 0,
+      interact: null,   // { kind: 'hug'|'poke', targetUid, until, done }
+      greetCooldownUntil: 0,
       lastChatAt: Date.now(),
       bubbleUntil: 0,
       removing: false,
@@ -223,9 +225,8 @@
     }
   }
 
-  function spawnSparkles(p) {
-    const glyphs = ['✨', '⭐', '💛', '✨'];
-    for (let i = 0; i < 6; i++) {
+  function spawnSparkles(p, glyphs = ['✨', '⭐', '💛', '✨'], count = 6) {
+    for (let i = 0; i < count; i++) {
       const sp = document.createElement('span');
       sp.className = 'pet-sparkle';
       sp.textContent = glyphs[i % glyphs.length];
@@ -234,6 +235,19 @@
       p.el.append(sp);
       setTimeout(() => sp.remove(), 1150);
     }
+  }
+
+  function findPetByNick(query, excludeUid) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return null;
+    let partial = null;
+    for (const p of pets.values()) {
+      if (p.uid === excludeUid) continue;
+      const n = String(p.nick || '').toLowerCase();
+      if (n === q) return p;
+      if (!partial && n.includes(q)) partial = p;
+    }
+    return partial;
   }
 
   function onCelebrate(msg) {
@@ -296,6 +310,13 @@
       p.vy = -120;
     }
     if (msg.action) runAction(p, msg.action, now);
+    if (msg.interact) {
+      const target = findPetByNick(msg.interact.target, p.uid);
+      if (target) {
+        p.action = null;
+        p.interact = { kind: msg.interact.kind, targetUid: target.uid, until: now + 4000, done: false };
+      }
+    }
     if (cfg.showBubbles && msg.text) {
       p.bubble.textContent = msg.text;
       p.bubble.classList.add('show');
@@ -345,8 +366,43 @@
       }
 
       if (p.action && now > p.actionUntil) p.action = null;
+      if (p.interact && now > p.interact.until) p.interact = null;
 
-      if (p.action === 'dash') {
+      if (p.interact && !p.interact.done) {
+        const target = pets.get(p.interact.targetUid);
+        if (!target) {
+          p.interact = null;
+        } else {
+          const side = p.x <= target.x ? -1 : 1;
+          const gx = target.x + side * 54;
+          const gy = target.y;
+          const dx = gx - p.x;
+          const dy = gy - p.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 18) {
+            p.interact.done = true;
+            p.interact.until = now + 900;
+            p.dir = p.x <= target.x ? 1 : -1;
+            target.dir = -p.dir;
+            if (p.interact.kind === 'hug') {
+              p.pulse = 1; target.pulse = 1;
+              spawnSparkles(p, ['💛', '💕', '✨'], 4);
+              spawnSparkles(target, ['💛', '💕', '✨'], 3);
+            } else {
+              p.pulse = 0.8;
+              target.vx += (target.x >= p.x ? 1 : -1) * 260;
+              target.vy = -170;
+              target.pulse = 1;
+              spawnSparkles(target, ['💫', '❗'], 3);
+            }
+          } else {
+            if (Math.abs(dx) > 4) p.dir = dx > 0 ? 1 : -1;
+            const spd = 240 * cfg.speed;
+            p.vx += ((dx / dist) * spd - p.vx) * Math.min(1, dt * 6);
+            p.vy += ((dy / dist) * spd - p.vy) * Math.min(1, dt * 6);
+          }
+        }
+      } else if (p.action === 'dash') {
         p.vx = p.dir * 480 * cfg.speed;
         p.vy += ((p.targetY - p.y) * 2.5 - p.vy) * Math.min(1, dt * 4);
         if (p.x <= 60 || p.x >= W - 60) { p.dir *= -1; p.vx = p.dir * 480 * cfg.speed; }
@@ -384,6 +440,24 @@
       p.y = clamp(p.y + p.vy * dt, -360, -12);
       p.floatPhase += dt * (2.6 + 0.5 * cfg.speed);
       p.pulse = Math.max(0, p.pulse - dt * 2.2);
+
+      // occasional friendly greeting when drifting past another wisp
+      if (!p.action && !p.interact && p.state === 'drift' && now > p.greetCooldownUntil && Math.random() < 0.015) {
+        for (const other of pets.values()) {
+          if (other === p || other.action || other.interact || now < other.greetCooldownUntil) continue;
+          if (Math.hypot(other.x - p.x, other.y - p.y) < 75) {
+            p.greetCooldownUntil = now + 22000;
+            other.greetCooldownUntil = now + 22000;
+            p.state = 'hover'; p.stateUntil = now + 1100;
+            other.state = 'hover'; other.stateUntil = now + 1100;
+            p.dir = p.x <= other.x ? 1 : -1;
+            other.dir = -p.dir;
+            p.pulse = 0.6; other.pulse = 0.6;
+            spawnSparkles(p, ['🎵', '✨'], 2);
+            break;
+          }
+        }
+      }
 
       let bobY = Math.sin(p.floatPhase) * 9 - p.pulse * 12;
       let tilt = clamp(p.vx * 0.08, -12, 12) + Math.sin(p.floatPhase * 0.7) * 3;

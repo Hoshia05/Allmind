@@ -141,6 +141,7 @@ export class ScreenPets {
   _handleChat({ uid, nick, role, text, sub }) {
     const trimmed = String(text || '').trim();
     let action = null;
+    let interact = null;
     let hideBubble = false;
 
     if (this.s.commandsEnabled && trimmed.startsWith('!')) {
@@ -149,6 +150,12 @@ export class ScreenPets {
       if (ACTION_CMDS[low]) {
         action = ACTION_CMDS[low];
         hideBubble = rest.length === 0;
+      } else if ((low === '!안아' || low === '!hug' || low === '!툭' || low === '!poke') && rest.length) {
+        interact = {
+          kind: (low === '!안아' || low === '!hug') ? 'hug' : 'poke',
+          target: rest.join(' ').replace(/^@/, '').slice(0, 24),
+        };
+        hideBubble = true;
       } else if ((low === '!캐릭터' || low === '!아바타') && rest.length) {
         const picked = this._pickSpriteByQuery(rest.join(' '));
         if (picked && uid) {
@@ -167,6 +174,7 @@ export class ScreenPets {
       uid, nick, role, sub,
       text: hideBubble ? '' : text,
       ...(action ? { action } : {}),
+      ...(interact ? { interact } : {}),
     });
   }
 

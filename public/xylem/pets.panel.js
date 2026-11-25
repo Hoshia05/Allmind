@@ -51,7 +51,7 @@ export function mount(el, x) {
         <div class="field">표시·명령어
           <label class="check"><input type="checkbox" id="pNames"> 닉네임 표시</label>
           <label class="check"><input type="checkbox" id="pBubbles"> 채팅 말풍선 표시</label>
-          <label class="check"><input type="checkbox" id="pCmds"> 채팅 명령어 켜기 <span class="muted small">(!점프 · !대시 · !춤 · !자장 · !캐릭터)</span></label>
+          <label class="check"><input type="checkbox" id="pCmds"> 채팅 명령어 켜기 <span class="muted small">(!점프 · !대시 · !춤 · !자장 · !안아 · !툭 · !캐릭터)</span></label>
         </div>
       </div>
       <div class="row" style="margin-top:12px">
